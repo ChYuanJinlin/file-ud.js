@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.json", // 关键！继承根配置
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src"
+  },
+  "include": ["src/**/*", "../plugins"],
+  "exclude": ["node_modules", "dist"],
+  "paths": {
+    "@/*": ["src/*"]
+  }
+}

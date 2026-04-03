@@ -4,7 +4,7 @@
 node_modules
 .pnp
 .pnp.js
-
+.history
 # Local env files
 .env
 .env.local
@@ -14,7 +14,7 @@ node_modules
 
 # Testing
 coverage
-
+uploads
 # Turbo
 .turbo
 
