@@ -14,8 +14,10 @@ import {
   UpdateCallBack,
   UploadSpeedInfo,
   UploadSuccessCallBack,
+  UploadTimeInfo,
 } from "../types";
 import {
+  formatDuration,
   formatFileSize,
   formatSpeed,
   generateFileId,
@@ -45,7 +47,7 @@ export default class Uploader<T = any> extends EventEmitter {
   public uploadedBytes: number = 0;
 
   // 全局上传速率信息(静态属性)
-  public uploadSpeed:UploadSpeedInfo = {
+  public uploadSpeed: UploadSpeedInfo = {
     currentSpeed: 0,
     averageSpeed: 0,
     currentSpeedFormatted: "0 B/s",
@@ -63,6 +65,13 @@ export default class Uploader<T = any> extends EventEmitter {
   public chunkManager: ChunkManager | null = null;
   public totalProgress: number = 0;
   public lastLoadedMap = new Map();
+
+  public uploadTime: UploadTimeInfo = {
+    startTime: 0,
+    endTime: 0,
+    duration: 0,
+    durationFormatted: "0s",
+  };
   public static fileIndex = 0;
   // 添加拦截器相关属性
   public static originalXHR?: typeof XMLHttpRequest | null;
@@ -98,8 +107,44 @@ export default class Uploader<T = any> extends EventEmitter {
       // 计算并更新全局上传速率
       this.uploadSpeed = this.calculateGlobalUploadSpeed();
 
+      // 检查是否所有文件都已上传完成
+      this.checkAndUpdateTotalUploadTime();
+
       this.updateCallback?.([...this.files]);
     }, 100); // 100ms 防抖延迟
+  }
+
+  /**
+   * 检查并更新全局上传总耗时
+   * 当所有文件都完成(成功或失败)时,记录总耗时
+   * @private
+   */
+  private checkAndUpdateTotalUploadTime(): void {
+    // 如果没有文件,不处理
+    if (this.files.length === 0) {
+      return;
+    }
+
+    // 检查是否所有文件都已完成(success 或 error 状态)
+    const allCompleted = this.files.every(
+      (file) => file.status === "success" || file.status === "error",
+    );
+
+    // 如果所有文件都完成且尚未记录结束时间
+    if (
+      allCompleted &&
+      this.uploadTime.startTime > 0 &&
+      this.uploadTime.endTime === 0
+    ) {
+      const endTime = Date.now();
+      const duration = endTime - this.uploadTime.startTime;
+      this.uploadTime = {
+        startTime: this.uploadTime.startTime,
+        endTime,
+        duration,
+        durationFormatted: formatDuration(duration),
+      };
+    }
   }
 
   /**
@@ -358,11 +403,20 @@ export default class Uploader<T = any> extends EventEmitter {
       return Promise.resolve();
     }
 
-    // 如果是第一次调用 submit，触发批量开始事件
+    // 如果是第一次调用 submit，触发批量开始事件并记录开始时间
     const isFirstBatch =
       this.uploadFiles.filter((f) => f.status === "uploading").length === 0;
     if (isFirstBatch) {
-      this.emit("file-start", this.files);
+      this.emit("files-start", this.files);
+
+      // 记录全局上传开始时间
+      const now = Date.now();
+      this.uploadTime = {
+        startTime: now,
+        endTime: 0,
+        duration: 0,
+        durationFormatted: "0s",
+      };
     }
 
     try {
@@ -374,14 +428,15 @@ export default class Uploader<T = any> extends EventEmitter {
         }
 
         // 直接开始上传，由 UploadFile 内部管理 ChunkManager
-        return file.upload();
+        return file.chunkManager
+          ? file.chunkManager.startUpload()
+          : file.upload();
       });
 
       // 等待当前批次的文件上传完成
       await Promise.allSettled(uploadPromises);
-
-      // 触发批量完成事件
-      this.emit("batch-complete");
+      this.emit("files-complete", this.files);
+      console.log("所有文件上传完成");
     } catch (error) {
       console.error("批量上传失败:", error);
       this.emit("error", error);

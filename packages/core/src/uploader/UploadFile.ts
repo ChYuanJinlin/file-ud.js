@@ -1,8 +1,12 @@
 import axios, { AxiosProgressEvent, Canceler } from "axios";
-import { IFile, UploadSpeedInfo } from "../types";
+import { IFile, UploadSpeedInfo, UploadTimeInfo } from "../types";
 import Uploader from ".";
 import ChunkManager from "./ChunkManager";
-import { createReactiveUploadFile, formatSpeed } from "../utils";
+import {
+  createReactiveUploadFile,
+  formatSpeed,
+  formatDuration,
+} from "../utils";
 import { ErrorCode, FileUDError } from "../fileUD/errors";
 
 /**
@@ -83,6 +87,18 @@ export default class UploadFile<T = any> {
     averageSpeedFormatted: "0 B/s",
   };
 
+  /**
+   * 上传时间统计信息
+   * 记录文件从开始到结束的完整耗时
+   * 通过 Proxy 自动触发 UI 更新
+   */
+  public uploadTime: UploadTimeInfo = {
+    startTime: 0,
+    endTime: 0,
+    duration: 0,
+    durationFormatted: "0s",
+  };
+
   /** 静态文件列表(已废弃,使用 Uploader.files) */
   static files: UploadFile[] = [];
 
@@ -134,6 +150,12 @@ export default class UploadFile<T = any> {
     this.index = file.index;
     this.retry = file.retry || false;
     this.__uploader__ = file.__uploader__!;
+    
+    // 如果是分片上传,在构造时就创建 ChunkManager
+    if (up.config?.chunkOptions) {
+      this.chunkManager = new ChunkManager(up.config.chunkOptions, this);
+    }
+    
     this.proxy = createReactiveUploadFile(this, up);
     // 关键：在发起请求前设置拦截器，建立当前文件与 XHR 的映射
     this.setupInterceptor(this);
@@ -186,7 +208,6 @@ export default class UploadFile<T = any> {
 
     // 重置状态
     this.proxy.retry = true;
-    this.proxy.status = "uploading";
     this.proxy.percent = 0;
 
     // 分片上传: 使用当前文件的 ChunkManager 重试失败分片
@@ -206,6 +227,89 @@ export default class UploadFile<T = any> {
     }
   }
 
+  /**
+   * 暂停上传
+   *
+   * 暂停当前文件的上传过程。
+   * - **分片上传**: 暂停新分片的启动,等待当前活跃分片完成后进入暂停状态
+   * - **普通上传**: 直接中止 XHR 请求
+   *
+   * 暂停后会保存当前进度,可以通过 resume() 恢复上传。
+   *
+   * @example
+   * ```typescript
+   * // 用户点击暂停按钮
+   * pauseButton.addEventListener('click', () => {
+   *   file.pause();
+   *   console.log(file.status); // "paused"
+   * });
+   * ```
+   *
+   * @remarks
+   * - 只有处于 "uploading" 状态的文件才能暂停
+   * - 暂停后可以随时调用 resume() 恢复
+   * - 分片上传的进度会自动保存(如果启用了断点续传)
+   */
+  pause(): void {
+    if (this.proxy.status !== "uploading") {
+      console.warn(
+        `文件 ${this.fileName} 当前状态为 ${this.proxy.status},无法暂停`,
+      );
+      return;
+    }
+
+    // 委托给 ChunkManager 处理
+    if (this.chunkManager) {
+      this.chunkManager.pause();
+    } else {
+      // 普通上传直接 abort
+      this.proxy.status = "paused";
+      if (this.abort) {
+        this.abort();
+        console.log(`普通上传已暂停: ${this.fileName}`);
+      }
+    }
+  }
+
+  /**
+   * 恢复上传
+   *
+   * 从暂停的位置继续上传。
+   * - **分片上传**: 继续上传剩余的分片,已成功分片不会重复上传
+   * - **普通上传**: 由于 XHR 无法恢复,会重新开始上传
+   *
+   * @example
+   * ```typescript
+   * // 用户点击继续按钮
+   * resumeButton.addEventListener('click', () => {
+   *   file.resume();
+   *   console.log(file.status); // "uploading"
+   * });
+   * ```
+   *
+   * @remarks
+   * - 只有处于 "paused" 状态的文件才能恢复
+   * - 分片上传会从上次中断的位置继续
+   * - 普通上传会重新开始(因为 HTTP 请求无法恢复)
+   */
+  async resume(): Promise<void> {
+    if (this.proxy.status !== "paused") {
+      console.warn(
+        `文件 ${this.fileName} 当前状态为 ${this.proxy.status},无法恢复`,
+      );
+      return;
+    }
+
+    // 委托给 ChunkManager 处理
+    if (this.chunkManager) {
+      await this.chunkManager.resume();
+    } else {
+      // 普通上传需要重新开始
+      console.log(`普通上传将重新开始: ${this.fileName}`);
+      await this.upload();
+    }
+  }
+
   async upload(
     onChunkComplete?: (res: T) => void,
     chunkIndex?: number,
@@ -222,10 +326,14 @@ export default class UploadFile<T = any> {
         return;
       }
 
-      // 如果是分片上传且尚未创建 ChunkManager，则创建实例
-      if (up.config?.chunkOptions && !this.chunkManager) {
-        this.chunkManager = new ChunkManager(up.config.chunkOptions, this);
-      }
+      // 记录上传开始时间
+      const now = Date.now();
+      this.proxy.uploadTime = {
+        startTime: now,
+        endTime: 0,
+        duration: 0,
+        durationFormatted: "0s",
+      };
 
       // 获取插件上下文
       this.context = (this as any).__pluginContext || {
@@ -308,6 +416,17 @@ export default class UploadFile<T = any> {
 
   public onScuccess(res: T) {
     const up = this.__uploader__;
+
+    // 记录上传结束时间和耗时
+    const now = Date.now();
+    const duration = now - this.uploadTime.startTime;
+    this.proxy.uploadTime = {
+      startTime: this.uploadTime.startTime,
+      endTime: now,
+      duration,
+      durationFormatted: formatDuration(duration),
+    };
+
     up["runHook"]("onSuccess", res, this, this.context);
     up.uploadSuccessCallback?.(res, this.proxy);
     this.proxy.status = "success";
@@ -318,6 +437,17 @@ export default class UploadFile<T = any> {
   }
   public onError(err: any) {
     const up = this.__uploader__;
+
+    // 记录上传结束时间和耗时(即使失败也记录)
+    const now = Date.now();
+    const duration = now - this.uploadTime.startTime;
+    this.proxy.uploadTime = {
+      startTime: this.uploadTime.startTime,
+      endTime: now,
+      duration,
+      durationFormatted: formatDuration(duration),
+    };
+
     up["runHook"]("onError", err, this, this.context);
     this.proxy.status = "error";
     this.proxy.percent = 0; // 上传失败时重置进度为 0%

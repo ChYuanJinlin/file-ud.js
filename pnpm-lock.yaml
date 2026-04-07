@@ -30,7 +30,13 @@ importers:
       axios:
         specifier: ^1.13.6
         version: registry.npmjs.org/axios@1.13.6
+      spark-md5:
+        specifier: ^3.0.2
+        version: registry.npmjs.org/spark-md5@3.0.2
     devDependencies:
+      '@types/spark-md5':
+        specifier: ^3.0.5
+        version: registry.npmjs.org/@types/spark-md5@3.0.5
       tsup:
         specifier: ^7.2.0
         version: registry.npmjs.org/tsup@7.3.0(typescript@5.9.3)
@@ -920,6 +926,12 @@ packages:
     dependencies:
       undici-types: registry.npmjs.org/undici-types@7.16.0
     dev: false
+
+  registry.npmjs.org/@types/spark-md5@3.0.5:
+    resolution: {integrity: sha512-lWf05dnD42DLVKQJZrDHtWFidcLrHuip01CtnC2/S6AMhX4t9ZlEUj4iuRlAnts0PQk7KESOqKxeGE/b6sIPGg==, registry: https://registry.yarnpkg.com/, tarball: https://registry.npmjs.org/@types/spark-md5/-/spark-md5-3.0.5.tgz}
+    name: '@types/spark-md5'
+    version: 3.0.5
+    dev: true
 
   registry.npmjs.org/@vitejs/plugin-vue@6.0.4(vite@8.0.0-beta.13)(vue@3.5.28):
     resolution: {integrity: sha512-uM5iXipgYIn13UUQCZNdWkYk+sysBeA97d5mHsAoAt1u/wpN3+zxOmsVJWosuzX+IMGRzeYUNytztrYznboIkQ==, registry: https://registry.yarnpkg.com/, tarball: https://registry.npmjs.org/@vitejs/plugin-vue/-/plugin-vue-6.0.4.tgz}
@@ -2123,6 +2135,12 @@ packages:
     dependencies:
       whatwg-url: registry.npmjs.org/whatwg-url@7.1.0
     dev: true
+
+  registry.npmjs.org/spark-md5@3.0.2:
+    resolution: {integrity: sha512-wcFzz9cDfbuqe0FZzfi2or1sgyIrsDwmPwfZC4hiNidPdPINjeUwNfv5kldczoEAcjl9Y1L3SM7Uz2PUEQzxQw==, registry: https://registry.yarnpkg.com/, tarball: https://registry.npmjs.org/spark-md5/-/spark-md5-3.0.2.tgz}
+    name: spark-md5
+    version: 3.0.2
+    dev: false
 
   registry.npmjs.org/strip-final-newline@2.0.0:
     resolution: {integrity: sha512-BrpvfNAE3dcvq7ll3xVumzjKjZQ5tI1sEUIKr3Uoks0XUl45St3FlatVqef9prk4jRDzhW6WZg+3bk93y6pLjA==, registry: https://registry.yarnpkg.com/, tarball: https://registry.npmjs.org/strip-final-newline/-/strip-final-newline-2.0.0.tgz}

@@ -15,6 +15,7 @@ const test1 = FileUD.createUploader("test1", {
   action: "upload",
   file: "file",
   multiple: true,
+  // chunkOptions: {},
 });
 
 const test2 = FileUD.createUploader("test2", {
@@ -61,7 +62,14 @@ window.FileUD = FileUD;
 <template>
   <div>
     <button @click="submit()">提交</button>
-    总的大小:{{ test1.totalBytes }} 总进度:{{ test1.totalPercent }} 总速度:{{ test1.uploadSpeed?.averageSpeedFormatted }}
+    <button @click="test1.clearFiles()">清除文件列表</button>
+    <button @click="test1.clearFiles()">全部暂停</button>
+    <button @click="test1.clearFiles()">全部继续</button>
+    <button @click="test1.clearFiles()">全部取消</button>
+    总的大小:{{ test1.totalBytes }} 总进度:{{ test1.totalPercent }} 总速度:{{
+      test1.uploadSpeed?.averageSpeedFormatted
+    }}
+
     <div v-for="item in files" :key="item.fileId">
       进度{{ item.percent }} 状态{{ item.status }} 文件名{{ item.fileName }}
 
@@ -72,6 +80,11 @@ window.FileUD = FileUD;
         srcset=""
       />
       <video width="500" height="500" :src="item.url" controls></video>
+      <button @click="test1.clearFiles()">重新上传</button>
+      <button @click="test1.clearFiles()">暂停</button>
+      <button @click="test1.clearFiles()">继续</button>
+      <button @click="test1.clearFiles()">取消</button>
+      <button @click="test1.clearFiles()">删除</button>
     </div>
   </div>
 </template>

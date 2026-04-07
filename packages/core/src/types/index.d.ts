@@ -314,7 +314,7 @@ export interface IFile {
   /* Uploader 对象 */
   __uploader__?: Uploader;
   /* 文件上传的状态 */
-  status?: "pending" | "uploading" | "success" | "error" | "cancelled";
+  status?: "pending" | "uploading" | "paused" | "success" | "error" | "cancelled";
   uploadSpeed?: UploadSpeedInfo;
 }
 
@@ -384,15 +384,9 @@ export interface UploaderEvents {
   /* 移除文件事件 */
   remove: (file: FileWithMeta) => void;
   /* 文件开始上传事件 */
-  "file-start": (files: UploadFile[]) => void;
+  "files-start": (files: UploadFile[]) => void;
   /* 文件完成上传事件 */
-  "file-complete": (files: UploadFile[]) => void;
-  /* 所有文件完成事件 */
-  "all-files-complete": () => void;
-  /* 批次开始事件 */
-  "batch-start": () => void;
-  /* 批次完成事件 */
-  "batch-complete": () => void;
+  "files-complete": (files: UploadFile[]) => void;
 }
 
 /* 事件名称类型 */
@@ -417,4 +411,22 @@ export interface UploadSpeedInfo {
 
   /** 格式化后的平均速度,如 "12.45 MB/s"、"128 KB/s" */
   averageSpeedFormatted: string;
+}
+
+/**
+ * 上传时间统计信息接口
+ * 记录文件上传的生命周期时间节点
+ */
+export interface UploadTimeInfo {
+  /** 上传开始时间戳 (毫秒) */
+  startTime: number;
+
+  /** 上传结束时间戳 (毫秒),未完成时为 0 */
+  endTime: number;
+
+  /** 上传总耗时 (毫秒),未完成时为 0 */
+  duration: number;
+
+  /** 格式化后的耗时,如 "5.23s"、"1m 30s" */
+  durationFormatted: string;
 }
