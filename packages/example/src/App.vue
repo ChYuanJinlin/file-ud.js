@@ -10,12 +10,12 @@ import {
 import { ref } from "vue";
 import Uploader from "@file-ud.js/core/uploader";
 import { IFile } from "@file-ud.js/core/types";
-
+const isChunk = ref(false);
 const test1 = FileUD.createUploader("test1", {
   action: "upload",
   file: "file",
   multiple: true,
-  // chunkOptions: {},
+  chunkOptions: isChunk ? {} : null,
 });
 
 const test2 = FileUD.createUploader("test2", {
@@ -63,6 +63,9 @@ window.FileUD = FileUD;
   <div>
     <button @click="submit()">提交</button>
     <button @click="test1.clearFiles()">清除文件列表</button>
+    <button @click="isChunk = !isChunk">
+      {{ isChunk ? "普通上传" : "大文件上传" }}
+    </button>
     <button @click="test1.clearFiles()">全部暂停</button>
     <button @click="test1.clearFiles()">全部继续</button>
     <button @click="test1.clearFiles()">全部取消</button>
