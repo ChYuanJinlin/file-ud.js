@@ -1,5 +1,6 @@
 import { FileUDError } from "../fileUD/errors";
 import Uploader from "../uploader";
+import ChunkManager from "../uploader/ChunkManager";
 import UploadFile from "../uploader/UploadFile";
 
 /**
@@ -180,10 +181,14 @@ export interface ChunkOptions {
   chunkSize?: number;
   /* 重试次数 */
   retries?: number;
-  /* 重试延迟 */
+  /* 重试延迟（毫秒） */
   retryDelay?: number;
-  /* 超时时间 */
+  /* 超时时间（毫秒） */
   timeout?: number;
+  /* 是否启用断点续传 */
+  enableResume?: boolean;
+  /* 自定义上传ID（用于断点续传） */
+  uploadId?: string;
 }
 
 export interface FileUDConfigs {
@@ -209,7 +214,7 @@ export interface FileUDConfigs {
   /* 上传请求的头部信息 */
   headers?: Record<string, any>;
   /* 上传文件标识 */
-  file: string | ((this: UploadFile, formData: FormData) => void);
+  file: string | ((uploadFile: UploadFile) => void);
   /* 分片上传配置 */
   chunkOptions?: ChunkOptions | null;
   /* 可选：传入自定义 axios 实例 */
@@ -310,6 +315,7 @@ export interface IFile {
   __uploader__?: Uploader;
   /* 文件上传的状态 */
   status?: "pending" | "uploading" | "success" | "error" | "cancelled";
+  uploadSpeed?: UploadSpeedInfo;
 }
 
 /* 错误回调函数类型 */
@@ -317,7 +323,6 @@ export type ErrorCallBack = (errors: FileUDErrorJSON) => void;
 
 /* 上传前的操作回调函数类型 */
 export type BeforeUploadCallBack = (
-  this: Uploader,
   file: UploadFile,
 ) => boolean | Promise<Boolean> | undefined | null;
 
@@ -326,6 +331,27 @@ export type UploadSuccessCallBack<T> = (response: T, file: UploadFile) => void;
 
 /* 更新回调函数类型 */
 export type UpdateCallBack = (file: UploadFile[]) => void;
+/* 
+初始化回调函数类型
+*/
+export type OnInitCallBack = (
+  file: UploadFile,
+  totalChunks: number,
+  fileHash: string,
+) => Promise<{
+  uploadId: string;
+  uploadedChunks?: number[];
+}>;
+
+/* 
+合并分片回调函数类型
+*/
+export type OnMergeCallBack = (
+  file: UploadFile,
+  uploadId: string,
+  fileHash: string,
+  totalChunks: number,
+) => Promise<any>;
 /* 
 打开文件之后的回调
 */
@@ -355,19 +381,18 @@ export interface UploaderEvents {
   cancel: (file: FileWithMeta) => void;
   /* 重试上传事件 */
   retry: (file: FileWithMeta) => void;
-  remove: (uploadFile: UploadFile) => void;
-  /* 批量开始上传事件 */
-  "batch-start": (files: FileWithMeta[]) => void;
-  /* 批量完成上传事件 */
-  "batch-complete": (files: FileWithMeta[]) => void;
-  /* 队列变化事件 */
-  "queue-change": (queue: FileWithMeta[]) => void;
-  /* 插件错误事件 */
-  "plugin-error": (errorObj: {
-    plugin: string;
-    hook: string;
-    error: unknown;
-  }) => void;
+  /* 移除文件事件 */
+  remove: (file: FileWithMeta) => void;
+  /* 文件开始上传事件 */
+  "file-start": (files: UploadFile[]) => void;
+  /* 文件完成上传事件 */
+  "file-complete": (files: UploadFile[]) => void;
+  /* 所有文件完成事件 */
+  "all-files-complete": () => void;
+  /* 批次开始事件 */
+  "batch-start": () => void;
+  /* 批次完成事件 */
+  "batch-complete": () => void;
 }
 
 /* 事件名称类型 */
@@ -375,3 +400,21 @@ export type EventName = keyof UploaderEvents;
 
 /* 事件回调函数类型 */
 export type EventCallback<T extends EventName> = UploaderEvents[T];
+
+/**
+ * 上传速率统计信息接口
+ * 用于描述单个文件或全局的上传速度指标
+ */
+export interface UploadSpeedInfo {
+  /** 当前瞬时速度 (bytes/s) - 基于最近两个采样点计算 */
+  currentSpeed: number;
+
+  /** 平均速度 (bytes/s) - 基于总耗时和总字节数计算 */
+  averageSpeed: number;
+
+  /** 格式化后的当前速度,如 "15.23 MB/s"、"256 KB/s" */
+  currentSpeedFormatted: string;
+
+  /** 格式化后的平均速度,如 "12.45 MB/s"、"128 KB/s" */
+  averageSpeedFormatted: string;
+}

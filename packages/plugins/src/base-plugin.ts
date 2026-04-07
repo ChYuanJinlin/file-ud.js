@@ -1,11 +1,9 @@
 import {
-  IUploaderPlugin,
   UploadFile,
-  PluginContext,
   FileUDError,
   ErrorCode,
 } from "@file-ud.js/core";
-
+import { IUploaderPlugin, PluginContext } from "@file-ud.js/core/types";
 /**
  * 插件基类
  * 提供通用的错误处理和日志功能

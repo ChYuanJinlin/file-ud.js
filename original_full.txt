@@ -1,23 +1,18 @@
-import { Errors } from "..";
+﻿import { Errors } from "..";
 import {
   BeforeUploadCallBack,
   ErrorCallBack,
   EventName,
   FileUDConfigs,
-  IFile,
   IUploaderPlugin,
-  OnInitCallBack,
-  OnMergeCallBack,
   OpenFileCallback,
   PluginContext,
   SelectCallBack,
   UpdateCallBack,
-  UploadSpeedInfo,
   UploadSuccessCallBack,
 } from "../types";
 import {
   formatFileSize,
-  formatSpeed,
   generateFileId,
   getFileExtension,
   handleFile,
@@ -25,7 +20,6 @@ import {
   validator,
 } from "../utils";
 import { EventEmitter } from "../utils/event-emitter";
-import ChunkManager from "./ChunkManager";
 import UploadFile from "./UploadFile";
 const defaultConfig: FileUDConfigs = {
   multiple: false,
@@ -40,115 +34,44 @@ let id = 0;
 export default class Uploader<T = any> extends EventEmitter {
   public inputHTML: HTMLInputElement | null;
   public files: UploadFile[] = [];
-  public uploadFiles: UploadFile[] = [];
-  public totalBytes: number = 0;
-  public uploadedBytes: number = 0;
-
-  // 全局上传速率信息(静态属性)
-  public uploadSpeed:UploadSpeedInfo = {
-    currentSpeed: 0,
-    averageSpeed: 0,
-    currentSpeedFormatted: "0 B/s",
-    averageSpeedFormatted: "0 B/s",
-  };
-
   public static objectUrls: any[] = [];
   public static baseConfig: FileUDConfigs;
   public config: FileUDConfigs | null = null;
   public static instances: Uploader | null = null;
-  public static uploadFile: UploadFile | null;
-  // 标记是否已安装全局拦截器
-  public static isInterceptorInstalled = false;
-  public totalPercent: number = 0;
-  public chunkManager: ChunkManager | null = null;
-  public totalProgress: number = 0;
+  // 鏍囪鏄惁宸插畨瑁呭叏灞€鎷︽埅鍣?  public static isInterceptorInstalled = false;
+  public totalSize: string = "0";
+  public uploadedBytes: number = 0;
+  public static totalProgress: number = 0;
   public lastLoadedMap = new Map();
   public static fileIndex = 0;
-  // 添加拦截器相关属性
-  public static originalXHR?: typeof XMLHttpRequest | null;
+  // 娣诲姞鎷︽埅鍣ㄧ浉鍏冲睘鎬?  public static originalXHR?: typeof XMLHttpRequest | null;
   public static interceptorActive = false;
   private id: number = 0;
   private plugins: IUploaderPlugin[] = [];
   private pluginSharedData = new Map<string, any>();
   public static onError: ErrorCallBack;
-  // 静态默认插件
-  private static defaultPlugins: IUploaderPlugin[] = [];
+  // 闈欐€侀粯璁ゆ彃浠?  private static defaultPlugins: IUploaderPlugin[] = [];
   public openCallBack: OpenFileCallback = () => null;
   public beforeUploadCallback: BeforeUploadCallBack | null | undefined = null;
   public updateCallback: UpdateCallBack | null | undefined = null;
   public uploadSuccessCallback: UploadSuccessCallBack<T> = () => null;
   public selectCallback: SelectCallBack | null | undefined = null;
-  public onInitCallback: OnInitCallBack | null = null;
-  public onMergeCallback: OnMergeCallBack | null = null;
-  // 用于防抖的定时器
+  // 鐢ㄤ簬闃叉姈鐨勫畾鏃跺櫒
   private __updateTimer__: ReturnType<typeof setTimeout> | null = null;
 
   /**
-   * 触发更新回调（带防抖）
-   * @private
+   * @description: 瑙﹀彂鏇存柊鍥炶皟锛堝甫闃叉姈锛?   * @private
    */
   public triggerUpdate(): void {
-    // 清除之前的定时器
+    // 娓呴櫎涔嬪墠鐨勫畾鏃跺櫒
     if (this.__updateTimer__) {
       clearTimeout(this.__updateTimer__);
     }
 
-    // 设置新的定时器，延迟执行更新回调
+    // 璁剧疆鏂扮殑瀹氭椂鍣紝寤惰繜鎵ц鏇存柊鍥炶皟
     this.__updateTimer__ = setTimeout(() => {
-      // 计算并更新全局上传速率
-      this.uploadSpeed = this.calculateGlobalUploadSpeed();
-
       this.updateCallback?.([...this.files]);
-    }, 100); // 100ms 防抖延迟
-  }
-
-  /**
-   * 计算全局上传速率(所有文件的聚合)
-   * @returns 全局速率对象
-   * @private
-   */
-  private calculateGlobalUploadSpeed(): {
-    currentSpeed: number;
-    averageSpeed: number;
-    currentSpeedFormatted: string;
-    averageSpeedFormatted: string;
-  } {
-    let totalCurrentSpeed = 0;
-    let totalAverageSpeed = 0;
-    let uploadingFileCount = 0;
-
-    // 遍历所有正在上传的文件,累加速率
-    this.files.forEach((file) => {
-      if (file.status === "uploading" && file.uploadSpeed) {
-        totalCurrentSpeed += file.uploadSpeed.currentSpeed;
-        totalAverageSpeed += file.uploadSpeed.averageSpeed;
-        uploadingFileCount++;
-      }
-    });
-
-    const avgSpeed =
-      uploadingFileCount > 0 ? totalAverageSpeed / uploadingFileCount : 0;
-
-    return {
-      currentSpeed: totalCurrentSpeed,
-      averageSpeed: avgSpeed,
-      currentSpeedFormatted: formatSpeed(totalCurrentSpeed),
-      averageSpeedFormatted: formatSpeed(avgSpeed),
-    };
-  }
-  /* 
-  清空文件
-*/
-  public clearFiles() {
-    this.files.forEach((file) => {
-      file.abort?.();
-    });
-    this.files = [];
-    this.files = [];
-    Uploader.fileIndex = 0;
-    Uploader.uploadFile = null;
-    Uploader.objectUrls = [];
-    this.triggerUpdate();
+    }, 100); // 100ms 闃叉姈寤惰繜
   }
 
   constructor(config?: FileUDConfigs) {
@@ -159,13 +82,13 @@ export default class Uploader<T = any> extends EventEmitter {
         this.config = mergeObjects(Uploader.baseConfig, config);
         Uploader.instances = this.create(this.config);
       }
-      return Uploader.instances!;
+      return Uploader.instances;
     } catch (error: any) {
       throw new Error(`Failed to initialize uploader: ${error.message}`);
     }
   }
   /**
-   * @description: 打开文件
+   * @description: 鎵撳紑鏂囦欢
    * @param {OpenFileCallback} fn
    * @return {*}
    */
@@ -180,43 +103,43 @@ export default class Uploader<T = any> extends EventEmitter {
     }
   }
   /**
-   * 注册插件
-   * @param plugin 插件实例
-   * @param options 插件配置
+   * 娉ㄥ唽鎻掍欢
+   * @param plugin 鎻掍欢瀹炰緥
+   * @param options 鎻掍欢閰嶇疆
    */
   use(plugin: IUploaderPlugin | IUploaderPlugin[], options?: any): this {
     const plugins = Array.isArray(plugin) ? plugin : [plugin];
 
     for (const p of plugins) {
-      // 检查是否已注册
+      // 妫€鏌ユ槸鍚﹀凡娉ㄥ唽
       if (this.plugins.some((existing) => existing.name === p.name)) {
-        console.warn(`插件 ${p.name} 已存在，跳过注册`);
+        console.warn(`鎻掍欢 ${p.name} 宸插瓨鍦紝璺宠繃娉ㄥ唽`);
         continue;
       }
 
-      // 调用插件的 install 方法
+      // 璋冪敤鎻掍欢鐨?install 鏂规硶
       if (p.install) {
         p.install(this, options);
       }
       p.created?.(this);
       this.plugins.push(p);
-      console.log(`✅ 插件已注册: ${p.name} v${p.version || "1.0.0"}`);
+      console.log(`鉁?鎻掍欢宸叉敞鍐? ${p.name} v${p.version || "1.0.0"}`);
     }
 
-    // 按优先级排序
+    // 鎸変紭鍏堢骇鎺掑簭
     this.plugins.sort((a, b) => (a.priority || 50) - (b.priority || 50));
 
     return this;
   }
   /**
-   * 设置全局默认插件（影响之后创建的所有实例）
+   * 璁剧疆鍏ㄥ眬榛樿鎻掍欢锛堝奖鍝嶄箣鍚庡垱寤虹殑鎵€鏈夊疄渚嬶級
    */
   static setDefaultPlugins(plugins: IUploaderPlugin[]): void {
     Uploader.defaultPlugins = plugins;
   }
   /**
-   * 移除插件
-   * @param name 插件名称
+   * 绉婚櫎鎻掍欢
+   * @param name 鎻掍欢鍚嶇О
    */
   unuse(name: string): this {
     const index = this.plugins.findIndex((p) => p.name === name);
@@ -224,14 +147,14 @@ export default class Uploader<T = any> extends EventEmitter {
       const plugin = this.plugins[index];
       plugin.destroy?.();
       this.plugins.splice(index, 1);
-      console.log(`🗑️ 插件已移除: ${name}`);
+      console.log(`馃棏锔?鎻掍欢宸茬Щ闄? ${name}`);
     }
     return this;
   }
 
   /**
-   * 获取插件
-   * @param name 插件名称
+   * 鑾峰彇鎻掍欢
+   * @param name 鎻掍欢鍚嶇О
    */
   getPlugin(name?: string): IUploaderPlugin | IUploaderPlugin[] | undefined {
     if (name) {
@@ -241,9 +164,9 @@ export default class Uploader<T = any> extends EventEmitter {
   }
 
   /**
-   * 执行插件钩子
-   * @param hook 钩子名称
-   * @param args 参数
+   * 鎵ц鎻掍欢閽╁瓙
+   * @param hook 閽╁瓙鍚嶇О
+   * @param args 鍙傛暟
    */
   private async runHook<K extends keyof IUploaderPlugin>(
     hook: K,
@@ -265,19 +188,10 @@ export default class Uploader<T = any> extends EventEmitter {
   private init() {
     this.lastLoadedMap = new Map();
     this.id = id++;
-    // 继承默认插件
+    // 缁ф壙榛樿鎻掍欢
     this.plugins = [...Uploader.defaultPlugins];
     this.uploadedBytes = 0;
-    this.totalBytes = 0;
-    this.uploadSpeed = {
-      currentSpeedFormatted: "",
-      averageSpeedFormatted: "",
-      currentSpeed: 0,
-      averageSpeed: 0,
-    };
-    this.totalPercent = 0;
-    this.totalProgress = 0;
-    this.uploadFiles = [];
+    this.totalSize = "0";
     this.events = new Map<EventName, Set<Function>>();
     this.files = [];
   }
@@ -287,7 +201,7 @@ export default class Uploader<T = any> extends EventEmitter {
     input.setAttribute("hidden", Boolean(this.config?.show).toString());
     input.accept = this.config?.accept?.toString() || "*";
     this.plugins = [];
-    console.info("创建文件输入框");
+    console.info("鍒涘缓鏂囦欢杈撳叆妗?);
 
     input.multiple = this.config?.multiple || false;
     this.inputHTML = input;
@@ -327,19 +241,9 @@ export default class Uploader<T = any> extends EventEmitter {
   set onSelect(callback: SelectCallBack) {
     this.selectCallback = callback;
   }
-
   set onUpdate(callback: UpdateCallBack) {
     this.updateCallback = callback;
   }
-
-  set onInit(callback: OnInitCallBack) {
-    this.onInitCallback = callback;
-  }
-
-  set onMerge(callback: OnMergeCallBack) {
-    this.onMergeCallback = callback;
-  }
-
   public remObjectUrls(url: string) {
     Uploader.objectUrls.splice(
       Uploader.objectUrls.findIndex((item) => item === url),
@@ -348,55 +252,45 @@ export default class Uploader<T = any> extends EventEmitter {
   }
 
   /**
-   * @description: 手动提交上传所有文件（当 autoUpload 为 false 时）
+   * @description: 鎵嬪姩鎻愪氦涓婁紶鎵€鏈夋枃浠讹紙褰?autoUpload 涓?false 鏃讹級
    * @return {Promise<void>}
    */
   public async submit(): Promise<void> {
-    // 检查是否有待上传的文件
+    // 妫€鏌ユ槸鍚︽湁寰呬笂浼犵殑鏂囦欢
     if (this.files.length === 0) {
-      console.warn("没有待上传的文件");
+      console.warn("娌℃湁寰呬笂浼犵殑鏂囦欢");
       return Promise.resolve();
     }
-
-    // 如果是第一次调用 submit，触发批量开始事件
-    const isFirstBatch =
-      this.uploadFiles.filter((f) => f.status === "uploading").length === 0;
-    if (isFirstBatch) {
-      this.emit("file-start", this.files);
-    }
+    // 瑙﹀彂鎵归噺寮€濮嬩簨浠?    this.emit("batch-start", this.files);
 
     try {
-      // 并行上传所有文件，每个文件状态独立
-      const uploadPromises = this.files.map((file) => {
-        // 如果文件已经是成功或上传中状态，跳过
+      // 骞惰涓婁紶鎵€鏈夋枃浠讹紝姣忎釜鏂囦欢鐘舵€佺嫭绔?      const uploadPromises = this.files.map((file) => {
+        // 濡傛灉鏂囦欢宸茬粡鏄垚鍔熸垨涓婁紶涓姸鎬侊紝璺宠繃
         if (file.status === "success" || file.status === "uploading") {
           return Promise.resolve();
         }
-
-        // 直接开始上传，由 UploadFile 内部管理 ChunkManager
-        return file.upload();
+        // 鐩存帴寮€濮嬩笂浼狅紝涓嶆墽琛屾彃浠堕挬瀛?        return file.upload();
       });
 
-      // 等待当前批次的文件上传完成
-      await Promise.allSettled(uploadPromises);
+      // 绛夊緟鎵€鏈夋枃浠朵笂浼犲畬鎴?      await Promise.all(uploadPromises);
 
-      // 触发批量完成事件
-      this.emit("batch-complete");
+      // 瑙﹀彂鎵归噺瀹屾垚浜嬩欢
+      this.emit("batch-complete", this.files);
+      console.info("鎵€鏈夋枃浠朵笂浼犲畬鎴?);
     } catch (error) {
-      console.error("批量上传失败:", error);
-      this.emit("error", error);
+      console.error("鎵归噺涓婁紶杩囩▼涓彂鐢熼敊璇?", error);
+      throw error;
     }
   }
 
   /**
-   * 处理文件选择（内部方法）
+   * 澶勭悊鏂囦欢閫夋嫨锛堝唴閮ㄦ柟娉曪級
    */
   private async processSelectedFiles(files: File[]) {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
 
-      // 创建插件上下文
-      const pluginContext = {
+      // 鍒涘缓鎻掍欢涓婁笅鏂?      const pluginContext = {
         uploader: this,
         shared: new Map(),
         config: this.config,
@@ -419,7 +313,7 @@ export default class Uploader<T = any> extends EventEmitter {
       let processedFile: UploadFile | null = null;
 
       try {
-        // 执行插件钩子
+        // 鎵ц鎻掍欢閽╁瓙
         const selectResults = await this.runHook(
           "onFileSelect",
           uploadFileInstance,
@@ -428,15 +322,14 @@ export default class Uploader<T = any> extends EventEmitter {
         processedFile =
           selectResults.filter((r) => r instanceof UploadFile).pop() || null;
         if (processedFile instanceof UploadFile) {
-          // 更新实例的引用
-          Object.assign(uploadFileInstance, processedFile);
+          // 鏇存柊瀹炰緥鐨勫紩鐢?          Object.assign(uploadFileInstance, processedFile);
         }
       } catch (error) {
-        console.error("处理选中文件时发生错误:", error);
-        continue;
+        console.error("澶勭悊閫変腑鏂囦欢鏃跺彂鐢熼敊璇?", error);
+        return [];
       }
-      Uploader.uploadFile = uploadFileInstance;
-      // 调用选择回调
+
+      // 璋冪敤閫夋嫨鍥炶皟
       if (this.selectCallback) {
         try {
           const result = await this.selectCallback.call(this, file);
@@ -448,8 +341,7 @@ export default class Uploader<T = any> extends EventEmitter {
         }
       }
 
-      // 大小限制检查
-      if (
+      // 澶у皬闄愬埗妫€鏌?      if (
         this.config?.maxSize &&
         !validator.size(file.size, this.config.maxSize)
       ) {
@@ -457,10 +349,9 @@ export default class Uploader<T = any> extends EventEmitter {
           "error",
           Errors.fileTooLarge.call(this, this.config?.maxSize),
         );
-        continue;
+        return [];
       }
-      // 类型限制检查
-      if (
+      // 绫诲瀷闄愬埗妫€鏌?      if (
         this.config?.accept?.toString() &&
         !validator.type(this.config?.accept, uploadFileInstance)
       ) {
@@ -471,13 +362,12 @@ export default class Uploader<T = any> extends EventEmitter {
             fileName: file.name,
           }),
         );
-        continue;
+        return [];
       }
 
-      // 保存插件上下文
-      (uploadFileInstance as any).__pluginContext = pluginContext;
+      // 淇濆瓨鎻掍欢涓婁笅鏂?      (uploadFileInstance as any).__pluginContext = pluginContext;
 
-      // 生成预览 URL
+      // 鐢熸垚棰勮 URL
       handleFile(uploadFileInstance.File).then((url) => {
         uploadFileInstance.url = url;
         Uploader.objectUrls.push(url);
@@ -503,11 +393,9 @@ export default class Uploader<T = any> extends EventEmitter {
       const shouldContinue = beforeResults.every((r) => r !== false);
       if (!shouldContinue) continue;
 
-      // 添加到文件列表
-      this.files.push(uploadFileInstance);
-      this.uploadFiles.push(uploadFileInstance);
+      // 娣诲姞鍒版枃浠跺垪琛?      this.files.push(uploadFileInstance);
 
-      // 自动上传：调用 submit 方法
+      // 鑷姩涓婁紶
       if (this.config?.autoUpload) {
         this.submit();
       }

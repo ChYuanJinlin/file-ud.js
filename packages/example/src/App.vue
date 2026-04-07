@@ -61,8 +61,10 @@ window.FileUD = FileUD;
 <template>
   <div>
     <button @click="submit()">提交</button>
+    总的大小:{{ test1.totalBytes }} 总进度:{{ test1.totalPercent }} 总速度:{{ test1.uploadSpeed?.averageSpeedFormatted }}
     <div v-for="item in files" :key="item.fileId">
       进度{{ item.percent }} 状态{{ item.status }} 文件名{{ item.fileName }}
+
       <img
         style="width: 200px; height: 200px"
         :src="item.url"
