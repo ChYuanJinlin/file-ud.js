@@ -376,7 +376,7 @@ export const Errors = {
       "error",
       new FileUDError(
         ErrorCode.FILE_TOO_LARGE,
-        `文件大小 ${Uploader.uploadFile.formatSize} 超过限制 ${formatFileSize(maxSize)}`,
+        `文件大小 ${Uploader.uploadFile?.formatSize} 超过限制 ${formatFileSize(maxSize)}`,
         { suggestion: "请选择更小的文件", uploader: this },
       ),
     );

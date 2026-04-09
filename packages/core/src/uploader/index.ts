@@ -24,6 +24,8 @@ import {
   generateFileId,
   getFileExtension,
   handleFile,
+  initLogger,
+  logger,
   mergeObjects,
   validator,
 } from "../utils";
@@ -211,6 +213,17 @@ export default class Uploader<T = any> extends EventEmitter {
     try {
       if (!Uploader.instances) {
         this.config = mergeObjects(Uploader.baseConfig, config);
+        
+        // 初始化日志配置
+        if (this.config.logConfig) {
+          initLogger({
+            enabled: this.config.logConfig.enabled ?? true,
+            level: this.config.logConfig.level,
+            showTimestamp: this.config.logConfig.showTimestamp,
+            enableColors: this.config.logConfig.enableColors,
+          });
+        }
+        
         Uploader.instances = this.create(this.config);
       }
       return Uploader.instances!;
@@ -227,7 +240,7 @@ export default class Uploader<T = any> extends EventEmitter {
     if (this.inputHTML) {
       this.inputHTML.click();
     } else {
-      console.warn("The uploader does not exist. Please create one");
+      logger.warn('Uploader', 'The uploader does not exist. Please create one');
     }
     if (fn) {
       this.openCallBack = fn;
@@ -377,13 +390,16 @@ export default class Uploader<T = any> extends EventEmitter {
 
     return this;
   }
-
+  public updateConfig(config: Partial<FileUDConfigs> ) {
+    this.config = mergeObjects(this.config!, config);
+  }
   set onBeforeUpload(callback: BeforeUploadCallBack) {
     this.beforeUploadCallback = callback;
   }
 
   set onSuccess(callback: UploadSuccessCallBack<T>) {
     this.uploadSuccessCallback = callback;
+    
   }
 
   set onSelect(callback: SelectCallBack) {
@@ -436,30 +452,29 @@ export default class Uploader<T = any> extends EventEmitter {
       };
     }
 
-    try {
-      // 并行上传所有文件
-      const uploadPromises = this.files.map(async (file) => {
+    // 并行上传所有文件
+    const uploadPromises = this.files.map(async (file) => {
+      try {
         // 如果文件已经是成功或上传中状态，跳过
         if (file.status === "success" || file.status === "uploading") {
           return Promise.resolve();
         }
 
         // 直接开始上传，由 UploadFile 内部管理 ChunkManager
-        return file.chunkManager
+        return await (file.chunkManager
           ? file.chunkManager.startUpload()
-          : file.upload();
-      });
-
-      await Promise.all(uploadPromises);
-      if (!this.uploadFiles.length) {
-        this.emit("files-complete", this.files);
+          : file.upload());
+      } catch (error) {
+        console.error(file.fileName + "文件上传失败:", error);
       }
-      this.lastLoadedMap.clear();
+    });
+
+    await Promise.all(uploadPromises);
+    if (!this.uploadFiles.length) {
+      this.emit("files-complete", this.files);
       console.log("所有文件上传完成");
-    } catch (error) {
-      console.error("批量上传失败:", error);
-      this.emit("error", error);
     }
+    this.lastLoadedMap.clear();
   }
 
   /**

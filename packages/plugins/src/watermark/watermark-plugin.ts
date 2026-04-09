@@ -144,12 +144,13 @@ export class WatermarkPlugin extends BasePlugin {
     const textWidth = ctx.measureText(text).width;
     const padding = this.options.padding;
 
-    // 计算位置
+    // 计算位置（传入 padding 参数）
     const { x, y } = this.calculatePosition(
       ctx,
       canvas,
       textWidth,
       this.options.fontSize,
+      padding,
     );
 
     // 绘制文字水印
@@ -196,12 +197,15 @@ export class WatermarkPlugin extends BasePlugin {
         drawWidth = (watermarkImg.width / watermarkImg.height) * drawHeight;
       }
 
-      // 计算位置
+      const padding = this.options.padding;
+
+      // 计算位置（传入 padding 参数）
       const { x, y } = this.calculatePosition(
         ctx,
         canvas,
         drawWidth,
         drawHeight,
+        padding,
       );
 
       // 绘制图片水印
@@ -235,26 +239,27 @@ export class WatermarkPlugin extends BasePlugin {
     canvas: HTMLCanvasElement,
     width: number,
     height: number,
+    padding?: number,
   ): { x: number; y: number } {
-    const padding = this.options.padding;
+    const pad = padding ?? this.options.padding;
     let x: number, y: number;
 
     switch (this.options.position) {
       case "top-left":
-        x = padding;
-        y = padding;
+        x = pad;
+        y = pad;
         break;
       case "top-right":
-        x = canvas.width - width - padding;
-        y = padding;
+        x = canvas.width - width - pad;
+        y = pad;
         break;
       case "bottom-left":
-        x = padding;
-        y = canvas.height - height - padding;
+        x = pad;
+        y = canvas.height - height - pad;
         break;
       case "bottom-right":
-        x = canvas.width - width - padding;
-        y = canvas.height - height - padding;
+        x = canvas.width - width - pad;
+        y = canvas.height - height - pad;
         break;
       default: // center
         x = (canvas.width - width) / 2;

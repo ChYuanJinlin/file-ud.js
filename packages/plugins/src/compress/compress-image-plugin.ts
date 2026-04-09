@@ -15,6 +15,10 @@ export interface ImageCompressPluginOptions {
   format?: "jpeg" | "png" | "webp";
   /** 是否显示压缩信息 */
   showInfo?: boolean;
+  /** 压缩开始时触发 */
+  onCompressStart?: (file: UploadFile) => void;
+  /** 压缩完成时触发 */
+  onCompressComplete?: (file: UploadFile, compressedFile: File) => void;
 }
 
 export class CompressImagePlugin extends BasePlugin {
@@ -26,8 +30,17 @@ export class CompressImagePlugin extends BasePlugin {
     quality: 0.8,
     maxWidth: 1920,
     maxHeight: 1080,
-    format: "webp",
+    format: "jpeg",
     showInfo: true,
+    onCompressStart: function (file: UploadFile): void {
+      throw new Error("Function not implemented.");
+    },
+    onCompressComplete: function (
+      file: UploadFile,
+      compressedFile: File,
+    ): void {
+      throw new Error("Function not implemented.");
+    },
   };
 
   constructor(options: ImageCompressPluginOptions = {}) {
@@ -47,6 +60,7 @@ export class CompressImagePlugin extends BasePlugin {
     const originalSize = uploadFile.File.size;
 
     try {
+      this.options.onCompressStart?.(uploadFile);
       const compressedFile = await this.compressImage(uploadFile.File);
       const compressedSize = compressedFile.size;
       const ratio = (
@@ -61,6 +75,7 @@ export class CompressImagePlugin extends BasePlugin {
       }
 
       uploadFile.proxy.File = compressedFile;
+      this.options.onCompressComplete?.(uploadFile, compressedFile);
       uploadFile.proxy.formatSize = formatFileSize(compressedSize);
       return uploadFile;
     } catch (error) {

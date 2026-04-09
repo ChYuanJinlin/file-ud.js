@@ -10,10 +10,17 @@ import {
 import { ref } from "vue";
 import Uploader from "@file-ud.js/core/uploader";
 import { IFile } from "@file-ud.js/core/types";
-const isChunk = ref(false);
+import { uploadMonitor } from "@file-ud.js/core/utils";
+const isChunk = ref(true);
 const test1 = FileUD.createUploader("test1", {
-  action: "/upload-chunk",
+  action: "/api/upload-chunk",
   file: "file",
+  logConfig: {
+    enabled: true,
+    level: 2, // WARN
+    showTimestamp: true,
+    enableColors: false, // 生产环境禁用颜色
+  },
   // file(obj, formData) {
   //   formData.append("file", obj.chunkManager?.chunk!);
   //   formData.append("fileName", obj.File.name);
@@ -35,13 +42,28 @@ const files = ref<IFile[]>([]);
 Uploader.onError = (err) => {
   console.log("🚀 ~ err:1", err);
 };
+test1.on("files-complete", (fileList) => {
+  uploadMonitor.printReport();
+});
 test1.onSuccess = (res) => {
   console.log(res);
 };
 test1.onUpdate = (fileList) => {
   files.value = fileList;
 };
-
+const handlerChunk = () => {
+  if (isChunk.value) {
+    test1.updateConfig({
+      chunkOptions: null,
+    });
+    isChunk.value = false;
+  } else {
+    isChunk.value = true;
+    test1.updateConfig({
+      chunkOptions: {},
+    });
+  }
+};
 getFileList({
   page: 1,
   pageSize: 10,
@@ -71,7 +93,7 @@ window.FileUD = FileUD;
   <div>
     <button @click="submit()">提交</button>
     <button @click="test1.clearFiles()">清除文件列表</button>
-    <button @click="isChunk = !isChunk">
+    <button @click="handlerChunk">
       {{ isChunk ? "普通上传" : "大文件上传" }}
     </button>
     <button @click="test1.clearFiles()">全部暂停</button>

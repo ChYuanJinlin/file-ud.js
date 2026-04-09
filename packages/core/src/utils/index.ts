@@ -2,6 +2,25 @@ import { IFile } from "../types";
 import Uploader from "../uploader";
 import UploadFile from "../uploader/UploadFile";
 
+// 导出日志工具
+export { 
+  logger, 
+  initLogger, 
+  setLogLevel, 
+  LogLevel,
+  addLogCollector,
+  clearLogCollectors,
+} from "./logger";
+export type { 
+  LoggerOptions, 
+  LogEntry, 
+  LogCollectorCallback 
+} from "./logger";
+
+// 导出上传监控工具
+export { uploadMonitor } from "./upload-monitor";
+export type { UploadStats, UploadRecord } from "./upload-monitor";
+
 export function generateFileId() {
   const timestamp = Date.now().toString(36);
   const random = Math.random().toString(36).substring(2, 10);

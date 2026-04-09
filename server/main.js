@@ -99,8 +99,8 @@ app.post("/upload-chunk", upload.single("file"), (req, res) => {
   const { chunkIndex, totalChunks, fileName } = req.body;
   console.log(`接收到分片: ${fileName} - chunkIndex ${chunkIndex}/${totalChunks}`);
   console.log("分片文件信息:", req.file);
-   return res.status(400).json({ success: false, message: "没有文件分片" });
-  if (req.file) {
+  //  return res.status(400).json({ success: false, message: "没有文件分片" });
+  if (!req.file) {
     return res.status(400).json({ success: false, message: "没有文件分片" });
   }
 
@@ -109,6 +109,8 @@ app.post("/upload-chunk", upload.single("file"), (req, res) => {
   const filePath = path.join("uploads", chunkFileName);
   
   fs.rename(req.file.path, filePath, (err) => {
+    console.log("🚀 ~ err:", err)
+    
     if (err) {
       return res.status(500).json({ success: false, message: "保存分片失败" });
     }

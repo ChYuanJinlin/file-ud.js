@@ -11,6 +11,7 @@ import {
   createReactiveUploadFile,
   formatSpeed,
   formatDuration,
+  logger,
 } from "../utils";
 import { ErrorCode, FileUDError } from "../fileUD/errors";
 
@@ -219,16 +220,16 @@ export default class UploadFile<T = any> {
 
     // 分片上传: 使用当前文件的 ChunkManager 重试失败分片
     if (up.config?.chunkOptions && this.chunkManager) {
-      console.log(`文件 ${this.fileName} 开始重试分片上传...`);
+      logger.info("UploadFile", `文件 ${this.fileName} 开始重试分片上传`);
       this.chunkManager.retryFailedChunks().catch((err: any) => {
-        console.error(`文件 ${this.fileName} 重试失败:`, err);
+        logger.error("UploadFile", `文件 ${this.fileName} 重试失败`, err);
         this.onError(err);
       });
     } else {
       // 普通上传: 重新调用 upload 方法
-      console.log(`文件 ${this.fileName} 开始重试普通上传...`);
+      logger.info("UploadFile", `文件 ${this.fileName} 开始重试普通上传`);
       this.upload().catch((err: any) => {
-        console.error(`文件 ${this.fileName} 重试失败:`, err);
+        logger.error("UploadFile", `文件 ${this.fileName} 重试失败`, err);
         this.onError(err);
       });
     }
@@ -259,7 +260,8 @@ export default class UploadFile<T = any> {
    */
   pause(): void {
     if (this.proxy.status !== "uploading") {
-      console.warn(
+      logger.warn(
+        "UploadFile",
         `文件 ${this.fileName} 当前状态为 ${this.proxy.status},无法暂停`,
       );
       return;
@@ -273,7 +275,7 @@ export default class UploadFile<T = any> {
       this.proxy.status = "paused";
       if (this.abort) {
         this.abort();
-        console.log(`普通上传已暂停: ${this.fileName}`);
+        logger.info("UploadFile", `普通上传已暂停: ${this.fileName}`);
       }
     }
   }
@@ -301,7 +303,8 @@ export default class UploadFile<T = any> {
    */
   async resume(): Promise<void> {
     if (this.proxy.status !== "paused") {
-      console.warn(
+      logger.warn(
+        "UploadFile",
         `文件 ${this.fileName} 当前状态为 ${this.proxy.status},无法恢复`,
       );
       return;
@@ -312,17 +315,17 @@ export default class UploadFile<T = any> {
       await this.chunkManager.resume();
     } else {
       // 普通上传需要重新开始
-      console.log(`普通上传将重新开始: ${this.fileName}`);
+      logger.info("UploadFile", `普通上传将重新开始: ${this.fileName}`);
       await this.upload();
     }
   }
 
-  setFile(file: File | Blob) {
+  setFile(file: File | Blob, formData: FormData) {
     const up = this.__uploader__;
     if (typeof up.config?.file === "function") {
-      up.config?.file(this, this.formData!);
+      up.config?.file(this, formData);
     } else {
-      this.formData?.append(up.config?.file!, file);
+      formData.append(up.config?.file!, file);
     }
   }
 
@@ -337,6 +340,14 @@ export default class UploadFile<T = any> {
         console.warn("请设置上传地址");
         return;
       }
+
+      // ✅ 记录上传开始（用于监控模块追踪）
+      logger.info("UploadFile", `开始上传文件: ${this.fileName}`, {
+        fileId: this.fileId,
+        fileName: this.fileName,
+        fileSize: this.File.size,
+        isChunkUpload: !!this.chunkManager,
+      });
 
       // 记录上传开始时间
       const now = Date.now();
@@ -355,7 +366,7 @@ export default class UploadFile<T = any> {
 
       if (!this.chunkManager) {
         this.formData = new FormData();
-        this.setFile(this.File);
+        this.setFile(this.File, this.formData);
       }
 
       if (up.beforeUploadCallback) {
@@ -382,14 +393,17 @@ export default class UploadFile<T = any> {
 
       let promise: Promise<T>;
       // 使用外部函数 - 设置拦截器后发起请求
-
+      const requestData = this.formData || new FormData();
       if (typeof up.config?.action === "string") {
         // 直接使用用户配置的 action URL
         // 如果是分片上传，用户可以通过 onInit/onMerge 回调自定义逻辑
         // 这里的 action 就是最终的分片上传地址
-        promise = (up.config.axiosInstance || axios).post<T>(up.config.action);
+        promise = (up.config.axiosInstance || axios).post<T>(
+          up.config.action,
+          requestData,
+        );
       } else {
-        promise = up.config?.action.call(up) as Promise<any>;
+        promise = up.config?.action(requestData, this);
       }
 
       promise
@@ -400,6 +414,7 @@ export default class UploadFile<T = any> {
             this.proxy.status = "success";
           }
           this.onScuccess(res);
+          resolve(res);
         })
         .catch((err) => {
           if (!this.chunkManager) {
@@ -408,6 +423,7 @@ export default class UploadFile<T = any> {
             up.totalPercent = 0;
           }
           this.onError(err);
+          reject(err);
         })
         .finally(() => {
           // 记录上传结束时间和耗时
@@ -430,18 +446,30 @@ export default class UploadFile<T = any> {
 
     up["runHook"]("onSuccess", res, this, this.context);
     up.uploadSuccessCallback?.(res, this.proxy);
-
     up.uploadFiles.splice(up.uploadFiles.indexOf(this), 1);
     up.remObjectUrls(this.url);
-    this.resolve?.(res);
-    console.info("文件上传成功", res);
+    
+    // ✅ 修复：添加 fileId 到日志参数中，供监控模块提取
+    logger.info("UploadFile", `文件上传成功: ${this.fileName}`, {
+      fileId: this.fileId,
+      fileName: this.fileName,
+      fileSize: this.File.size,
+    });
   }
+  
   public onError(err: any) {
     const up = this.__uploader__;
+    
+    // ✅ 修复：添加 fileId 到错误日志中，供监控模块提取
+    logger.error("UploadFile", `文件上传失败: ${this.fileName}`, {
+      fileId: this.fileId,
+      fileName: this.fileName,
+      fileSize: this.File.size,
+      error: err.message || err,
+    });
+    
     up["runHook"]("onError", err, this, this.context);
     up.emit("error", new FileUDError(ErrorCode.UPLOAD_FAILED, err).toJSON());
-
-    this.reject?.(err);
   }
 
   /**
@@ -473,27 +501,32 @@ export default class UploadFile<T = any> {
     // 分片上传: 由 ChunkManager 统一处理进度
 
     // 普通上传: 直接计算百分比
-    if (event.total) {
-      this.proxy.percent = Math.round((event.loaded * 100) / event.total);
+
+    if (!this.chunkManager) {
+      if (event.total) {
+        this.proxy.percent = Math.floor((event.loaded * 100) / event.total);
+      }
+
+      // 计算总进度：使用 lastLoadedMap 避免重复累加
+      const lastLoaded = up.lastLoadedMap.get(this.fileId) || 0;
+      const deltaLoaded = loaded - lastLoaded;
+      // 只累加增量部分
+      if (deltaLoaded > 0) {
+        up.totalProgress += deltaLoaded;
+        up.lastLoadedMap.set(this.fileId, loaded);
+      }
+
+      // 计算总进度百分比
+      up.totalPercent =
+        up.totalBytes > 0
+          ? Math.round((up.totalProgress / up.totalBytes) * 100)
+          : percent;
     }
 
-    // 计算总进度：使用 lastLoadedMap 避免重复累加
-    const lastLoaded = up.lastLoadedMap.get(this.fileId) || 0;
-    const deltaLoaded = loaded - lastLoaded;
-    // 只累加增量部分
-    if (deltaLoaded > 0) {
-      up.totalProgress += deltaLoaded;
-      up.lastLoadedMap.set(this.fileId, loaded);
-    }
+    // 触发进度事件,通知外部监听器
     // 计算并更新当前文件的上传速率
     // 内部包含防抖逻辑(100ms 最小间隔)
     this.calculateSpeed(event.loaded);
-    // 计算总进度百分比
-    up.totalPercent =
-      up.totalBytes > 0
-        ? Math.round((up.totalProgress / up.totalBytes) * 100)
-        : percent;
-    // 触发进度事件,通知外部监听器
     up.emit("progress", up.totalPercent);
   }
 
@@ -505,13 +538,6 @@ export default class UploadFile<T = any> {
    *
    * @param loadedBytes - 当前已上传的字节数
    *
-   * @example
-   * ```typescript
-   * // XHR progress 事件中调用
-   * xhr.upload.onprogress = (event) => {
-   *   this.calculateSpeed(event.loaded);
-   * };
-   * ```
    *
    * @private
    */
@@ -590,7 +616,7 @@ export default class UploadFile<T = any> {
         // 拦截 send - 这是关键！
         const originalSend = xhr.send;
         xhr.send = function (body?: any) {
-          // 优先从请求体获取 formData
+          // ✅ 修复：优先使用 body 中的 formData（axios 传递的，不会被并发覆盖）
           let formDataToSend = body;
 
           // 优先从 WeakMap 获取关联的文件实例
@@ -601,20 +627,10 @@ export default class UploadFile<T = any> {
             !currentFileInstance &&
             UploadFile.currentUploadQueue.length > 0
           ) {
-            // 从队列中找到第一个未被分配的文件
             for (const file of UploadFile.currentUploadQueue) {
-              if (!UploadFile.assignedFiles.has(file)) {
-                currentFileInstance = file;
-                UploadFile.xhrToFileMap.set(xhr, file);
-                UploadFile.assignedFiles.add(file);
-                break;
-              }
-            }
-
-            // 如果所有文件都被分配了，使用第一个文件（覆盖）
-            if (!currentFileInstance) {
-              currentFileInstance = UploadFile.currentUploadQueue[0];
-              UploadFile.xhrToFileMap.set(xhr, currentFileInstance);
+              currentFileInstance = file;
+              UploadFile.xhrToFileMap.set(xhr, file);
+              break;
             }
           }
 
@@ -633,9 +649,29 @@ export default class UploadFile<T = any> {
             });
           }
 
-          // 使用当前文件的 formData（如果存在）
-          if (currentFileInstance?.formData) {
+          // ✅ 修复：只有当 body 中没有 formData 时，才从实例获取（兜底逻辑）
+          if (!formDataToSend && currentFileInstance?.formData) {
             formDataToSend = currentFileInstance.formData;
+
+            logger.debug("UploadFile", "拦截器从实例获取 formData（兜底）", {
+              hasFormData: true,
+              chunkIndex: currentFileInstance.formData.get("chunkIndex"),
+              fileName: currentFileInstance.formData.get("fileName"),
+            });
+          } else if (formDataToSend instanceof FormData) {
+            // body 中有 formData，记录日志
+            logger.debug("UploadFile", "拦截器使用 body 中的 formData", {
+              hasFormData: true,
+              chunkIndex: formDataToSend.get("chunkIndex"),
+              fileName: formDataToSend.get("fileName"),
+            });
+          } else {
+            logger.warn("UploadFile", "拦截器未找到 formData", {
+              hasBody: !!body,
+              isBodyFormData: body instanceof FormData,
+              hasCurrentFile: !!currentFileInstance,
+              hasInstanceFormData: !!currentFileInstance?.formData,
+            });
           }
 
           // 绑定进度回调到当前文件实例
@@ -653,8 +689,11 @@ export default class UploadFile<T = any> {
               }
             };
           }
-
-          return originalSend.call(this, formDataToSend);
+          try {
+            return originalSend.call(this, formDataToSend);
+          } catch (error) {
+            logger.error("UploadFile", "XHR 发送失败", error);
+          }
         };
 
         return xhr;
@@ -667,7 +706,7 @@ export default class UploadFile<T = any> {
       window.XMLHttpRequest = XHRProxy;
       Uploader.isInterceptorInstalled = true;
 
-      console.log("✅ 全局 XHR 拦截器已安装");
+      logger.debug("UploadFile", "全局 XHR 拦截器已安装");
     }
 
     // 标记当前文件的拦截器已激活
