@@ -214,7 +214,7 @@ export interface FileUDConfigs {
   /* 上传请求的头部信息 */
   headers?: Record<string, any>;
   /* 上传文件标识 */
-  file: string | ((uploadFile: UploadFile) => void);
+  file: string | ((uploadFile: UploadFile,formData: FormData) => void);
   /* 分片上传配置 */
   chunkOptions?: ChunkOptions | null;
   /* 可选：传入自定义 axios 实例 */
@@ -236,6 +236,12 @@ export interface PluginContext {
 
   /** 插件共享数据 */
   shared: Map<string, any>;
+
+  /** 当前操作状态（用于区分MD5计算、上传中等不同阶段） */
+  status?: "hashing" | "uploading" | "merging" | "success" | "error";
+
+  /** 状态描述信息（可选，用于显示给用户） */
+  message?: string;
 }
 /* 
 插件接口 每个插件需要实现 IUploaderPlugin 接口
@@ -285,6 +291,14 @@ export interface IUploaderPlugin {
   destroy?: () => void;
 }
 export type PluginConstructor = new (options?: any) => IUploaderPlugin;
+interface UploadProgress {
+  uploadedBytes: number; // 已上传字节数
+  totalBytes: number; // 总字节数
+  speed: number; // 上传速度 (bytes/s)
+  remainingTime: number; // 预计剩余时间 (秒)
+  startTime: number; // 开始时间
+  elapsedTime: number; // 已用时间 (秒)
+}
 /* 文件上传状态类型 */
 export interface IFile {
   /* 文件唯一标识符 */
@@ -297,12 +311,22 @@ export interface IFile {
   File: File;
   /* 文件上传的进度百分比 */
   percent?: number;
+  // 文件上传统计进度信息
+  progress?: UploadProgress;
   /* 文件扩展名 */
   extension?: string;
   /* 
   loading 状态
   */
   loading?: boolean;
+  /* 
+  文件效验 loading
+  */
+  hashLoading?: boolean;
+  /* 
+  hash 进度
+  */
+  hashPercent?: number;
   /* 文件大小 */
   formatSize?: string;
   /* 取消请求上传方法 */
@@ -314,7 +338,15 @@ export interface IFile {
   /* Uploader 对象 */
   __uploader__?: Uploader;
   /* 文件上传的状态 */
-  status?: "pending" | "uploading" | "paused" | "success" | "error" | "cancelled";
+  status?:
+    | "pending"
+    | "uploading"
+    | "paused"
+    | "success"
+    | "error"
+    | "cancelled"
+    | "merging"
+    | "hashing";
   uploadSpeed?: UploadSpeedInfo;
 }
 

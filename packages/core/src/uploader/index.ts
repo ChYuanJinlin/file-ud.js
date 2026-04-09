@@ -12,6 +12,7 @@ import {
   PluginContext,
   SelectCallBack,
   UpdateCallBack,
+  UploadProgress,
   UploadSpeedInfo,
   UploadSuccessCallBack,
   UploadTimeInfo,
@@ -38,14 +39,21 @@ const defaultConfig: FileUDConfigs = {
   action: "",
   file: "file",
 };
-let id = 0;
+
 export default class Uploader<T = any> extends EventEmitter {
   public inputHTML: HTMLInputElement | null;
   public files: UploadFile[] = [];
   public uploadFiles: UploadFile[] = [];
   public totalBytes: number = 0;
   public uploadedBytes: number = 0;
-
+  public progress: UploadProgress = {
+    uploadedBytes: 0,
+    totalBytes: 0,
+    speed: 0,
+    remainingTime: 0,
+    startTime: 0,
+    elapsedTime: 0,
+  };
   // 全局上传速率信息(静态属性)
   public uploadSpeed: UploadSpeedInfo = {
     currentSpeed: 0,
@@ -59,6 +67,7 @@ export default class Uploader<T = any> extends EventEmitter {
   public config: FileUDConfigs | null = null;
   public static instances: Uploader | null = null;
   public static uploadFile: UploadFile | null;
+
   // 标记是否已安装全局拦截器
   public static isInterceptorInstalled = false;
   public totalPercent: number = 0;
@@ -76,7 +85,8 @@ export default class Uploader<T = any> extends EventEmitter {
   // 添加拦截器相关属性
   public static originalXHR?: typeof XMLHttpRequest | null;
   public static interceptorActive = false;
-  private id: number = 0;
+  public static id: number = 0;
+  public id = 0;
   private plugins: IUploaderPlugin[] = [];
   private pluginSharedData = new Map<string, any>();
   public static onError: ErrorCallBack;
@@ -188,7 +198,6 @@ export default class Uploader<T = any> extends EventEmitter {
     this.files.forEach((file) => {
       file.abort?.();
     });
-    this.files = [];
     this.files = [];
     Uploader.fileIndex = 0;
     Uploader.uploadFile = null;
@@ -309,7 +318,7 @@ export default class Uploader<T = any> extends EventEmitter {
 
   private init() {
     this.lastLoadedMap = new Map();
-    this.id = id++;
+    this.id = Uploader.id++;
     // 继承默认插件
     this.plugins = [...Uploader.defaultPlugins];
     this.uploadedBytes = 0;
@@ -319,6 +328,14 @@ export default class Uploader<T = any> extends EventEmitter {
       averageSpeedFormatted: "",
       currentSpeed: 0,
       averageSpeed: 0,
+    };
+    this.progress = {
+      uploadedBytes: 0,
+      totalBytes: 0,
+      speed: 0,
+      remainingTime: 0,
+      startTime: 0,
+      elapsedTime: 0,
     };
     this.totalPercent = 0;
     this.totalProgress = 0;
@@ -420,8 +437,8 @@ export default class Uploader<T = any> extends EventEmitter {
     }
 
     try {
-      // 并行上传所有文件，每个文件状态独立
-      const uploadPromises = this.files.map((file) => {
+      // 并行上传所有文件
+      const uploadPromises = this.files.map(async (file) => {
         // 如果文件已经是成功或上传中状态，跳过
         if (file.status === "success" || file.status === "uploading") {
           return Promise.resolve();
@@ -433,9 +450,11 @@ export default class Uploader<T = any> extends EventEmitter {
           : file.upload();
       });
 
-      // 等待当前批次的文件上传完成
-      await Promise.allSettled(uploadPromises);
-      this.emit("files-complete", this.files);
+      await Promise.all(uploadPromises);
+      if (!this.uploadFiles.length) {
+        this.emit("files-complete", this.files);
+      }
+      this.lastLoadedMap.clear();
       console.log("所有文件上传完成");
     } catch (error) {
       console.error("批量上传失败:", error);

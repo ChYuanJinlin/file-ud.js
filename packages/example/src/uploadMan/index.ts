@@ -3,6 +3,6 @@ import Ajax from "@/utils/request";
 Uploader.baseConfig = {
   file: "file",
   action: "movie/upload/file",
-  axiosInstance: Ajax,
+  // axiosInstance: Ajax,
 };
 // new Uploader();

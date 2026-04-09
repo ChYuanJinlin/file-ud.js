@@ -97,8 +97,10 @@ app.post("/upload-multiple", uploadSingle.array("files", 10), (req, res) => {
 // ========== 3. 分片上传接口 ==========
 app.post("/upload-chunk", upload.single("file"), (req, res) => {
   const { chunkIndex, totalChunks, fileName } = req.body;
-  
-  if (!req.file) {
+  console.log(`接收到分片: ${fileName} - chunkIndex ${chunkIndex}/${totalChunks}`);
+  console.log("分片文件信息:", req.file);
+   return res.status(400).json({ success: false, message: "没有文件分片" });
+  if (req.file) {
     return res.status(400).json({ success: false, message: "没有文件分片" });
   }
 

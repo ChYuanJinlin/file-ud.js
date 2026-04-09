@@ -1,4 +1,3 @@
-import SparkMD5 from "spark-md5";
 import { IFile } from "../types";
 import Uploader from "../uploader";
 import UploadFile from "../uploader/UploadFile";
@@ -244,41 +243,59 @@ export function sleep(ms: number): Promise<void> {
 /**
  * 计算文件的 MD5 哈希值
  * @param file 文件对象
+ * @param onProgress 可选的进度回调函数，接收当前进度百分比 (0-100)
  * @returns MD5 哈希字符串
  */
-export async function calculateFileMD5(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunkSize = 2 * 1024 * 1024; // 2MB 分片读取
-    const chunks = Math.ceil(file.size / chunkSize);
-    let currentChunk = 0;
+export async function calculateFileMD5(
+  file: File,
+  onProgress?: (percent: number) => void,
+): Promise<string> {
+  return new Promise(async (resolve, reject) => {
+    try {
+      // 动态导入 spark-md5，避免循环依赖并减小初始包体积
+      const SparkMD5Module = await import("spark-md5");
+      const SparkMD5 = SparkMD5Module.default;
 
-    // 使用 Web Crypto API
-    const spark = new SparkMD5.ArrayBuffer();
-    const fileReader = new FileReader();
+      const chunkSize = 2 * 1024 * 1024; // 2MB 分片读取
+      const chunks = Math.ceil(file.size / chunkSize);
+      let currentChunk = 0;
 
-    fileReader.onload = (e) => {
-      if (e.target?.result) {
-        spark.append(e.target.result as ArrayBuffer);
-        currentChunk++;
+      const spark = new SparkMD5.ArrayBuffer();
+      const fileReader = new FileReader();
 
-        if (currentChunk < chunks) {
-          loadNext();
-        } else {
-          resolve(spark.end());
+      fileReader.onload = (e) => {
+        if (e.target?.result) {
+          spark.append(e.target.result as ArrayBuffer);
+          currentChunk++;
+
+          // 触发进度回调
+          if (onProgress) {
+            const percent = Math.round((currentChunk / chunks) * 100);
+            onProgress(percent);
+          }
+
+          if (currentChunk < chunks) {
+            loadNext();
+          } else {
+            resolve(spark.end());
+          }
         }
+      };
+
+      fileReader.onerror = () => {
+        reject(new Error("文件读取失败"));
+      };
+
+      function loadNext() {
+        const start = currentChunk * chunkSize;
+        const end = Math.min(start + chunkSize, file.size);
+        fileReader.readAsArrayBuffer(file.slice(start, end));
       }
-    };
 
-    fileReader.onerror = () => {
-      reject(new Error("文件读取失败"));
-    };
-
-    function loadNext() {
-      const start = currentChunk * chunkSize;
-      const end = Math.min(start + chunkSize, file.size);
-      fileReader.readAsArrayBuffer(file.slice(start, end));
+      loadNext();
+    } catch (error) {
+      console.error("MD5 计算库加载失败:", error);
+      reject(new Error("MD5 计算库加载失败"));
     }
-
-    loadNext();
   });
 }

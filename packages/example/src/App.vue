@@ -12,10 +12,18 @@ import Uploader from "@file-ud.js/core/uploader";
 import { IFile } from "@file-ud.js/core/types";
 const isChunk = ref(false);
 const test1 = FileUD.createUploader("test1", {
-  action: "upload",
+  action: "/upload-chunk",
   file: "file",
+  // file(obj, formData) {
+  //   formData.append("file", obj.chunkManager?.chunk!);
+  //   formData.append("fileName", obj.File.name);
+  //   formData.append("chunkIndex", obj.chunkManager?.uploadedChunkIndex.toString()!);
+  //   formData.append("totalChunks", obj.chunkManager?.totalChunks.toString()!);
+  //   formData.append("uploadId", obj.chunkManager?.uploadId!);
+
+  // },
   multiple: true,
-  chunkOptions: isChunk ? {} : null,
+  chunkOptions: isChunk.value ? {} : null,
 });
 
 const test2 = FileUD.createUploader("test2", {
@@ -74,7 +82,8 @@ window.FileUD = FileUD;
     }}
 
     <div v-for="item in files" :key="item.fileId">
-      进度{{ item.percent }} 状态{{ item.status }} 文件名{{ item.fileName }}
+      进度{{ item.percent }} 状态{{ item.status }} 文件名{{ item.fileName }} md5
+      效验状态{{ item.hashPercent }}%
 
       <img
         style="width: 200px; height: 200px"

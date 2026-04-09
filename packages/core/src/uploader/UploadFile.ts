@@ -1,5 +1,10 @@
 import axios, { AxiosProgressEvent, Canceler } from "axios";
-import { IFile, UploadSpeedInfo, UploadTimeInfo } from "../types";
+import {
+  IFile,
+  UploadProgress,
+  UploadSpeedInfo,
+  UploadTimeInfo,
+} from "../types";
 import Uploader from ".";
 import ChunkManager from "./ChunkManager";
 import {
@@ -38,7 +43,8 @@ export default class UploadFile<T = any> {
 
   /** 文件扩展名 */
   extension: string | undefined;
-
+  public hashPercent = 0;
+  public hashLoading = false;
   /** 格式化后的文件大小,如 "5.23 MB" */
   formatSize: string | undefined;
 
@@ -150,12 +156,12 @@ export default class UploadFile<T = any> {
     this.index = file.index;
     this.retry = file.retry || false;
     this.__uploader__ = file.__uploader__!;
-    
+
     // 如果是分片上传,在构造时就创建 ChunkManager
     if (up.config?.chunkOptions) {
       this.chunkManager = new ChunkManager(up.config.chunkOptions, this);
     }
-    
+
     this.proxy = createReactiveUploadFile(this, up);
     // 关键：在发起请求前设置拦截器，建立当前文件与 XHR 的映射
     this.setupInterceptor(this);
@@ -173,6 +179,7 @@ export default class UploadFile<T = any> {
     this.cancel();
     const up = this.__uploader__;
     up.files = up.files.filter((f) => f.fileId !== this.fileId);
+
     up.remObjectUrls(this.url);
     up.emit("remove", this.proxy);
   }
@@ -310,11 +317,16 @@ export default class UploadFile<T = any> {
     }
   }
 
-  async upload(
-    onChunkComplete?: (res: T) => void,
-    chunkIndex?: number,
-    uploadId?: string,
-  ) {
+  setFile(file: File | Blob) {
+    const up = this.__uploader__;
+    if (typeof up.config?.file === "function") {
+      up.config?.file(this, this.formData!);
+    } else {
+      this.formData?.append(up.config?.file!, file);
+    }
+  }
+
+  async upload(onChunkComplete?: (res: T) => void) {
     this.proxy.loading = true;
 
     return new Promise(async (resolve, reject) => {
@@ -334,28 +346,16 @@ export default class UploadFile<T = any> {
         duration: 0,
         durationFormatted: "0s",
       };
-
       // 获取插件上下文
       this.context = (this as any).__pluginContext || {
         uploader: up,
         shared: up["pluginSharedData"],
         config: up.config,
       };
-      this.formData = new FormData();
-      if (typeof up.config?.file === "function") {
-        up.config?.file(this);
-      } else {
-        this.formData.append(up.config?.file!, this.proxy.File!);
-      }
 
-      // 如果是分片上传，添加分片相关信息
-      if (chunkIndex !== undefined && uploadId) {
-        this.formData.append("chunkIndex", chunkIndex.toString());
-        this.formData.append("uploadId", uploadId);
-        this.formData.append(
-          "totalChunks",
-          (this.chunkManager?.totalChunks || 0).toString(),
-        );
+      if (!this.chunkManager) {
+        this.formData = new FormData();
+        this.setFile(this.File);
       }
 
       if (up.beforeUploadCallback) {
@@ -394,21 +394,32 @@ export default class UploadFile<T = any> {
 
       promise
         .then((res) => {
-          if (!this.__uploader__.config?.chunkOptions) {
-            this.onScuccess(res);
-          } else {
+          if (this.chunkManager) {
             onChunkComplete?.(res);
+          } else {
+            this.proxy.status = "success";
           }
+          this.onScuccess(res);
         })
         .catch((err) => {
-          if (!this.__uploader__.config?.chunkOptions) {
-            this.onError(err);
-          } else {
-            // 分片上传失败也需要reject，以便重试机制工作
-            reject(err);
+          if (!this.chunkManager) {
+            this.proxy.status = "error";
+            this.proxy.percent = 0; // 上传失败时重置进度为 0%
+            up.totalPercent = 0;
           }
+          this.onError(err);
         })
         .finally(() => {
+          // 记录上传结束时间和耗时
+          const now = Date.now();
+          const duration = now - this.uploadTime.startTime;
+          this.proxy.uploadTime = {
+            startTime: this.uploadTime.startTime,
+            endTime: now,
+            duration,
+            durationFormatted: formatDuration(duration),
+          };
+
           this.proxy.loading = false;
         });
     });
@@ -417,19 +428,9 @@ export default class UploadFile<T = any> {
   public onScuccess(res: T) {
     const up = this.__uploader__;
 
-    // 记录上传结束时间和耗时
-    const now = Date.now();
-    const duration = now - this.uploadTime.startTime;
-    this.proxy.uploadTime = {
-      startTime: this.uploadTime.startTime,
-      endTime: now,
-      duration,
-      durationFormatted: formatDuration(duration),
-    };
-
     up["runHook"]("onSuccess", res, this, this.context);
     up.uploadSuccessCallback?.(res, this.proxy);
-    this.proxy.status = "success";
+
     up.uploadFiles.splice(up.uploadFiles.indexOf(this), 1);
     up.remObjectUrls(this.url);
     this.resolve?.(res);
@@ -437,25 +438,8 @@ export default class UploadFile<T = any> {
   }
   public onError(err: any) {
     const up = this.__uploader__;
-
-    // 记录上传结束时间和耗时(即使失败也记录)
-    const now = Date.now();
-    const duration = now - this.uploadTime.startTime;
-    this.proxy.uploadTime = {
-      startTime: this.uploadTime.startTime,
-      endTime: now,
-      duration,
-      durationFormatted: formatDuration(duration),
-    };
-
     up["runHook"]("onError", err, this, this.context);
-    this.proxy.status = "error";
-    this.proxy.percent = 0; // 上传失败时重置进度为 0%
-    up.totalPercent = 0;
-    this.__uploader__.emit(
-      "error",
-      new FileUDError(ErrorCode.UPLOAD_FAILED, err).toJSON(),
-    );
+    up.emit("error", new FileUDError(ErrorCode.UPLOAD_FAILED, err).toJSON());
 
     this.reject?.(err);
   }
@@ -487,16 +471,12 @@ export default class UploadFile<T = any> {
     const loaded = (event as any).loaded || event.loaded;
     let percent = 0;
     // 分片上传: 由 ChunkManager 统一处理进度
-    // 支持多分片并发时的进度聚合和断点续传恢复
-    if (up.config?.chunkOptions && this.chunkManager) {
-      percent = this.chunkManager.updateProgress(event as any);
-      this.proxy.percent = percent;
-    } else {
-      // 普通上传: 直接计算百分比
-      if (event.total) {
-        this.proxy.percent = Math.round((event.loaded * 100) / event.total);
-      }
+
+    // 普通上传: 直接计算百分比
+    if (event.total) {
+      this.proxy.percent = Math.round((event.loaded * 100) / event.total);
     }
+
     // 计算总进度：使用 lastLoadedMap 避免重复累加
     const lastLoaded = up.lastLoadedMap.get(this.fileId) || 0;
     const deltaLoaded = loaded - lastLoaded;
