@@ -206,7 +206,9 @@ export interface FileUDConfigs {
    * 文件上传地址，可以是字符串或者promise函数
    * @return {Promise}
    */
-  action: string | (( formData: FormData,uploadFile: UploadFile) => Promise<any>);
+  action:
+    | string
+    | ((formData: FormData, uploadFile: UploadFile) => Promise<any>);
   /* 上传文件的数量限制 */
   limit?: number;
   /* 上传文件限制的大小 */
@@ -338,12 +340,17 @@ export interface IFile {
   hash 进度
   */
   hashPercent?: number;
+  /* 
+  是否取消上传
+  */
+  isCancel?: boolean;
+
   /* 文件大小 */
   formatSize?: string;
   /* 取消请求上传方法 */
   abort?: () => void;
   /* 是否在重试中 */
-  retry?: boolean;
+  isRetry?: boolean;
   /* 文件上传的索引 */
   index: number;
   /* Uploader 对象 */
@@ -417,15 +424,15 @@ export interface UploaderEvents {
   /* 错误事件 */
   error: ErrorCallBack;
   /* 暂停上传事件 */
-  pause: (file: FileWithMeta) => void;
+  pause: (file: UploadFile) => void;
   /* 恢复上传事件 */
-  resume: (file: FileWithMeta) => void;
+  resume: (file: UploadFile) => void;
   /* 取消上传事件 */
-  cancel: (file: FileWithMeta) => void;
+  cancel: (file: UploadFile) => void;
   /* 重试上传事件 */
-  retry: (file: FileWithMeta) => void;
+  retry: (file: UploadFile) => void;
   /* 移除文件事件 */
-  remove: (file: FileWithMeta) => void;
+  remove: (file: UploadFile) => void;
   /* 文件开始上传事件 */
   "files-start": (files: UploadFile[]) => void;
   /* 文件完成上传事件 */

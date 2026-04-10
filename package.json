@@ -9,10 +9,13 @@
     "lint": "turbo lint",
     "test": "turbo test",
     "clean": "turbo clean",
-    "format": "prettier --write \"**/*.{ts,tsx,md,json}\""
+    "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
+    "example": "concurrently \"pnpm --filter example dev\" \"cd server && nodemon ./main.js\"",
+    "example:windows": "start cmd /k \"cd packages\\example && pnpm run dev\" && start cmd /k \"cd server && nodemon main.js\""
   },
   "devDependencies": {
-    "turbo": "latest"
+    "turbo": "latest",
+    "concurrently": "^8.2.2"
   },
   "dependencies": {
     "@types/node": "^25.1.0",

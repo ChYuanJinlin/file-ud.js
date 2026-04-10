@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { FileUD } from "@file-ud.js/core";
+import { FileUD, UploadFile } from "@file-ud.js/core";
 import { uploadFile, upload, getFileList } from "./api";
 import {
   CompressImagePlugin,
@@ -38,7 +38,7 @@ const test2 = FileUD.createUploader("test2", {
   file: "file",
 });
 
-const files = ref<IFile[]>([]);
+const files = ref<UploadFile[]>([]);
 Uploader.onError = (err) => {
   console.log("🚀 ~ err:1", err);
 };
@@ -96,9 +96,9 @@ window.FileUD = FileUD;
     <button @click="handlerChunk">
       {{ isChunk ? "普通上传" : "大文件上传" }}
     </button>
-    <button @click="test1.clearFiles()">全部暂停</button>
-    <button @click="test1.clearFiles()">全部继续</button>
-    <button @click="test1.clearFiles()">全部取消</button>
+    <button @click="test1.pauseAll()">全部暂停</button>
+    <button @click="test1.resumeAll()">全部继续</button>
+    <button @click="test1.cancelAll()">全部取消</button>
     总的大小:{{ test1.totalBytes }} 总进度:{{ test1.totalPercent }} 总速度:{{
       test1.uploadSpeed?.averageSpeedFormatted
     }}
@@ -114,11 +114,11 @@ window.FileUD = FileUD;
         srcset=""
       />
       <video width="500" height="500" :src="item.url" controls></video>
-      <button @click="test1.clearFiles()">重新上传</button>
-      <button @click="test1.clearFiles()">暂停</button>
-      <button @click="test1.clearFiles()">继续</button>
-      <button @click="test1.clearFiles()">取消</button>
-      <button @click="test1.clearFiles()">删除</button>
+      <button @click="item.pause()">暂停</button>
+      <button @click="item.resume()">继续</button>
+      <button @click="item.cancel()">取消</button>
+      <button @click="item.remove()">删除</button>
+      <button @click="item.retry()">重试</button>
     </div>
   </div>
 </template>

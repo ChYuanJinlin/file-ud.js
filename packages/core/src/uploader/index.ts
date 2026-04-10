@@ -103,6 +103,7 @@ export default class Uploader<T = any> extends EventEmitter {
   public onMergeCallback: OnMergeCallBack | null = null;
   // 用于防抖的定时器
   private __updateTimer__: ReturnType<typeof setTimeout> | null = null;
+  public totalUploadBytes: number = 0;
 
   /**
    * 触发更新回调（带防抖）
@@ -204,7 +205,35 @@ export default class Uploader<T = any> extends EventEmitter {
     Uploader.fileIndex = 0;
     Uploader.uploadFile = null;
     Uploader.objectUrls = [];
+    this.totalBytes = 0;
     this.triggerUpdate();
+  }
+
+  // 全部取消上传
+  public cancelAll() {
+    this.files.forEach((file) => {
+      file.cancel();
+    });
+  }
+
+  // 全部暂停
+  public pauseAll() {
+    this.files.forEach((file) => {
+      file.pause();
+    });
+  }
+  // 全部继续
+  public resumeAll() {
+    this.files.forEach((file) => {
+      file.resume();
+    });
+  }
+
+  // 全部重试
+  public retryAll() {
+    this.files.forEach((file) => {
+      file.retry();
+    });
   }
 
   constructor(config?: FileUDConfigs) {
@@ -336,6 +365,7 @@ export default class Uploader<T = any> extends EventEmitter {
     this.plugins = [...Uploader.defaultPlugins];
     this.uploadedBytes = 0;
     this.totalBytes = 0;
+    this.totalUploadBytes = 0;
     this.uploadSpeed = {
       currentSpeedFormatted: "",
       averageSpeedFormatted: "",
@@ -472,8 +502,9 @@ export default class Uploader<T = any> extends EventEmitter {
     if (!this.uploadFiles.length) {
       this.emit("files-complete", this.files);
       console.log("所有文件上传完成");
+      this.totalProgress = 0;
+      this.totalUploadBytes = 0;
     }
-    this.lastLoadedMap.clear();
   }
 
   /**
@@ -592,8 +623,8 @@ export default class Uploader<T = any> extends EventEmitter {
       if (!shouldContinue) continue;
 
       // 添加到文件列表
-      this.files.push(uploadFileInstance);
-      this.uploadFiles.push(uploadFileInstance);
+      this.files.unshift(uploadFileInstance);
+      this.uploadFiles.unshift(uploadFileInstance);
 
       // 自动上传：调用 submit 方法
       if (this.config?.autoUpload) {

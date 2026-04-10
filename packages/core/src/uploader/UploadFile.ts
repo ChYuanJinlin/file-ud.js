@@ -41,7 +41,7 @@ export default class UploadFile<T = any> {
 
   /** 文件上传状态 */
   status: IFile["status"];
-
+  isCancel: boolean = false;
   /** 文件扩展名 */
   extension: string | undefined;
   public hashPercent = 0;
@@ -53,7 +53,7 @@ export default class UploadFile<T = any> {
   formData: FormData | null = null;
 
   /** 是否处于重试状态 */
-  retry?: boolean;
+  isRetry?: boolean;
 
   /** Promise resolve 回调引用 */
   resolve: ((value: any) => void | undefined) | undefined;
@@ -155,7 +155,7 @@ export default class UploadFile<T = any> {
     this.formatSize = file.formatSize;
     this.abort = file.abort;
     this.index = file.index;
-    this.retry = file.retry || false;
+    this.isRetry = file.isRetry || false;
     this.__uploader__ = file.__uploader__!;
 
     // 如果是分片上传,在构造时就创建 ChunkManager
@@ -172,9 +172,13 @@ export default class UploadFile<T = any> {
    * @description: 取消当前的请求
    * @return {*}
    */
-  cancel() {
-    this.abort?.();
-    this.proxy.status = "cancelled";
+  cancel(fn: ((next: () => void) => void) | void) {
+    const next = () => {
+      this.abort?.();
+      this.__uploader__.totalUploadBytes -= this.File.size;
+      this.__uploader__.emit("cancel", this.proxy);
+    };
+    fn ? fn(next) : next();
   }
   remove() {
     this.cancel();
@@ -182,6 +186,7 @@ export default class UploadFile<T = any> {
     up.files = up.files.filter((f) => f.fileId !== this.fileId);
 
     up.remObjectUrls(this.url);
+    up.totalBytes -= this.File.size;
     up.emit("remove", this.proxy);
   }
   /**
@@ -211,11 +216,11 @@ export default class UploadFile<T = any> {
    * - 重试是异步操作,建议在 UI 上显示加载状态
    * - 重试失败后会再次触发 error 事件
    */
-  rest() {
+  retry() {
     const up = this.__uploader__;
 
     // 重置状态
-    this.proxy.retry = true;
+    this.proxy.isRetry = true;
     this.proxy.percent = 0;
 
     // 分片上传: 使用当前文件的 ChunkManager 重试失败分片
@@ -233,6 +238,7 @@ export default class UploadFile<T = any> {
         this.onError(err);
       });
     }
+    this.__uploader__.emit("retry", this.proxy);
   }
 
   /**
@@ -271,13 +277,9 @@ export default class UploadFile<T = any> {
     if (this.chunkManager) {
       this.chunkManager.pause();
     } else {
-      // 普通上传直接 abort
-      this.proxy.status = "paused";
-      if (this.abort) {
-        this.abort();
-        logger.info("UploadFile", `普通上传已暂停: ${this.fileName}`);
-      }
+      logger.warn("该模式不支持暂停", this.fileName);
     }
+    this.__uploader__.emit("pause", this.proxy);
   }
 
   /**
@@ -314,10 +316,9 @@ export default class UploadFile<T = any> {
     if (this.chunkManager) {
       await this.chunkManager.resume();
     } else {
-      // 普通上传需要重新开始
-      logger.info("UploadFile", `普通上传将重新开始: ${this.fileName}`);
-      await this.upload();
+      logger.warn("该模式不支持恢复", this.fileName);
     }
+    this.__uploader__.emit("resume", this.proxy);
   }
 
   setFile(file: File | Blob, formData: FormData) {
@@ -387,12 +388,14 @@ export default class UploadFile<T = any> {
       this.proxy.status = "uploading";
 
       if (up.config?.autoUpload) {
+        up.totalUploadBytes += this.File.size;
         up.totalBytes += this.File.size;
       } else {
-        up.totalBytes = Array.from(up.files).reduce(
+        const totalBytes = Array.from(up.files).reduce(
           (acc, file) => acc + this.File.size,
           0,
         );
+        up.totalBytes = up.totalUploadBytes += totalBytes;
       }
 
       let promise: Promise<T>;
@@ -406,7 +409,7 @@ export default class UploadFile<T = any> {
         promise = (up.config.axiosInstance || axios).post<T>(
           up.config.action,
           requestData,
-          { signal }
+          { signal },
         );
       } else {
         promise = up.config?.action(requestData, this);
@@ -427,9 +430,9 @@ export default class UploadFile<T = any> {
         })
         .catch((err) => {
           if (!this.chunkManager) {
-            this.proxy.status = "error";
             this.proxy.percent = 0; // 上传失败时重置进度为 0%
             up.totalPercent = 0;
+            this.isCancel !== true && (this.proxy.status = "error");
           }
           this.onError(err);
           reject(err);
@@ -457,7 +460,7 @@ export default class UploadFile<T = any> {
     up.uploadSuccessCallback?.(res, this.proxy);
     up.uploadFiles.splice(up.uploadFiles.indexOf(this), 1);
     up.remObjectUrls(this.url);
-    
+
     // ✅ 修复：添加 fileId 到日志参数中，供监控模块提取
     logger.info("UploadFile", `文件上传成功: ${this.fileName}`, {
       fileId: this.fileId,
@@ -465,10 +468,17 @@ export default class UploadFile<T = any> {
       fileSize: this.File.size,
     });
   }
-  
+
   public onError(err: any) {
     const up = this.__uploader__;
-    
+    if (this.isCancel) {
+      logger.warn("UploadFile", `文件上传被取消: ${this.fileName}`, {
+        fileId: this.fileId,
+        fileName: this.fileName,
+        fileSize: this.File.size,
+      });
+      return;
+    }
     // ✅ 修复：添加 fileId 到错误日志中，供监控模块提取
     logger.error("UploadFile", `文件上传失败: ${this.fileName}`, {
       fileId: this.fileId,
@@ -476,7 +486,7 @@ export default class UploadFile<T = any> {
       fileSize: this.File.size,
       error: err.message || err,
     });
-    
+
     up["runHook"]("onError", err, this, this.context);
     up.emit("error", new FileUDError(ErrorCode.UPLOAD_FAILED, err).toJSON());
   }
@@ -525,8 +535,8 @@ export default class UploadFile<T = any> {
 
       // 计算总进度百分比
       up.totalPercent =
-        up.totalBytes > 0
-          ? Math.round((up.totalProgress / up.totalBytes) * 100)
+        up.totalUploadBytes > 0
+          ? Math.round((up.totalProgress / up.totalUploadBytes) * 100)
           : percent;
     }
 
@@ -623,7 +633,7 @@ export default class UploadFile<T = any> {
         // 拦截 send - 这是关键！
         const originalSend = xhr.send;
         xhr.send = function (body?: any) {
-          // ✅ 修复：优先使用 body 中的 formData（axios 传递的，不会被并发覆盖）
+          // 优先从请求体获取 formData
           let formDataToSend = body;
 
           // 优先从 WeakMap 获取关联的文件实例
@@ -634,10 +644,21 @@ export default class UploadFile<T = any> {
             !currentFileInstance &&
             UploadFile.currentUploadQueue.length > 0
           ) {
+            // 从队列中找到第一个未被分配的文件
             for (const file of UploadFile.currentUploadQueue) {
-              currentFileInstance = file;
-              UploadFile.xhrToFileMap.set(xhr, file);
-              break;
+              if (!UploadFile.assignedFiles.has(file)) {
+                currentFileInstance = file;
+                UploadFile.xhrToFileMap.set(xhr, file);
+                UploadFile.assignedFiles.add(file);
+                break;
+              }
+            }
+
+            // 如果所有文件都被分配了，使用第一个文件（覆盖）
+
+            if (!currentFileInstance) {
+              currentFileInstance = UploadFile.currentUploadQueue[0];
+              UploadFile.xhrToFileMap.set(xhr, currentFileInstance);
             }
           }
 
@@ -656,34 +677,12 @@ export default class UploadFile<T = any> {
             });
           }
 
-          // ✅ 修复：只有当 body 中没有 formData 时，才从实例获取（兜底逻辑）
-          if (!formDataToSend && currentFileInstance?.formData) {
-            formDataToSend = currentFileInstance.formData;
-
-            logger.debug("UploadFile", "拦截器从实例获取 formData（兜底）", {
-              hasFormData: true,
-              chunkIndex: currentFileInstance.formData.get("chunkIndex"),
-              fileName: currentFileInstance.formData.get("fileName"),
-            });
-          } else if (formDataToSend instanceof FormData) {
-            // body 中有 formData，记录日志
-            logger.debug("UploadFile", "拦截器使用 body 中的 formData", {
-              hasFormData: true,
-              chunkIndex: formDataToSend.get("chunkIndex"),
-              fileName: formDataToSend.get("fileName"),
-            });
-          } else {
-            logger.warn("UploadFile", "拦截器未找到 formData", {
-              hasBody: !!body,
-              isBodyFormData: body instanceof FormData,
-              hasCurrentFile: !!currentFileInstance,
-              hasInstanceFormData: !!currentFileInstance?.formData,
-            });
-          }
-
           // 绑定进度回调到当前文件实例
           upload.onprogress = function (event: ProgressEvent) {
-
+            console.log(
+              "🚀 ~ UploadFile ~ setupInterceptor ~ currentFileInstance:",
+              currentFileInstance?.fileName,
+            );
             if (currentFileInstance) {
               currentFileInstance.handleProgress(event);
             }
@@ -694,14 +693,15 @@ export default class UploadFile<T = any> {
             currentFileInstance.abort = () => {
               if (xhr.readyState !== XMLHttpRequest.DONE) {
                 xhr.abort();
+                if (currentFileInstance) {
+                  currentFileInstance.proxy.isCancel = true;
+                  currentFileInstance.proxy.status = "cancelled";
+                }
               }
             };
           }
-          try {
-            return originalSend.call(this, formDataToSend);
-          } catch (error) {
-            logger.error("UploadFile", "XHR 发送失败", error);
-          }
+
+          return originalSend.call(this, formDataToSend);
         };
 
         return xhr;
@@ -714,7 +714,7 @@ export default class UploadFile<T = any> {
       window.XMLHttpRequest = XHRProxy;
       Uploader.isInterceptorInstalled = true;
 
-      logger.debug("UploadFile", "全局 XHR 拦截器已安装");
+      console.log("✅ 全局 XHR 拦截器已安装");
     }
 
     // 标记当前文件的拦截器已激活
