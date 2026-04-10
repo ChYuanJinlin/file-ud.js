@@ -213,7 +213,7 @@ export default class Uploader<T = any> extends EventEmitter {
     try {
       if (!Uploader.instances) {
         this.config = mergeObjects(Uploader.baseConfig, config);
-        
+
         // 初始化日志配置
         if (this.config.logConfig) {
           initLogger({
@@ -223,7 +223,7 @@ export default class Uploader<T = any> extends EventEmitter {
             enableColors: this.config.logConfig.enableColors,
           });
         }
-        
+
         Uploader.instances = this.create(this.config);
       }
       return Uploader.instances!;
@@ -240,7 +240,7 @@ export default class Uploader<T = any> extends EventEmitter {
     if (this.inputHTML) {
       this.inputHTML.click();
     } else {
-      logger.warn('Uploader', 'The uploader does not exist. Please create one');
+      logger.warn("Uploader", "The uploader does not exist. Please create one");
     }
     if (fn) {
       this.openCallBack = fn;
@@ -390,7 +390,7 @@ export default class Uploader<T = any> extends EventEmitter {
 
     return this;
   }
-  public updateConfig(config: Partial<FileUDConfigs> ) {
+  public updateConfig(config: Partial<FileUDConfigs>) {
     this.config = mergeObjects(this.config!, config);
   }
   set onBeforeUpload(callback: BeforeUploadCallBack) {
@@ -399,7 +399,6 @@ export default class Uploader<T = any> extends EventEmitter {
 
   set onSuccess(callback: UploadSuccessCallBack<T>) {
     this.uploadSuccessCallback = callback;
-    
   }
 
   set onSelect(callback: SelectCallBack) {
@@ -461,9 +460,9 @@ export default class Uploader<T = any> extends EventEmitter {
         }
 
         // 直接开始上传，由 UploadFile 内部管理 ChunkManager
-        return await (file.chunkManager
+        return file.chunkManager
           ? file.chunkManager.startUpload()
-          : file.upload());
+          : file.upload();
       } catch (error) {
         console.error(file.fileName + "文件上传失败:", error);
       }

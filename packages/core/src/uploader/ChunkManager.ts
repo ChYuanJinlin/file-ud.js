@@ -273,18 +273,23 @@ export default class ChunkManager {
           );
         }
 
-        // 注意：真正的超时控制需要在 UploadFile.upload 中支持 signal 参数
-        // 当前实现通过 Promise.race 模拟超时
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => {
-            reject(
-              new Error(`分片 ${chunkIndex} 上传超时 (${this.timeout}ms)`),
-            );
-          }, this.timeout);
-        });
+        // ✅ 使用 AbortController 实现真正的超时控制
+        const abortController = new AbortController();
+        const timeoutId = setTimeout(() => {
+          abortController.abort();
+        }, this.timeout);
 
-        // 使用 Promise.race 实现超时控制
-        await Promise.race([this.uploadChunk(chunkIndex), timeoutPromise]);
+        try {
+          // 传递 signal 给 UploadFile.upload，实现真正的超时取消
+          await this.uploadChunk(chunkIndex, abortController.signal);
+
+          // 上传成功，清除超时定时器
+          clearTimeout(timeoutId);
+        } catch (error) {
+          // 确保清除定时器
+          clearTimeout(timeoutId);
+          throw error;
+        }
 
         // 上传成功，重置重试计数
         this.retryCountMap.set(chunkIndex, 0);
@@ -325,13 +330,13 @@ export default class ChunkManager {
           throw error;
         }
 
-        // 指数退避策略：delay = baseDelay * 2^(retryCount-1)
-        const delay = this.retryDelay * Math.pow(2, retryCount - 1);
+        // 指数退避重试延迟
+        const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 10000);
         logger.debug(
           "ChunkManager",
-          `分片 ${chunkIndex + 1} 将在 ${delay}ms 后重试`,
+          `分片 ${chunkIndex} 将在 ${delay}ms 后重试`,
         );
-        await sleep(delay);
+        await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }
   }
@@ -339,7 +344,7 @@ export default class ChunkManager {
   /**
    * 上传单个分片
    */
-  private async uploadChunk(chunkIndex: number): Promise<void> {
+  private async uploadChunk(chunkIndex: number, signal?: AbortSignal): Promise<void> {
     const start = chunkIndex * this.chunkSize;
     const end = Math.min(start + this.chunkSize, this.uploadFile.File.size);
     const chunk = this.uploadFile.File.slice(start, end);
@@ -363,14 +368,14 @@ export default class ChunkManager {
     chunkFormData.append("chunkIndex", chunkIndex.toString());
     chunkFormData.append("totalChunks", this.totalChunks.toString());
     chunkFormData.append("fileName", this.uploadFile.fileName);
-    this.uploadFile.setFile(chunk,chunkFormData);
+    this.uploadFile.setFile(chunk, chunkFormData);
 
     // 临时保存到 uploadFile，供拦截器使用
     this.uploadFile.formData = chunkFormData;
 
     try {
+      // ✅ 传递 signal 实现真正的超时控制
       await this.uploadFile.upload((res) => {
-        // ✅ 修复：检查分片是否已经上传过（避免重试时重复累加）
         if (!this.uploadedChunks[chunkIndex]) {
           // 完成的分片
           this.completedChunks++;
@@ -411,7 +416,7 @@ export default class ChunkManager {
             logger.warn("ChunkManager", "更新分片状态失败:", error);
           });
         }
-      });
+      }, signal);
 
       return Promise.resolve();
     } catch (error) {
@@ -428,7 +433,7 @@ export default class ChunkManager {
         },
       );
 
-      return Promise.reject(error);
+      throw error;
     }
   }
 

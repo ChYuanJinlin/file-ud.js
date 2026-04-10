@@ -122,8 +122,8 @@ class UploadMonitor {
    * 处理日志条目
    */
   private processLog(entry: LogEntry) {
-    // 追踪上传开始
-    if (entry.module === 'UploadFile' && entry.message.includes('开始上传')) {
+    // ✅ 追踪上传开始（支持 ChunkManager 分片上传 和 UploadFile 普通上传）
+    if (entry.message.includes('开始上传文件') && !entry.message.includes('分片')) {
       const fileId = this.extractFileId(entry);
       if (fileId && !this.activeUploads.has(fileId)) {
         const record: UploadRecord = {
@@ -139,13 +139,21 @@ class UploadMonitor {
       }
     }
     
-    // 追踪上传成功
-    if (entry.module === 'UploadFile' && entry.message.includes('上传成功')) {
+    // ✅ 追踪上传成功（支持文件级别的成功）
+    if (entry.message.includes('文件上传成功')) {
       const fileId = this.extractFileId(entry);
       if (fileId && this.activeUploads.has(fileId)) {
         const record = this.activeUploads.get(fileId)!;
         record.endTime = entry.timestamp;
         record.success = true;
+        
+        // ✅ 如果 fileSize 为 0，尝试从日志中提取（兜底）
+        if (record.fileSize === 0) {
+          const extractedSize = this.extractFileSize(entry);
+          if (extractedSize) {
+            record.fileSize = extractedSize;
+          }
+        }
         
         this.finalizeRecord(record);
         this.activeUploads.delete(fileId);
@@ -156,7 +164,7 @@ class UploadMonitor {
     if (entry.level === LogLevel.ERROR) {
       const fileId = this.extractFileId(entry);
       
-      // ChunkManager 级别的错误
+      // ChunkManager 级别的错误（分片上传）
       if (entry.module === 'ChunkManager') {
         if (fileId && this.activeUploads.has(fileId)) {
           const record = this.activeUploads.get(fileId)!;
@@ -178,13 +186,21 @@ class UploadMonitor {
             record.success = false;
             record.error = entry.message;
             
+            // ✅ 如果 fileSize 为 0，尝试从日志中提取
+            if (record.fileSize === 0) {
+              const extractedSize = this.extractFileSize(entry);
+              if (extractedSize) {
+                record.fileSize = extractedSize;
+              }
+            }
+            
             this.finalizeRecord(record);
             this.activeUploads.delete(fileId);
           }
         }
       }
       
-      // UploadFile 级别的错误
+      // UploadFile 级别的错误（普通上传或分片上传的文件级别错误）
       if (entry.module === 'UploadFile') {
         if (fileId && this.activeUploads.has(fileId)) {
           const record = this.activeUploads.get(fileId)!;
@@ -199,6 +215,14 @@ class UploadMonitor {
           record.success = false;
           record.error = entry.message;
           
+          // ✅ 如果 fileSize 为 0，尝试从日志中提取
+          if (record.fileSize === 0) {
+            const extractedSize = this.extractFileSize(entry);
+            if (extractedSize) {
+              record.fileSize = extractedSize;
+            }
+          }
+          
           this.finalizeRecord(record);
           this.activeUploads.delete(fileId);
         }
@@ -206,7 +230,7 @@ class UploadMonitor {
     }
     
     // 追踪重试
-    if (entry.module === 'UploadFile' && entry.message.includes('重试')) {
+    if (entry.message.includes('重试')) {
       const fileId = this.extractFileId(entry);
       if (fileId && this.activeUploads.has(fileId)) {
         const record = this.activeUploads.get(fileId)!;
@@ -274,7 +298,8 @@ class UploadMonitor {
   private extractFileName(entry: LogEntry): string | null {
     if (entry.args?.length) {
       for (const arg of entry.args) {
-        if (typeof arg === 'string' && (arg.endsWith('.pdf') || arg.endsWith('.jpg') || arg.endsWith('.png'))) {
+        // ✅ 只要 args 中有字符串，就认为是文件名
+        if (typeof arg === 'string') {
           return arg;
         }
       }
@@ -288,8 +313,13 @@ class UploadMonitor {
   private extractFileSize(entry: LogEntry): number | null {
     if (entry.args?.length) {
       for (const arg of entry.args) {
+        // ✅ 支持直接的对象属性
         if (arg && typeof arg === 'object' && 'size' in arg && typeof arg.size === 'number') {
           return arg.size;
+        }
+        // ✅ 支持嵌套对象的 fileSize 属性
+        if (arg && typeof arg === 'object' && 'fileSize' in arg && typeof arg.fileSize === 'number') {
+          return arg.fileSize;
         }
       }
     }

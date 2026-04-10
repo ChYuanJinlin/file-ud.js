@@ -329,7 +329,7 @@ export default class UploadFile<T = any> {
     }
   }
 
-  async upload(onChunkComplete?: (res: T) => void) {
+  async upload(onChunkComplete?: (res: T) => void, signal?: AbortSignal) {
     this.proxy.loading = true;
 
     return new Promise(async (resolve, reject) => {
@@ -342,12 +342,16 @@ export default class UploadFile<T = any> {
       }
 
       // ✅ 记录上传开始（用于监控模块追踪）
-      logger.info("UploadFile", `开始上传文件: ${this.fileName}`, {
-        fileId: this.fileId,
-        fileName: this.fileName,
-        fileSize: this.File.size,
-        isChunkUpload: !!this.chunkManager,
-      });
+      // 注意：对于分片上传，这个日志会在 ChunkManager.initUpload() 中输出
+      // 这里只输出普通上传的开始日志，避免分片上传时每个分片都输出一次
+      if (!this.chunkManager) {
+        logger.info("UploadFile", `开始上传文件: ${this.fileName}`, {
+          fileId: this.fileId,
+          fileName: this.fileName,
+          fileSize: this.File.size,
+          isChunkUpload: false,
+        });
+      }
 
       // 记录上传开始时间
       const now = Date.now();
@@ -398,9 +402,11 @@ export default class UploadFile<T = any> {
         // 直接使用用户配置的 action URL
         // 如果是分片上传，用户可以通过 onInit/onMerge 回调自定义逻辑
         // 这里的 action 就是最终的分片上传地址
+        // ✅ 传递 signal 实现真正的超时控制
         promise = (up.config.axiosInstance || axios).post<T>(
           up.config.action,
           requestData,
+          { signal }
         );
       } else {
         promise = up.config?.action(requestData, this);
@@ -409,11 +415,14 @@ export default class UploadFile<T = any> {
       promise
         .then((res) => {
           if (this.chunkManager) {
+            // ✅ 分片上传：只调用分片完成回调，不调用文件成功回调
+            // 文件成功回调会在 ChunkManager.checkStatistics 中所有分片完成后调用
             onChunkComplete?.(res);
           } else {
+            // ✅ 普通上传：直接设置为成功并调用成功回调
             this.proxy.status = "success";
+            this.onScuccess(res);
           }
-          this.onScuccess(res);
           resolve(res);
         })
         .catch((err) => {
@@ -498,8 +507,6 @@ export default class UploadFile<T = any> {
     // 统一处理不同类型的事件对象
     const loaded = (event as any).loaded || event.loaded;
     let percent = 0;
-    // 分片上传: 由 ChunkManager 统一处理进度
-
     // 普通上传: 直接计算百分比
 
     if (!this.chunkManager) {
@@ -676,6 +683,7 @@ export default class UploadFile<T = any> {
 
           // 绑定进度回调到当前文件实例
           upload.onprogress = function (event: ProgressEvent) {
+
             if (currentFileInstance) {
               currentFileInstance.handleProgress(event);
             }
