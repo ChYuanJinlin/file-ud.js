@@ -122,9 +122,21 @@ class UploadMonitor {
    * 处理日志条目
    */
   private processLog(entry: LogEntry) {
+    // ✅ 调试：打印所有接收到的日志
+    if (entry.message.includes('上传') || entry.message.includes('文件')) {
+      console.log('[Monitor Debug] 收到日志:', {
+        module: entry.module,
+        message: entry.message,
+        args: entry.args,
+        timestamp: entry.timestamp,
+      });
+    }
+    
     // ✅ 追踪上传开始（支持 ChunkManager 分片上传 和 UploadFile 普通上传）
     if (entry.message.includes('开始上传文件') && !entry.message.includes('分片')) {
       const fileId = this.extractFileId(entry);
+      console.log('[Monitor Debug] 匹配到开始上传:', { fileId, hasFileId: !!fileId });
+      // ✅ 基于 fileId 去重：如果已经有记录，跳过（避免重复统计）
       if (fileId && !this.activeUploads.has(fileId)) {
         const record: UploadRecord = {
           fileId,
@@ -142,7 +154,25 @@ class UploadMonitor {
     // ✅ 追踪上传成功（支持文件级别的成功）
     if (entry.message.includes('文件上传成功')) {
       const fileId = this.extractFileId(entry);
-      if (fileId && this.activeUploads.has(fileId)) {
+      console.log('[Monitor Debug] 匹配到上传成功:', { fileId, hasFileId: !!fileId });
+      if (fileId) {
+        // ✅ 如果 activeUploads 中没有记录，创建新记录（兜底逻辑）
+        if (!this.activeUploads.has(fileId)) {
+          const record: UploadRecord = {
+            fileId,
+            fileName: this.extractFileName(entry) || 'unknown',
+            fileSize: this.extractFileSize(entry) || 0,
+            startTime: 0,  // ✅ 标记为未知，避免错误的耗时计算
+            endTime: entry.timestamp,
+            success: true,
+            retryCount: 0,
+          };
+          
+          // ✅ 直接完成记录，不经过 activeUploads
+          this.finalizeRecord(record);
+          return;  // 提前返回，不再执行后续逻辑
+        }
+        
         const record = this.activeUploads.get(fileId)!;
         record.endTime = entry.timestamp;
         record.success = true;
@@ -262,7 +292,15 @@ class UploadMonitor {
       record.uploadedChunks = record.totalChunks - (record.failedChunks || 0);
     }
     
-    this.records.push(record);
+    // ✅ 去重：检查 records 中是否已存在相同的 fileId
+    const existingIndex = this.records.findIndex(r => r.fileId === record.fileId);
+    if (existingIndex !== -1) {
+      // 如果已存在，替换旧记录（保留最新的）
+      this.records[existingIndex] = record;
+    } else {
+      // 如果不存在，添加新记录
+      this.records.push(record);
+    }
     
     // 限制记录数量
     if (this.records.length > this.MAX_RECORDS) {
@@ -375,10 +413,11 @@ class UploadMonitor {
     const successful = completedRecords.filter(r => r.success);
     const failed = completedRecords.filter(r => !r.success);
     
-    // 计算耗时统计
+    // ✅ 计算耗时统计：只保留有真实开始时间的记录（startTime > 0）
     const durations = completedRecords
+      .filter(r => r.startTime > 0 && r.endTime)  // ✅ 过滤掉 startTime = 0 的兜底记录
       .map(r => r.endTime! - r.startTime)
-      .filter(d => d > 0);
+      .filter(d => d > 0);  // 再次过滤掉异常数据
     
     const averageDuration = durations.length > 0
       ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
@@ -401,7 +440,7 @@ class UploadMonitor {
     
     const totalBytesUploaded = successful.reduce((sum, r) => sum + r.fileSize, 0);
     
-    // 计算平均上传速度
+    // ✅ 计算平均上传速度：只基于有真实耗时的记录
     const totalDuration = durations.reduce((a, b) => a + b, 0);
     const averageSpeed = totalDuration > 0
       ? Math.round((totalBytesUploaded / (totalDuration / 1000)))

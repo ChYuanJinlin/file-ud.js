@@ -12,6 +12,7 @@ import {
   formatSpeed,
   formatDuration,
   logger,
+  checkNetworkStatus,
 } from "../utils";
 import { ErrorCode, FileUDError } from "../fileUD/errors";
 
@@ -140,6 +141,12 @@ export default class UploadFile<T = any> {
 
   /** 上传开始的时间戳 (毫秒) */
   private uploadStartTime: number = 0;
+
+  /** 标记是否已计入总字节数（避免重试时重复累加） */
+  public __hasCountedTotalBytes__: boolean = false;
+
+  /** 当前文件已上传的字节数（用于普通上传计算总进度） */
+  public __uploadedBytes__: number = 0;
 
   constructor(file: IFile, up: Uploader<T>) {
     this.fileId = file.fileId;
@@ -337,8 +344,43 @@ export default class UploadFile<T = any> {
       this.resolve = resolve;
       this.reject = reject;
       const up = this.__uploader__;
+      
+      // ✅ 重置已上传字节数（避免重新上传时使用旧值）
+      this.__uploadedBytes__ = 0;
+      
       if (!up.config?.action) {
         console.warn("请设置上传地址");
+        return;
+      }
+
+      // ✅ 上传前检查网络状态
+      try {
+        const networkCheck = checkNetworkStatus();
+        if (!networkCheck.online) {
+          const error = new Error(networkCheck.error || '网络连接异常');
+          logger.error("UploadFile", `网络检查失败: ${error.message}`, {
+            fileId: this.fileId,
+            fileName: this.fileName,
+          });
+          
+          // ✅ 设置文件状态为 error
+          this.proxy.status = "error";
+          this.onError(error);
+          reject(error);
+          return;
+        }
+        
+        logger.debug("UploadFile", "网络检查通过", {
+          fileId: this.fileId,
+          online: networkCheck.online,
+        });
+      } catch (error) {
+        logger.error("UploadFile", "网络检查异常", error);
+        
+        // ✅ 设置文件状态为 error
+        this.proxy.status = "error";
+        this.onError(error);
+        reject(error);
         return;
       }
 
@@ -386,16 +428,17 @@ export default class UploadFile<T = any> {
       }
 
       this.proxy.status = "uploading";
-
-      if (up.config?.autoUpload) {
-        up.totalUploadBytes += this.File.size;
-        up.totalBytes += this.File.size;
-      } else {
-        const totalBytes = Array.from(up.files).reduce(
-          (acc, file) => acc + this.File.size,
-          0,
-        );
-        up.totalBytes = up.totalUploadBytes += totalBytes;
+      
+      // ✅ 修复：只在首次上传时累加 totalBytes，避免重试时重复累加
+      // 对于分片上传，应该在 ChunkManager.initUpload() 中初始化 totalBytes
+      // 对于普通上传，在这里初始化
+      if (!this.chunkManager && up.config?.autoUpload) {
+        // 普通上传：只在首次上传时累加
+        if (up.totalBytes === 0 || !this.__hasCountedTotalBytes__) {
+          up.totalUploadBytes += this.File.size;
+          up.totalBytes += this.File.size;
+          this.__hasCountedTotalBytes__ = true;  // 标记已计数
+        }
       }
 
       let promise: Promise<T>;
@@ -524,20 +567,65 @@ export default class UploadFile<T = any> {
         this.proxy.percent = Math.floor((event.loaded * 100) / event.total);
       }
 
-      // 计算总进度：使用 lastLoadedMap 避免重复累加
-      const lastLoaded = up.lastLoadedMap.get(this.fileId) || 0;
-      const deltaLoaded = loaded - lastLoaded;
-      // 只累加增量部分
-      if (deltaLoaded > 0) {
-        up.totalProgress += deltaLoaded;
-        up.lastLoadedMap.set(this.fileId, loaded);
-      }
+      // ✅ 修复：使用 uploadedBytes 累加，而不是 totalProgress
+      const up = this.__uploader__;
+      
+      // 更新当前文件的已上传字节数
+      this.__uploadedBytes__ = loaded;
+      
+      // ✅ 计算所有文件的总已上传字节数和总字节数
+      let totalUploadedBytes = 0;
+      let currentTotalBytes = 0;  // ✅ 动态计算当前正在上传的文件总字节数
+      
+      up.files.forEach((file) => {
+        // ✅ 只累加正在上传或暂停的文件
+        if (file.status === "uploading" || file.status === "paused") {
+          currentTotalBytes += file.File.size;  // ✅ 累加文件大小
+          
+          if (file.chunkManager) {
+            // 分片上传：使用 chunkManager 的已上传字节数
+            totalUploadedBytes += file.chunkManager.totalUploadedSize;
+          } else {
+            // 普通上传：使用 __uploadedBytes__
+            totalUploadedBytes += file.__uploadedBytes__ || 0;
+          }
+        }
+      });
+      
+      // 更新全局已上传字节数和总进度
+      up.uploadedBytes = totalUploadedBytes;
+      up.totalPercent = currentTotalBytes > 0 
+        ? Math.min(100, Math.floor((totalUploadedBytes / currentTotalBytes) * 100))
+        : 0;
+    } else {
+      // 分片上传: 委托给 ChunkManager 处理,返回当前文件的百分比
+      // ✅ 计算全局总进度
+      const up = this.__uploader__;
+      
+      // ✅ 动态计算当前正在上传的文件总字节数
+      let totalUploadedBytes = 0;
+      let currentTotalBytes = 0;
+      
+      up.files.forEach((file) => {
+        // ✅ 只累加正在上传或暂停的文件
+        if (file.status === "uploading" || file.status === "paused") {
+          currentTotalBytes += file.File.size;
+          
+          if (file.chunkManager) {
+            // 分片上传：使用 chunkManager 的已上传字节数
+            totalUploadedBytes += file.chunkManager.totalUploadedSize;
+          } else {
+            // 普通上传：使用 __uploadedBytes__
+            totalUploadedBytes += file.__uploadedBytes__ || 0;
+          }
+        }
+      });
 
-      // 计算总进度百分比
-      up.totalPercent =
-        up.totalUploadBytes > 0
-          ? Math.round((up.totalProgress / up.totalUploadBytes) * 100)
-          : percent;
+      // 更新全局已上传字节数和总进度
+      up.uploadedBytes = totalUploadedBytes;
+      up.totalPercent = currentTotalBytes > 0
+        ? Math.min(100, Math.floor((totalUploadedBytes / currentTotalBytes) * 100))
+        : 0;
     }
 
     // 触发进度事件,通知外部监听器
@@ -679,10 +767,6 @@ export default class UploadFile<T = any> {
 
           // 绑定进度回调到当前文件实例
           upload.onprogress = function (event: ProgressEvent) {
-            console.log(
-              "🚀 ~ UploadFile ~ setupInterceptor ~ currentFileInstance:",
-              currentFileInstance?.fileName,
-            );
             if (currentFileInstance) {
               currentFileInstance.handleProgress(event);
             }

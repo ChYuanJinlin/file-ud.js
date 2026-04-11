@@ -21,6 +21,14 @@ export type {
 export { uploadMonitor } from "./upload-monitor";
 export type { UploadStats, UploadRecord } from "./upload-monitor";
 
+// ✅ 导出网络检查工具
+export { 
+  checkNetworkStatus, 
+  checkNetworkConnectivity, 
+  watchNetworkStatus 
+} from "./network";
+export type { NetworkCheckResult } from "./network";
+
 export function generateFileId() {
   const timestamp = Date.now().toString(36);
   const random = Math.random().toString(36).substring(2, 10);

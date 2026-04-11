@@ -157,6 +157,7 @@ export default class Uploader<T = any> extends EventEmitter {
         duration,
         durationFormatted: formatDuration(duration),
       };
+      
     }
   }
 

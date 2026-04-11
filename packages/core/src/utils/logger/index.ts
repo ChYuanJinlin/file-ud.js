@@ -214,7 +214,15 @@ function formatMessage(
   // 时间戳
   if (currentOptions.showTimestamp) {
     const now = new Date();
-    const timeStr = now.toISOString().replace('T', ' ').substring(0, 23);
+    // ✅ 使用本地时间格式化，而不是 toISOString()（UTC 时间）
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    const milliseconds = String(now.getMilliseconds()).padStart(3, '0');
+    const timeStr = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${milliseconds}`;
     parts.push(`[${timeStr}]`);
   }
 
