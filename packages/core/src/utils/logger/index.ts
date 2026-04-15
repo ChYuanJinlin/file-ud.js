@@ -275,19 +275,42 @@ function log(level: LogLevel, module: string, message: string, ...args: any[]): 
 
   const formattedMessage = formatMessage(level, module, message, args);
 
+  // ✅ 关键修复：使用 Error().stack 获取真实的调用位置
+  // 这样浏览器控制台的代码跳转会指向调用日志的位置，而不是 logger 文件
+  let stackInfo: string | undefined;
+  try {
+    const error = new Error();
+    const stackLines = error.stack?.split('\n') || [];
+    // stack 格式: 
+    // Error
+    //     at log (logger/index.ts:xxx:yy)        ← 当前函数
+    //     at Object.info (logger/index.ts:xxx:yy) ← logger 对象方法
+    //     at actualCaller (caller.ts:xxx:yy)     ← 真实调用者（我们要这个！）
+    // 跳过前两行，取第三行作为调用位置
+    if (stackLines.length >= 3) {
+      stackInfo = stackLines[3].trim();
+    }
+  } catch (e) {
+    // 忽略错误
+  }
+
+  // ✅ 将调用位置信息添加到参数中
+  // 浏览器控制台会自动解析这个位置并支持点击跳转
+  const outputArgs = stackInfo ? [...args, `\n    ${stackInfo}`] : args;
+
   // 根据级别选择输出方法
   switch (level) {
     case LogLevel.DEBUG:
-      console.debug(formattedMessage, ...args);
+      console.debug(formattedMessage, ...outputArgs);
       break;
     case LogLevel.INFO:
-      console.info(formattedMessage, ...args);
+      console.info(formattedMessage, ...outputArgs);
       break;
     case LogLevel.WARN:
-      console.warn(formattedMessage, ...args);
+      console.warn(formattedMessage, ...outputArgs);
       break;
     case LogLevel.ERROR:
-      console.error(formattedMessage, ...args);
+      console.error(formattedMessage, ...outputArgs);
       break;
   }
 
@@ -334,8 +357,10 @@ export const logger = {
    * @param message 消息内容
    * @param args 额外参数
    */
-  debug: (module: string, message: string, ...args: any[]) => 
-    log(LogLevel.DEBUG, module, message, ...args),
+  debug: (module: string, message: string, ...args: any[]) => {
+    message = `🔍 ${message}`;
+    log(LogLevel.DEBUG, module, message, ...args);
+  },
 
   /**
    * 信息日志
@@ -343,8 +368,10 @@ export const logger = {
    * @param message 消息内容
    * @param args 额外参数
    */
-  info: (module: string, message: string, ...args: any[]) => 
-    log(LogLevel.INFO, module, message, ...args),
+  info: (module: string, message: string, ...args: any[]) => {
+    message = `✅ ${message}`;
+    log(LogLevel.INFO, module, message, ...args);
+  },
 
   /**
    * 警告日志
@@ -352,8 +379,10 @@ export const logger = {
    * @param message 消息内容
    * @param args 额外参数
    */
-  warn: (module: string, message: string, ...args: any[]) => 
-    log(LogLevel.WARN, module, message, ...args),
+  warn: (module: string, message: string, ...args: any[]) => {
+    message = `⚠️ ${message}`;
+    log(LogLevel.WARN, module, message, ...args);
+  },
 
   /**
    * 错误日志
@@ -361,11 +390,9 @@ export const logger = {
    * @param message 消息内容
    * @param args 额外参数
    */
-  error: (module: string, message: string, ...args: any[]) => 
-    log(LogLevel.ERROR, module, message, ...args),
+  error: (module: string, message: string, ...args: any[]) => {
+    message = `❌ ${message}`;
+    log(LogLevel.ERROR, module, message, ...args);
+  },
 };
 
-// 自动初始化（仅在首次导入时执行一次）
-if (typeof window !== 'undefined') {
-  initLogger();
-}

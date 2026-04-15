@@ -14,13 +14,14 @@
     "example:windows": "start cmd /k \"cd packages\\example && pnpm run dev\" && start cmd /k \"cd server && nodemon main.js\""
   },
   "devDependencies": {
-    "turbo": "latest",
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.2",
+    "turbo": "latest"
   },
   "dependencies": {
     "@types/node": "^25.1.0",
     "axios": "^1.13.6",
     "idb": "^8.0.3",
+    "p-queue": "^9.1.2",
     "typescript": "^5.2.0",
     "uuid": "^13.0.0"
   }

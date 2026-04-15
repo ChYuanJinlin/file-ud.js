@@ -133,11 +133,9 @@ export const getCachedHash = async (
     const record = await db.get(HASH_STORE_NAME, fingerprint);
 
     if (record) {
-      console.log(`✅ Hash 缓存命中: ${fingerprint}`);
       return record.hash;
     }
 
-    console.log(`❌ Hash 缓存未命中: ${fingerprint}`);
     return null;
   } catch (error) {
     console.error("获取缓存 Hash 失败:", error);

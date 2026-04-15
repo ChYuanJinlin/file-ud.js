@@ -12,23 +12,23 @@ import Uploader from "@file-ud.js/core/uploader";
 import { IFile } from "@file-ud.js/core/types";
 import { uploadMonitor } from "@file-ud.js/core/utils";
 const isChunk = ref(true);
+FileUD.startUploadLogger({
+  enabled:true
+});
 const test1 = FileUD.createUploader("test1", {
   action: "/api/upload-chunk",
-  file: "file",
-  logConfig: {
-    enabled: true,
-    level: 2, // WARN
-    showTimestamp: true,
-    enableColors: false, // 生产环境禁用颜色
-  },
-  // file(obj, formData) {
-  //   formData.append("file", obj.chunkManager?.chunk!);
-  //   formData.append("fileName", obj.File.name);
-  //   formData.append("chunkIndex", obj.chunkManager?.uploadedChunkIndex.toString()!);
-  //   formData.append("totalChunks", obj.chunkManager?.totalChunks.toString()!);
-  //   formData.append("uploadId", obj.chunkManager?.uploadId!);
+  // file: "file",
 
-  // },
+  file({ formData, uploadFile, chunkIndex, data }) {
+    formData.append("file", data);
+    formData.append("fileHash", uploadFile.chunkManager?.fileHash!);
+    formData.append("fileName", uploadFile.File.name);
+    formData.append("chunkIndex", chunkIndex?.toString()!);
+    formData.append(
+      "totalChunks",
+      uploadFile.chunkManager?.totalChunks.toString()!,
+    );
+  },
   multiple: true,
   chunkOptions: isChunk.value ? {} : null,
 });
@@ -91,7 +91,7 @@ window.FileUD = FileUD;
 
 <template>
   <div>
-    <button @click="submit()">提交</button>
+    <!-- <button @click="submit()">提交</button> -->
     <button @click="test1.clearFiles()">清除文件列表</button>
     <button @click="handlerChunk">
       {{ isChunk ? "普通上传" : "大文件上传" }}

@@ -1,10 +1,21 @@
-import { EventName, FileUDConfigs } from "../types";
+import { EventName, FileUDConfigs, LogConfig } from "../types";
 import Uploader from "../uploader/index";
-import { mergeObjects } from "../utils";
+import { initLogger, LogLevel, mergeObjects } from "../utils";
 
 export default class FileUD {
   private static uploaders: Map<string, Uploader> = new Map();
   public static uploader: Uploader | null = Uploader.instances;
+
+  public static startUploadLogger(logConfig?: LogConfig) {
+    // 初始化日志配置
+
+    initLogger({
+      enabled: logConfig?.enabled ?? true,
+      level: logConfig?.level ?? LogLevel.DEBUG,
+      showTimestamp: logConfig?.showTimestamp,
+      enableColors: logConfig?.enableColors,
+    });
+  }
   public static createUploader<T = any>(
     name: string,
     config?: FileUDConfigs,

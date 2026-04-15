@@ -1,31 +1,27 @@
-import { IFile } from "../types";
+import { IFile, UploadTimeInfo } from "../types";
 import Uploader from "../uploader";
 import UploadFile from "../uploader/UploadFile";
 
 // 导出日志工具
-export { 
-  logger, 
-  initLogger, 
-  setLogLevel, 
+export {
+  logger,
+  initLogger,
+  setLogLevel,
   LogLevel,
   addLogCollector,
   clearLogCollectors,
 } from "./logger";
-export type { 
-  LoggerOptions, 
-  LogEntry, 
-  LogCollectorCallback 
-} from "./logger";
+export type { LoggerOptions, LogEntry, LogCollectorCallback } from "./logger";
 
 // 导出上传监控工具
 export { uploadMonitor } from "./upload-monitor";
 export type { UploadStats, UploadRecord } from "./upload-monitor";
 
 // ✅ 导出网络检查工具
-export { 
-  checkNetworkStatus, 
-  checkNetworkConnectivity, 
-  watchNetworkStatus 
+export {
+  checkNetworkStatus,
+  checkNetworkConnectivity,
+  watchNetworkStatus,
 } from "./network";
 export type { NetworkCheckResult } from "./network";
 
@@ -81,6 +77,29 @@ export function handleFile(file: File): Promise<string> {
       reader.readAsDataURL(file);
     }
   });
+}
+
+export function computeUploadTime(uploadTime: UploadTimeInfo) {
+  return {
+    start() {
+      // 记录全局上传开始时间
+      const now = Date.now();
+      // ✅ 修复：直接修改对象属性，而不是重新赋值引用
+      uploadTime.startTime = now;
+      uploadTime.endTime = 0;
+      uploadTime.duration = 0;
+      uploadTime.durationFormatted = "0s";
+    },
+    end() {
+      // 记录上传结束时间并计算持续时间
+      const endTime = Date.now();
+      const duration = endTime - uploadTime.startTime;
+      // ✅ 修复：直接修改对象属性，而不是重新赋值引用
+      uploadTime.endTime = endTime;
+      uploadTime.duration = duration;
+      uploadTime.durationFormatted = formatDuration(duration);
+    },
+  };
 }
 
 export function getFileExtension(filename: string) {
@@ -173,11 +192,15 @@ export function createReactiveUploadFile(
     },
 
     set(target, prop, value, receiver) {
+      const up = target.__uploader__;
       // 获取旧值
       const oldValue = Reflect.get(target, prop, receiver);
 
       // 设置新值
       const result = Reflect.set(target, prop, value, receiver);
+    
+
+   
       // 如果值真的变化了，触发更新
       if (oldValue !== value) {
         // 触发 update 回调（使用防抖优化）

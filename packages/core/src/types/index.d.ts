@@ -191,6 +191,18 @@ export interface ChunkOptions {
   uploadId?: string;
 }
 
+/* 日志配置 */
+
+export interface LogConfig {
+  /** 是否启用日志输出（默认 true） */
+  enabled?: boolean;
+  /** 日志级别：0=DEBUG, 1=INFO, 2=WARN, 3=ERROR（默认根据 NODE_ENV 自动设置） */
+  level?: 0 | 1 | 2 | 3;
+  /** 是否显示时间戳（默认 true） */
+  showTimestamp?: boolean;
+  /** 是否启用颜色输出（默认非生产环境启用） */
+  enableColors?: boolean;
+}
 export interface FileUDConfigs {
   /* 是否支持多选 */
   multiple?: boolean;
@@ -206,9 +218,7 @@ export interface FileUDConfigs {
    * 文件上传地址，可以是字符串或者promise函数
    * @return {Promise}
    */
-  action:
-    | string
-    | ((formData: FormData, uploadFile: UploadFile) => Promise<any>);
+  action: string | ((formData: FormData, uploadFile: UploadFile) => Promise<any>);
   /* 上传文件的数量限制 */
   limit?: number;
   /* 上传文件限制的大小 */
@@ -216,22 +226,18 @@ export interface FileUDConfigs {
   /* 上传请求的头部信息 */
   headers?: Record<string, any>;
   /* 上传文件标识 */
-  file: string | ((uploadFile: UploadFile, formData: FormData) => void);
+  file:
+    | string
+    | ((fileObj: {
+        data: File | Blob;
+        uploadFile: UploadFile;
+        formData: FormData;
+        chunkIndex?: number;
+      }) => void);
   /* 分片上传配置 */
   chunkOptions?: ChunkOptions | null;
   /* 可选：传入自定义 axios 实例 */
   axiosInstance?: AxiosInstance;
-  /* 日志配置 */
-  logConfig?: {
-    /** 是否启用日志输出（默认 true） */
-    enabled?: boolean;
-    /** 日志级别：0=DEBUG, 1=INFO, 2=WARN, 3=ERROR（默认根据 NODE_ENV 自动设置） */
-    level?: 0 | 1 | 2 | 3;
-    /** 是否显示时间戳（默认 true） */
-    showTimestamp?: boolean;
-    /** 是否启用颜色输出（默认非生产环境启用） */
-    enableColors?: boolean;
-  };
 }
 
 export interface PluginContext {
@@ -361,6 +367,7 @@ export interface IFile {
     | "uploading"
     | "paused"
     | "success"
+    | "fail"
     | "error"
     | "cancelled"
     | "merging"
@@ -396,12 +403,7 @@ export type OnInitCallBack = (
 /* 
 合并分片回调函数类型
 */
-export type OnMergeCallBack = (
-  file: UploadFile,
-  uploadId: string,
-  fileHash: string,
-  totalChunks: number,
-) => Promise<any>;
+export type OnMergeCallBack = (chunkManager: ChunkManager) => Promise<any>;
 /* 
 打开文件之后的回调
 */

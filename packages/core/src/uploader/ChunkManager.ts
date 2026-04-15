@@ -1,7 +1,16 @@
 import { AxiosProgressEvent } from "axios";
 import { ChunkOptions } from "../types";
 import UploadFile from "./UploadFile";
-import { calculateFileMD5, formatSpeed, sleep, logger } from "../utils";
+import PQueue from "p-queue";
+import {
+  calculateFileMD5,
+  formatSpeed,
+  formatDuration,
+  sleep,
+  logger,
+  checkNetworkStatus,
+  computeUploadTime,
+} from "../utils";
 import {
   saveUploadTask,
   updateChunkStatus,
@@ -25,6 +34,8 @@ export default class ChunkManager {
   public uploadEndTime = 0;
   public completedChunks = 0;
   public totalUploadTime = 0;
+  public response: any = null;
+  public queue: PQueue = new PQueue({ concurrency: this.maxConcurrent });
   public uploadStartTime = performance.now();
   uploadErrorFileCallBack: (() => void)[] = [];
   public uploadStatsInfos: {
@@ -41,6 +52,9 @@ export default class ChunkManager {
   uploadFile: UploadFile;
   totalUploadedSize: number = 0;
   config: ChunkOptions; // 保存配置
+
+  // ✅ 新增：用于标记已经累加过 completedChunks 的分片（防重复累加）
+  private countedChunks: Set<number> = new Set();
 
   // 新增属性
   public fileHash: string = ""; // 文件MD5哈希
@@ -67,18 +81,21 @@ export default class ChunkManager {
     this.config = ChunkOptions; // 保存配置
     this.chunkSize = ChunkOptions.chunkSize || 1024 * 1024 * 5; // 默认5MB
     this.maxConcurrent = ChunkOptions.maxConcurrent || 5; // 默认同时上传5个分片
-    this.retries = ChunkOptions.retries || 3; // 默认重试3次
+    this.retries = ChunkOptions.retries || 5; // 默认重试3次
     this.retryDelay = ChunkOptions.retryDelay || 1000; // 默认重试延迟1秒
     this.timeout = ChunkOptions.timeout || 30000; // 默认超时30秒
     this.enableResume = ChunkOptions.enableResume || false; // 默认不启用断点续传
     this.totalChunks = Math.ceil(file.File.size / this.chunkSize);
     this.uploadFile = file;
-    this.uploadedChunks = Array(this.totalChunks).fill(false);
+    this.uploadedChunks = [];
+    this.completedChunks = 0; // ✅ 显式初始化 completedChunks
 
-    // 如果提供了自定义uploadId，使用它
-    if (ChunkOptions.uploadId) {
-      this.uploadId = ChunkOptions.uploadId;
-    }
+    logger.debug("ChunkManager", "创建新的 ChunkManager 实例", {
+      fileId: file.fileId,
+      fileName: file.fileName,
+      totalChunks: this.totalChunks,
+      completedChunks: this.completedChunks,
+    });
   }
 
   /**
@@ -106,7 +123,10 @@ export default class ChunkManager {
             context.status = "hashing";
             this.uploadFile.proxy.status = "hashing";
             context.message = `正在计算文件指纹: ${percent}%`;
-
+            logger.debug(
+              "ChunkManager",
+              `computeFileHash 被调用: ${context.message}`,
+            );
             // 通过 runHook 调用插件的 onProgress 钩子
             await up["runHook"](
               "onProgress",
@@ -119,6 +139,7 @@ export default class ChunkManager {
           },
         );
       } catch (error) {
+        logger.error("ChunkManager", "计算文件哈希失败，使用备用标识", error);
         // 如果计算失败，使用时间戳作为备用标识
         this.fileHash = `fallback_${Date.now()}_${Math.random().toString(36).substring(2)}`;
       } finally {
@@ -132,14 +153,28 @@ export default class ChunkManager {
     // 1. 生成快速指纹
     const quickFingerprint = `${file.name}_${file.lastModified}_${file.size}`;
 
+    // ✅ 添加调试日志：记录每次调用 getFileHash 的文件名
+    logger.debug("ChunkManager", `getFileHash 被调用: ${file.name}`, {
+      fileName: file.name,
+      fileSize: file.size,
+      lastModified: file.lastModified,
+      fingerprint: quickFingerprint,
+      fileId: this.uploadFile.fileId,
+    });
+
     // 2. 从 IndexedDB 中查找缓存
     const cached = await getCachedHash(quickFingerprint);
     if (cached) {
+      logger.info("ChunkManager", `Hash 缓存命中:: ${file.name}`, {
+        fileName: file.name,
+        fileId: this.uploadFile.fileId,
+      });
       this.uploadFile.hashPercent = 100;
       return cached;
     }
 
     // 3. 未命中，实际计算 Hash
+    logger.info("ChunkManager", `Hash 缓存未命中，开始计算: ${file.name}`);
     const hash = await this.computeFileHash(); // 计算文件哈希
 
     // 4. 存入缓存
@@ -151,7 +186,6 @@ export default class ChunkManager {
    */
   private async initUpload(): Promise<void> {
     const up = this.uploadFile.__uploader__;
-
     this.fileHash = await this.getFileHash(this.uploadFile.File);
 
     // ✅ 添加文件级别的开始上传日志（用于监控模块）
@@ -163,17 +197,106 @@ export default class ChunkManager {
       chunkSize: this.chunkSize,
     });
 
+    // ✅ 秒传检查：如果配置了 onInit 回调，优先调用服务端接口检查文件是否存在
+    if (up.onInitCallback) {
+      try {
+        logger.debug("ChunkManager", "调用 onInit 回调检查秒传/断点续传", {
+          fileId: this.uploadFile.fileId,
+          fileName: this.uploadFile.fileName,
+          fileHash: this.fileHash,
+        });
+
+        const initResult = await up.onInitCallback(
+          this.uploadFile.proxy,
+          this.totalChunks,
+          this.fileHash,
+        );
+
+        // 保存服务端返回的 uploadId
+        if (initResult?.uploadId) {
+          this.uploadId = initResult.uploadId;
+          logger.info("ChunkManager", "服务端初始化成功", {
+            uploadId: this.uploadId,
+            fileId: this.uploadFile.fileId,
+          });
+
+          // ✅ 秒传判断：如果服务端返回的已上传分片数量等于总分片数，说明文件已存在
+          if (
+            initResult.uploadedChunks &&
+            Array.isArray(initResult.uploadedChunks) &&
+            initResult.uploadedChunks.length === this.totalChunks
+          ) {
+            logger.info("ChunkManager", "✅ 秒传成功！文件已存在于服务端", {
+              fileHash: this.fileHash,
+              fileName: this.uploadFile.fileName,
+              uploadedChunksCount: initResult.uploadedChunks.length,
+              totalChunks: this.totalChunks,
+            });
+
+            // 标记所有分片为已上传
+            for (let i = 0; i < this.totalChunks; i++) {
+              this.uploadedChunks[i] = true;
+              this.countedChunks.add(i);
+            }
+            this.completedChunks = this.totalChunks;
+            this.totalUploadedSize = this.uploadFile.File.size;
+
+            return;
+          }
+
+          // ✅ 断点续传：如果服务端返回部分已上传分片
+          if (
+            initResult.uploadedChunks &&
+            Array.isArray(initResult.uploadedChunks) &&
+            initResult.uploadedChunks.length > 0
+          ) {
+            logger.info("ChunkManager", "恢复服务端已上传分片（断点续传）", {
+              uploadedChunksCount: initResult.uploadedChunks.length,
+              totalChunks: this.totalChunks,
+              percent: Math.round(
+                (initResult.uploadedChunks.length / this.totalChunks) * 100,
+              ),
+            });
+
+            initResult.uploadedChunks.forEach((index: number) => {
+              if (index >= 0 && index < this.totalChunks) {
+                this.uploadedChunks[index] = true;
+                this.completedChunks++;
+                this.countedChunks.add(index);
+                this.totalUploadedSize += this.chunkSize;
+              }
+            });
+
+            return; // 已恢复进度，直接返回
+          }
+        }
+      } catch (error) {
+        logger.warn("ChunkManager", "服务端初始化失败，降级到本地模式:", error);
+        // 降级到本地 IndexedDB 存储
+      }
+    }
+
     // 如果启用了断点续传，尝试从 IndexedDB 恢复进度
     if (this.enableResume) {
       const savedProgress = await this.loadProgress();
       if (savedProgress && savedProgress.uploadedChunks) {
+        logger.debug("ChunkManager", "开始恢复断点续传进度", {
+          fileId: this.uploadFile.fileId,
+          fileName: this.uploadFile.fileName,
+          completedChunksBefore: this.completedChunks,
+          uploadedChunksCount: savedProgress.uploadedChunks.length,
+        });
+
         // 从保存的进度中恢复
         this.uploadId = this.fileHash; // 使用 fileHash 作为任务ID
-        // 恢复 uploadedChunks 状态
+
+        // ✅ 恢复 uploadedChunks 状态、completedChunks 计数和 countedChunks 集合
         savedProgress.uploadedChunks.forEach((index: number) => {
           if (index >= 0 && index < this.totalChunks) {
             this.uploadedChunks[index] = true;
-            this.completedChunks++;
+            this.completedChunks++; // 累加计数器
+            this.countedChunks.add(index); // ✅ 标记为已累加，防止重试时重复累加
+            this.totalUploadedSize += this.chunkSize;
           }
         });
 
@@ -187,68 +310,30 @@ export default class ChunkManager {
 
         return;
       }
-
-      // 如果没有保存的进度，创建新任务
-      try {
-        await saveUploadTask({
-          id: this.fileHash,
-          filename: this.uploadFile.File.name,
-          size: this.uploadFile.File.size,
-          chunkSize: this.chunkSize,
-          totalChunks: this.totalChunks,
-          chunks: Array.from({ length: this.totalChunks }, (_, i) => ({
-            index: i,
-            uploaded: false,
-          })),
-          createdAt: Date.now(),
-        });
-
-        logger.debug("ChunkManager", "创建新的上传任务记录", {
-          fileId: this.uploadFile.fileId,
-          fileName: this.uploadFile.fileName,
-        });
-      } catch (error) {
-        logger.warn("ChunkManager", "创建上传任务失败:", error);
-      }
     }
 
-    // 调用用户提供的初始化回调
-    const onInit = up.onInitCallback;
-    if (onInit) {
-      try {
-        const result = await onInit(
-          this.uploadFile,
-          this.totalChunks,
-          this.fileHash,
-        );
+    // 如果没有保存的进度，创建新任务
+    try {
+      await saveUploadTask({
+        id: this.fileHash,
+        filename: this.uploadFile.File.name,
+        size: this.uploadFile.File.size,
+        chunkSize: this.chunkSize,
+        totalChunks: this.totalChunks,
+        chunks: Array.from({ length: this.totalChunks }, (_, i) => ({
+          index: i,
+          uploaded: false,
+        })),
+        createdAt: Date.now(),
+      });
 
-        this.uploadId = result.uploadId;
-
-        // 如果返回了已上传的分片列表，更新状态
-        if (result.uploadedChunks && Array.isArray(result.uploadedChunks)) {
-          result.uploadedChunks.forEach((index: number) => {
-            if (index >= 0 && index < this.totalChunks) {
-              this.uploadedChunks[index] = true;
-              this.completedChunks++;
-            }
-          });
-        }
-      } catch (error) {
-        throw new Error(
-          `分片上传初始化失败: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-    } else {
-      // 如果没有提供onInit回调，生成本地uploadId
-      this.uploadId = this.fileHash;
+      logger.debug("ChunkManager", "创建新的上传任务记录", {
+        fileId: this.uploadFile.fileId,
+        fileName: this.uploadFile.fileName,
+      });
+    } catch (error) {
+      logger.warn("ChunkManager", "创建上传任务失败:", error);
     }
-  }
-
-  /**
-   * 生成唯一的uploadId
-   */
-  private generateUploadId(): string {
-    return `upload_${Date.now()}_${Math.random().toString(36).substring(2)}`;
   }
 
   /**
@@ -288,6 +373,22 @@ export default class ChunkManager {
         } catch (error) {
           // 确保清除定时器
           clearTimeout(timeoutId);
+
+          // ✅ 添加详细的错误日志
+          if (error instanceof Error && error.name === "AbortError") {
+            logger.error(
+              "ChunkManager",
+              `分片 ${chunkIndex + 1} 被取消（可能是超时或手动取消）`,
+              {
+                fileId: this.uploadFile.fileId,
+                fileName: this.uploadFile.fileName,
+                chunkIndex,
+                timeout: this.timeout,
+                error: error.message,
+              },
+            );
+          }
+
           throw error;
         }
 
@@ -344,7 +445,10 @@ export default class ChunkManager {
   /**
    * 上传单个分片
    */
-  private async uploadChunk(chunkIndex: number, signal?: AbortSignal): Promise<void> {
+  private async uploadChunk(
+    chunkIndex: number,
+    signal?: AbortSignal,
+  ): Promise<void> {
     const start = chunkIndex * this.chunkSize;
     const end = Math.min(start + this.chunkSize, this.uploadFile.File.size);
     const chunk = this.uploadFile.File.slice(start, end);
@@ -364,62 +468,72 @@ export default class ChunkManager {
       },
     );
 
+    // ✅ 修复：创建独立的 FormData，作为参数传递给 upload 方法
+    // 不要保存到实例级别，避免多文件并发时被覆盖
     const chunkFormData = new FormData();
-    chunkFormData.append("chunkIndex", chunkIndex.toString());
-    chunkFormData.append("totalChunks", this.totalChunks.toString());
-    chunkFormData.append("fileName", this.uploadFile.fileName);
-    this.uploadFile.setFile(chunk, chunkFormData);
-
-    // 临时保存到 uploadFile，供拦截器使用
-    this.uploadFile.formData = chunkFormData;
+    this.uploadFile.setFile(chunk, chunkFormData, chunkIndex);
 
     try {
       // ✅ 传递 signal 实现真正的超时控制
-      await this.uploadFile.upload((res) => {
-        if (!this.uploadedChunks[chunkIndex]) {
-          // 完成的分片
-          this.completedChunks++;
-          this.totalUploadedSize += chunkSizeValue;
-          this.uploadedChunks[chunkIndex] = true;
+      // ✅ 传递 chunkFormData 作为请求参数，避免使用共享的 this.uploadFile.formData
+      await this.uploadFile.upload(
+        (res) => {
+          // ✅ 使用 countedChunks 来防止重复累加
+          this.response = res; // 暂存最新的响应数据，供外部访问
+          if (!this.uploadedChunks[chunkIndex]) {
+            // 新上传的分片，累加计数
+            this.updateProgress();
+            this.totalUploadedSize += chunkSizeValue;
+            this.uploadedChunks[chunkIndex] = true;
+            // 更新进度
 
-          logger.info(
-            "ChunkManager",
-            `分片 ${chunkIndex + 1}/${this.totalChunks} 上传成功`,
-            {
-              fileId: this.uploadFile.fileId,
-              fileName: this.uploadFile.fileName,
-              chunkIndex,
-              completedChunks: this.completedChunks,
-              totalChunks: this.totalChunks,
-              progress: `${Math.round((this.completedChunks / this.totalChunks) * 100)}%`,
-            },
-          );
-        } else {
-          logger.debug(
-            "ChunkManager",
-            `分片 ${chunkIndex + 1}/${this.totalChunks} 已上传，跳过累加`,
-          );
-        }
+            logger.info(
+              "ChunkManager",
+              `分片 ${chunkIndex + 1}/${this.totalChunks} 上传成功`,
+              {
+                fileId: this.uploadFile.fileId,
+                fileName: this.uploadFile.fileName,
+                chunkIndex,
+                completedChunks: this.completedChunks,
+                totalChunks: this.totalChunks,
+                percent: this.uploadFile.proxy.percent,
+              },
+            );
+          } else {
+            logger.debug(
+              "ChunkManager",
+              `分片 ${chunkIndex + 1}/${this.totalChunks} 已上传，跳过累加`,
+              {
+                completedChunks: this.completedChunks,
+                totalChunks: this.totalChunks,
+              },
+            );
+          }
 
-        // 更新进度
-        this.updateProgress();
+          // 从失败列表中移除
+          const failIndex = this.failedChunks.indexOf(chunkIndex);
+          if (failIndex > -1) {
+            this.failedChunks.splice(failIndex, 1);
+          }
 
-        // 从失败列表中移除
-        const failIndex = this.failedChunks.indexOf(chunkIndex);
-        if (failIndex > -1) {
-          this.failedChunks.splice(failIndex, 1);
-        }
-
-        // 如果启用了断点续传，更新单个分片状态（更高效）
-        if (this.enableResume) {
-          updateChunkStatus(this.fileHash, chunkIndex, true).catch((error) => {
-            logger.warn("ChunkManager", "更新分片状态失败:", error);
-          });
-        }
-      }, signal);
+          // 如果启用了断点续传，更新单个分片状态（更高效）
+          if (this.enableResume) {
+            updateChunkStatus(this.fileHash, chunkIndex, true).catch(
+              (error) => {
+                logger.warn("ChunkManager", "更新分片状态失败:", error);
+              },
+            );
+          }
+        },
+        signal,
+        chunkFormData,
+      ); // ✅ 传递 chunkFormData 作为参数
 
       return Promise.resolve();
     } catch (error) {
+      // ✅ 分片失败时，不要回退 completedChunks！
+      // 只标记 uploadedChunks 为 false，等待重试成功后再累加
+      // 这样进度只会增加不会减少，避免进度回退导致用户体验差
       this.uploadedChunks[chunkIndex] = false;
 
       logger.error(
@@ -430,6 +544,9 @@ export default class ChunkManager {
           fileName: this.uploadFile.fileName,
           chunkIndex,
           error: error instanceof Error ? error.message : String(error),
+          completedChunks: this.completedChunks,
+          totalChunks: this.totalChunks,
+          progress: this.uploadFile.proxy.progress,
         },
       );
 
@@ -447,18 +564,15 @@ export default class ChunkManager {
       // 调用用户提供的合并回调
       const onMerge = up.onMergeCallback;
       if (onMerge) {
-        const response = await onMerge(
-          this.uploadFile,
-          this.uploadId,
-          this.fileHash,
-          this.totalChunks,
-        );
+        const response = await onMerge(this);
 
         // 清除保存的进度
         if (this.enableResume) {
           await this.clearProgress();
         }
-        this.uploadFile.proxy.status = "success";
+
+        this.uploadFile.status = "success";
+
         return response;
       } else {
         // 如果没有提供onMerge回调，直接认为成功
@@ -470,6 +584,7 @@ export default class ChunkManager {
         return undefined;
       }
     } catch (error) {
+      this.uploadFile.status = "fail";
       throw error;
     }
   }
@@ -482,10 +597,84 @@ export default class ChunkManager {
     this.uploadEndTime = performance.now();
     this.totalUploadTime = this.uploadEndTime - this.uploadStartTime;
 
-    // 检查结果
-    const allSuccess = this.uploadedChunks.every((uploaded) => uploaded);
+    // ✅ 修复：基于 completedChunks 判断是否所有分片都完成了
+    // uploadedChunks 可能会因为重试、断点续传等场景导致状态不一致
+    // completedChunks 是可靠的计数器，只要累加了就说明分片确实上传成功了
+    const allSuccess = this.completedChunks === this.totalChunks;
+
+    logger.debug("ChunkManager", `检查统计信息`, {
+      fileId: this.uploadFile.fileId,
+      fileName: this.uploadFile.fileName,
+      completedChunks: this.completedChunks,
+      totalChunks: this.totalChunks,
+      allSuccess,
+      uploadedChunksTrue: this.uploadedChunks.filter((u) => u).length,
+      failedChunks: this.failedChunks.length,
+    });
+
     if (allSuccess) {
-      // 所有分片上传成功，调用合并接口
+      // ✅ 所有分片上传成功，强制设置进度为 100%
+      const up = this.uploadFile.__uploader__;
+
+      // ✅ 更新全局上传数据量：累加所有已完成文件 + 当前文件
+      let totalUploadedBytes = 0;
+      up.files.forEach((file) => {
+        if (file.status === "success") {
+          // 已完成的文件：累加整个文件大小
+          totalUploadedBytes += file.File.size;
+        } else if (file === this.uploadFile) {
+          // 当前文件：累加整个文件大小（因为所有分片都完成了）
+          totalUploadedBytes += file.File.size;
+        } else if (file.status === "uploading" || file.status === "paused") {
+          // 其他正在上传的文件：累加已上传字节数
+          if (file.chunkManager) {
+            totalUploadedBytes += file.chunkManager.totalUploadedSize;
+          } else {
+            totalUploadedBytes += file.__uploadedBytes__ || 0;
+          }
+        }
+      });
+
+      up.uploadedBytes = totalUploadedBytes;
+
+      // ✅ 计算总进度：基于动态计算的总字节数
+      let currentTotalBytes = 0;
+      up.files.forEach((file) => {
+        if (
+          file.status === "uploading" ||
+          file.status === "paused" ||
+          file.status === "success"
+        ) {
+          currentTotalBytes += file.File.size;
+        }
+      });
+
+      up.totalPercent =
+        currentTotalBytes > 0
+          ? Math.min(
+              100,
+              Math.floor((totalUploadedBytes / currentTotalBytes) * 100),
+            )
+          : 100;
+
+      // ✅ 计算并更新全局上传速度
+      this.calculateAndUpdateSpeed(this.uploadFile.File.size);
+
+      // ✅ 更新单个文件的 uploadSpeed（分片上传完成时）
+      const totalTime = (performance.now() - this.uploadStartTime) / 1000;
+      const averageSpeed =
+        totalTime > 0 ? this.uploadFile.File.size / totalTime : 0;
+      this.uploadFile.proxy.uploadSpeed = {
+        currentSpeed: 0, // 上传已完成，瞬时速度为 0
+        averageSpeed,
+        currentSpeedFormatted: "0 B/s",
+        averageSpeedFormatted: formatSpeed(averageSpeed),
+      };
+
+      // 更新单个文件进度
+      this.uploadFile.proxy.percent = 100;
+
+      // 调用合并接口
       try {
         const mergeResult = await this.mergeChunks();
         this.uploadFile.onScuccess(mergeResult);
@@ -505,7 +694,22 @@ export default class ChunkManager {
     } else {
       // 有分片失败，尝试重试
       if (this.failedChunks.length > 0) {
+        logger.warn(
+          "ChunkManager",
+          `发现 ${this.failedChunks.length} 个失败分片，开始重试`,
+          {
+            fileId: this.uploadFile.fileId,
+            fileName: this.uploadFile.fileName,
+            failedChunks: this.failedChunks,
+          },
+        );
+
         await this.retryFailedChunks();
+
+        // ✅ 重试完成后，再次检查统计信息
+        // 如果重试成功，会触发合并和状态转换
+        // 如果重试仍然失败，会触发错误回调
+        await this.checkStatistics();
       } else {
         this.uploadFile.onError(new Error("部分分片上传失败"));
       }
@@ -632,7 +836,7 @@ export default class ChunkManager {
    * 恢复上传
    *
    * 从暂停的位置继续上传。
-   * 对于分片上传,会继续上传未完成的分片。
+   * 对于分片上传,继续上传未完成的分片。
    * 对于普通上传,需要重新开始(因为 XHR 无法恢复)。
    *
    * @example
@@ -689,12 +893,27 @@ export default class ChunkManager {
     });
   }
 
+  /**
+   * 更新上传进度
+   *
+   * ✅ 简单直接的进度计算：completedChunks / totalChunks * 100%
+   * completedChunks 只在分片真正上传成功时才累加
+   */
   public updateProgress() {
-    this.uploadFile.proxy.percent = Math.floor(
-      (this.completedChunks / this.totalChunks) * 100,
-    ); // 已完成分片的总大小
+    // ✅ 简单直接的进度计算
+    let percent = Math.round((this.completedChunks++ / this.totalChunks) * 100);
 
-    // 计算并更新上传速度
+    // ✅ 边界保护：确保不超过 100%
+    percent = Math.min(100, Math.max(0, percent));
+
+    // ✅ 如果所有分片都完成，强制设置为 100%
+    if (this.completedChunks === this.totalChunks) {
+      percent = 100;
+    }
+
+    this.uploadFile.proxy.percent = percent;
+
+    // ✅ 计算并更新全局上传速度
     this.calculateAndUpdateSpeed(this.totalUploadedSize);
   }
 
@@ -705,8 +924,8 @@ export default class ChunkManager {
   private calculateAndUpdateSpeed(currentUploadedBytes: number): void {
     const now = performance.now();
 
-    // 首次调用，初始化基准值
-    if (this.lastUpdateTime === 0) {
+    // ✅ 首次调用或重新上传时，初始化基准值
+    if (this.lastUpdateTime === 0 || this.lastUpdateTime > now) {
       this.lastUpdateTime = now;
       this.lastUploadedBytes = currentUploadedBytes;
       return;
@@ -730,13 +949,9 @@ export default class ChunkManager {
     const totalTime = (now - this.uploadStartTime) / 1000;
     const averageSpeed = totalTime > 0 ? currentUploadedBytes / totalTime : 0;
 
-    // 更新全局静态属性
-    this.uploadFile.__uploader__.uploadSpeed = {
-      currentSpeed,
-      averageSpeed,
-      currentSpeedFormatted: formatSpeed(currentSpeed),
-      averageSpeedFormatted: formatSpeed(averageSpeed),
-    };
+    // ✅ 不再直接更新全局 uploadSpeed，而是触发 Uploader 的更新
+    // 由 Uploader.calculateGlobalUploadSpeed() 统一聚合所有文件的速度
+    this.uploadFile.__uploader__.triggerUpdate();
 
     // 更新基准值
     this.lastUpdateTime = now;
@@ -744,6 +959,32 @@ export default class ChunkManager {
   }
 
   public async startUpload() {
+    const up = this.uploadFile.__uploader__;
+
+    // ✅ 重置所有状态（避免重新上传时使用旧值）
+    this.totalUploadedSize = 0;
+    this.uploadFile.__uploadedBytes__ = 0;
+    this.uploadStartTime = performance.now(); // ✅ 重置开始时间
+    this.countedChunks.clear(); // ✅ 重置已计数分片集合
+    
+    // ✅ 重置速度计算状态（避免第二次上传时速度计算错误）
+    this.lastUpdateTime = 0;
+    this.lastUploadedBytes = 0;
+
+    // ❌ 不要在这里重置 completedChunks！
+    // completedChunks 会在 initUpload() 中根据断点续传情况设置
+    // 如果没有断点续传，completedChunks 保持为 0（构造函数中初始化）
+
+    // ✅ 初始化总字节数（只在首次上传时）
+    if (!this.uploadFile.__hasCountedTotalBytes__) {
+      up.totalUploadBytes += this.uploadFile.File.size;
+      up.totalBytes += this.uploadFile.File.size;
+      this.uploadFile.__hasCountedTotalBytes__ = true;
+    }
+
+    // ✅ 增加超时时间到 60 秒（避免大文件分片上传被误取消）
+    this.timeout = Math.max(this.timeout, 60000);
+
     // 第一步：初始化上传（获取uploadId、检查已上传分片）
     await this.initUpload();
 
@@ -791,11 +1032,14 @@ export default class ChunkManager {
     }
 
     try {
+      computeUploadTime(this.uploadFile.proxy.uploadTime).start();
       // 使用信号量控制并发
       await this.uploadWithConcurrency();
 
       // 检查统计信息并触发合并或错误处理
       this.checkStatistics();
+
+      computeUploadTime(this.uploadFile.proxy.uploadTime).end();
     } catch (error) {
       // 错误时也记录耗时
       this.uploadEndTime = performance.now();
@@ -820,37 +1064,29 @@ export default class ChunkManager {
       if (this.uploadedChunks[chunkIndex]) {
         continue;
       }
-
       this.uploadedChunkIndex = chunkIndex + 1;
-
       // 记录分片开始时间
       chunkStartTimes[chunkIndex] = performance.now();
-
-      const promise = this.uploadChunkWithRetry(chunkIndex)
-        .then(() => {
-          // 记录分片耗时
-          chunkDurations[chunkIndex] =
-            performance.now() - chunkStartTimes[chunkIndex];
-        })
-        .catch((error) => {
-          // 记录失败分片的耗时（如果有）
-          if (chunkStartTimes[chunkIndex]) {
-            chunkDurations[chunkIndex] =
-              performance.now() - chunkStartTimes[chunkIndex];
-          }
-          // 重新抛出错误，让 Promise.allSettled 能够捕获
-          throw error;
-        });
-
-      uploadPromises.push(promise);
-
-      // 并发控制：当达到最大并发数时，等待其中一个完成
-      if (uploadPromises.length >= this.maxConcurrent) {
-        await Promise.race(uploadPromises);
-      }
+      uploadPromises.push(
+        this.queue.add(() =>
+          this.uploadChunkWithRetry(chunkIndex)
+            .then(() => {
+              // 记录分片耗时
+              chunkDurations[chunkIndex] =
+                performance.now() - chunkStartTimes[chunkIndex];
+            })
+            .catch((error) => {
+              // 记录失败分片的耗时（如果有）
+              if (chunkStartTimes[chunkIndex]) {
+                chunkDurations[chunkIndex] =
+                  performance.now() - chunkStartTimes[chunkIndex];
+              }
+              throw error;
+            }),
+        ),
+      );
     }
-
-    await Promise.allSettled(uploadPromises);
+    await Promise.all(uploadPromises);
 
     // 统计信息
     const completedDurations = chunkDurations.filter(

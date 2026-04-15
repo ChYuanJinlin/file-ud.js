@@ -18,13 +18,14 @@ import {
   UploadTimeInfo,
 } from "../types";
 import {
+  checkNetworkStatus,
+  computeUploadTime,
   formatDuration,
   formatFileSize,
   formatSpeed,
   generateFileId,
   getFileExtension,
   handleFile,
-  initLogger,
   logger,
   mergeObjects,
   validator,
@@ -120,45 +121,8 @@ export default class Uploader<T = any> extends EventEmitter {
       // 计算并更新全局上传速率
       this.uploadSpeed = this.calculateGlobalUploadSpeed();
 
-      // 检查是否所有文件都已上传完成
-      this.checkAndUpdateTotalUploadTime();
-
       this.updateCallback?.([...this.files]);
     }, 100); // 100ms 防抖延迟
-  }
-
-  /**
-   * 检查并更新全局上传总耗时
-   * 当所有文件都完成(成功或失败)时,记录总耗时
-   * @private
-   */
-  private checkAndUpdateTotalUploadTime(): void {
-    // 如果没有文件,不处理
-    if (this.files.length === 0) {
-      return;
-    }
-
-    // 检查是否所有文件都已完成(success 或 error 状态)
-    const allCompleted = this.files.every(
-      (file) => file.status === "success" || file.status === "error",
-    );
-
-    // 如果所有文件都完成且尚未记录结束时间
-    if (
-      allCompleted &&
-      this.uploadTime.startTime > 0 &&
-      this.uploadTime.endTime === 0
-    ) {
-      const endTime = Date.now();
-      const duration = endTime - this.uploadTime.startTime;
-      this.uploadTime = {
-        startTime: this.uploadTime.startTime,
-        endTime,
-        duration,
-        durationFormatted: formatDuration(duration),
-      };
-      
-    }
   }
 
   /**
@@ -173,26 +137,63 @@ export default class Uploader<T = any> extends EventEmitter {
     averageSpeedFormatted: string;
   } {
     let totalCurrentSpeed = 0;
-    let totalAverageSpeed = 0;
+    let totalUploadedBytes = 0;
+    let totalFileSize = 0;
     let uploadingFileCount = 0;
 
-    // 遍历所有正在上传的文件,累加速率
+    // ✅ 遍历所有正在上传的文件，累加速率和字节数
     this.files.forEach((file) => {
-      if (file.status === "uploading" && file.uploadSpeed) {
-        totalCurrentSpeed += file.uploadSpeed.currentSpeed;
-        totalAverageSpeed += file.uploadSpeed.averageSpeed;
+      if (file.status === "uploading" || file.status === "paused") {
         uploadingFileCount++;
+
+        // 累加文件大小（用于计算平均速度）
+        totalFileSize += file.File.size;
+
+        // 获取已上传字节数
+        const uploadedBytes = file.chunkManager
+          ? file.chunkManager.totalUploadedSize
+          : file.__uploadedBytes__ || 0;
+        totalUploadedBytes += uploadedBytes;
+
+        // 如果文件有速度信息，累加瞬时速度
+        if (file.uploadSpeed) {
+          totalCurrentSpeed += file.uploadSpeed.currentSpeed;
+        }
+      } else if (file.status === "success") {
+        // 已完成文件也计入总大小（用于计算整体平均速度）
+        totalFileSize += file.File.size;
+        totalUploadedBytes += file.File.size;
       }
     });
 
-    const avgSpeed =
-      uploadingFileCount > 0 ? totalAverageSpeed / uploadingFileCount : 0;
+    // ✅ 计算全局平均速度：总已上传字节 / 总耗时
+    let globalAverageSpeed = 0;
+    if (totalUploadedBytes > 0 && uploadingFileCount > 0) {
+      // 找到最早开始上传的文件的时间
+      let earliestStartTime = Date.now();
+      this.files.forEach((file) => {
+        if (
+          (file.status === "uploading" || file.status === "paused") &&
+          file.uploadTime.startTime > 0
+        ) {
+          earliestStartTime = Math.min(
+            earliestStartTime,
+            file.uploadTime.startTime,
+          );
+        }
+      });
+
+      const totalTime = (Date.now() - earliestStartTime) / 1000;
+      if (totalTime > 0) {
+        globalAverageSpeed = totalUploadedBytes / totalTime;
+      }
+    }
 
     return {
       currentSpeed: totalCurrentSpeed,
-      averageSpeed: avgSpeed,
+      averageSpeed: globalAverageSpeed,
       currentSpeedFormatted: formatSpeed(totalCurrentSpeed),
-      averageSpeedFormatted: formatSpeed(avgSpeed),
+      averageSpeedFormatted: formatSpeed(globalAverageSpeed),
     };
   }
   /* 
@@ -243,16 +244,6 @@ export default class Uploader<T = any> extends EventEmitter {
     try {
       if (!Uploader.instances) {
         this.config = mergeObjects(Uploader.baseConfig, config);
-
-        // 初始化日志配置
-        if (this.config.logConfig) {
-          initLogger({
-            enabled: this.config.logConfig.enabled ?? true,
-            level: this.config.logConfig.level,
-            showTimestamp: this.config.logConfig.showTimestamp,
-            enableColors: this.config.logConfig.enableColors,
-          });
-        }
 
         Uploader.instances = this.create(this.config);
       }
@@ -373,6 +364,12 @@ export default class Uploader<T = any> extends EventEmitter {
       currentSpeed: 0,
       averageSpeed: 0,
     };
+    this.uploadTime = {
+      startTime: 0,
+      endTime: 0,
+      duration: 0,
+      durationFormatted: "0s",
+    };
     this.progress = {
       uploadedBytes: 0,
       totalBytes: 0,
@@ -411,11 +408,13 @@ export default class Uploader<T = any> extends EventEmitter {
     Uploader.baseConfig = Object.assign(defaultConfig, Uploader.baseConfig);
     this.config = { ...Uploader.baseConfig, ...config };
     this.init();
+
     this.createInput().onchange = async (e) => {
       const FileList = (e.target as HTMLInputElement)?.files;
       const filesList = Array.from(FileList!);
 
       await this.processSelectedFiles(filesList);
+
       this.inputHTML!.value = "";
     };
 
@@ -460,6 +459,19 @@ export default class Uploader<T = any> extends EventEmitter {
    * @return {Promise<void>}
    */
   public async submit(): Promise<void> {
+    // ✅ 上传前检查网络状态
+    try {
+      const networkCheck = checkNetworkStatus();
+      if (!networkCheck.online) {
+        const error = new Error(networkCheck.error || "网络连接异常");
+        logger.error("ChunkManager", `网络检查失败: ${error.message}`);
+        this.cancelAll();
+        throw error;
+      }
+    } catch (error) {
+      this.cancelAll();
+      logger.error("ChunkManager", "网络检查异常", error);
+    }
     // 检查是否有待上传的文件
     if (this.files.length === 0) {
       console.warn("没有待上传的文件");
@@ -472,39 +484,23 @@ export default class Uploader<T = any> extends EventEmitter {
     if (isFirstBatch) {
       this.emit("files-start", this.files);
 
-      // 记录全局上传开始时间
-      const now = Date.now();
-      this.uploadTime = {
-        startTime: now,
-        endTime: 0,
-        duration: 0,
-        durationFormatted: "0s",
-      };
-    }
+      // 并行上传所有文件
+      const uploadPromises = this.files.map(async (file) => {
+        try {
+          // 如果文件已经是成功或上传中状态，跳过
+          if (file.status === "success" || file.status === "uploading") {
+            return Promise.resolve();
+          }
 
-    // 并行上传所有文件
-    const uploadPromises = this.files.map(async (file) => {
-      try {
-        // 如果文件已经是成功或上传中状态，跳过
-        if (file.status === "success" || file.status === "uploading") {
-          return Promise.resolve();
+          // 直接开始上传，由 UploadFile 内部管理 ChunkManager
+          return file.chunkManager
+            ? file.chunkManager.startUpload()
+            : file.upload();
+        } catch (error) {
+          console.error(file.fileName + "文件上传失败:", error);
         }
-
-        // 直接开始上传，由 UploadFile 内部管理 ChunkManager
-        return file.chunkManager
-          ? file.chunkManager.startUpload()
-          : file.upload();
-      } catch (error) {
-        console.error(file.fileName + "文件上传失败:", error);
-      }
-    });
-
-    await Promise.all(uploadPromises);
-    if (!this.uploadFiles.length) {
-      this.emit("files-complete", this.files);
-      console.log("所有文件上传完成");
-      this.totalProgress = 0;
-      this.totalUploadBytes = 0;
+      });
+      await Promise.all(uploadPromises);
     }
   }
 
@@ -626,10 +622,10 @@ export default class Uploader<T = any> extends EventEmitter {
       // 添加到文件列表
       this.files.unshift(uploadFileInstance);
       this.uploadFiles.unshift(uploadFileInstance);
-
-      // 自动上传：调用 submit 方法
       if (this.config?.autoUpload) {
-        this.submit();
+        uploadFileInstance.chunkManager
+          ? uploadFileInstance.chunkManager.startUpload()
+          : uploadFileInstance.upload();
       }
     }
   }
