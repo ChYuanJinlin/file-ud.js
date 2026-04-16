@@ -96,7 +96,7 @@ const RESET_COLOR = '\x1b[0m';
  * 默认配置
  */
 const DEFAULT_OPTIONS: LoggerOptions = {
-  enabled: true,
+  enabled: false,
   level: typeof process !== 'undefined' && process.env?.NODE_ENV === 'production' 
     ? LogLevel.WARN 
     : LogLevel.DEBUG,

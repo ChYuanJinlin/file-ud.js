@@ -35,7 +35,7 @@ export default class ChunkManager {
   public completedChunks = 0;
   public totalUploadTime = 0;
   public response: any = null;
-  public queue: PQueue = new PQueue({ concurrency: this.maxConcurrent });
+  public queue: PQueue | null = null; // ✅ 改为可选，在 startUpload 中初始化
   public uploadStartTime = performance.now();
   uploadErrorFileCallBack: (() => void)[] = [];
   public uploadStatsInfos: {
@@ -801,8 +801,7 @@ export default class ChunkManager {
    * 暂停上传
    *
    * 暂停所有正在进行的分片上传,但保持当前进度。
-   * 对于普通上传,会中止 XHR 请求。
-   * 对于分片上传,会等待当前活跃的分片完成后暂停新分片的启动。
+   * 会等待当前活跃的分片完成后暂停新分片的启动。
    *
    * @example
    * ```typescript
@@ -818,26 +817,18 @@ export default class ChunkManager {
     this.isPaused = true;
     this.uploadFile.proxy.status = "paused";
 
-    // 如果是普通上传(没有 ChunkManager),直接 abort
-    if (
-      !this.uploadFile.chunkManager ||
-      this.uploadFile.chunkManager === this
-    ) {
-      // 检查是否是普通上传(通过检查是否有 chunkIndex 参数)
-      const isChunkedUpload = this.uploadId !== "";
-
-      if (!isChunkedUpload && this.uploadFile.abort) {
-        this.uploadFile.abort();
-      }
-    }
+    logger.info("ChunkManager", `文件 ${this.uploadFile.fileName} 已暂停`, {
+      fileId: this.uploadFile.fileId,
+      fileName: this.uploadFile.fileName,
+      completedChunks: this.completedChunks,
+      totalChunks: this.totalChunks,
+    });
   }
 
   /**
    * 恢复上传
    *
-   * 从暂停的位置继续上传。
-   * 对于分片上传,继续上传未完成的分片。
-   * 对于普通上传,需要重新开始(因为 XHR 无法恢复)。
+   * 从暂停的位置继续上传分片。
    *
    * @example
    * ```typescript
@@ -853,21 +844,17 @@ export default class ChunkManager {
     this.isPaused = false;
     this.uploadFile.proxy.status = "uploading";
 
-    // 如果是分片上传,继续上传剩余分片
-    if (this.uploadId) {
-      // 检查是否还有未完成的分片
-      const hasUnfinishedChunks = this.uploadedChunks.some(
-        (uploaded) => !uploaded,
-      );
+    logger.info("ChunkManager", `文件 ${this.uploadFile.fileName} 已恢复`, {
+      fileId: this.uploadFile.fileId,
+      fileName: this.uploadFile.fileName,
+      completedChunks: this.completedChunks,
+      totalChunks: this.totalChunks,
+    });
 
-      if (hasUnfinishedChunks) {
-        await this.startUpload();
-      } else {
-        await this.mergeChunks();
-      }
-    } else {
-      // 普通上传无法恢复,需要重新开始
-      this.uploadFile.rest();
+    // ✅ 唤醒所有等待中的分片上传任务
+    if (this.pauseResolve) {
+      this.pauseResolve();
+      this.pauseResolve = undefined;
     }
   }
 
@@ -966,10 +953,13 @@ export default class ChunkManager {
     this.uploadFile.__uploadedBytes__ = 0;
     this.uploadStartTime = performance.now(); // ✅ 重置开始时间
     this.countedChunks.clear(); // ✅ 重置已计数分片集合
-    
+
     // ✅ 重置速度计算状态（避免第二次上传时速度计算错误）
     this.lastUpdateTime = 0;
     this.lastUploadedBytes = 0;
+
+    // ✅ 重新创建 PQueue，确保使用正确的并发配置
+    this.queue = new PQueue({ concurrency: this.maxConcurrent });
 
     // ❌ 不要在这里重置 completedChunks！
     // completedChunks 会在 initUpload() 中根据断点续传情况设置
@@ -1056,34 +1046,42 @@ export default class ChunkManager {
     const chunkStartTimes: number[] = [];
     const chunkDurations: number[] = [];
 
-    for (let chunkIndex = 0; chunkIndex < this.totalChunks; chunkIndex++) {
-      // ✅ 检查暂停状态，如果暂停则等待恢复
-      await this.waitForResume();
+    // ✅ 确保队列已初始化
+    if (!this.queue) {
+      throw new Error("PQueue not initialized. Call startUpload() first.");
+    }
 
+    for (let chunkIndex = 0; chunkIndex < this.totalChunks; chunkIndex++) {
       // 跳过已上传的分片（断点续传场景）
       if (this.uploadedChunks[chunkIndex]) {
         continue;
       }
+
       this.uploadedChunkIndex = chunkIndex + 1;
-      // 记录分片开始时间
-      chunkStartTimes[chunkIndex] = performance.now();
+
+      // ✅ 在每个分片上传前检查暂停状态
       uploadPromises.push(
-        this.queue.add(() =>
-          this.uploadChunkWithRetry(chunkIndex)
-            .then(() => {
-              // 记录分片耗时
+        this.queue.add(async () => {
+          // ✅ 在真正开始上传前检查是否暂停
+          await this.waitForResume();
+
+          // 记录分片开始时间
+          chunkStartTimes[chunkIndex] = performance.now();
+
+          try {
+            await this.uploadChunkWithRetry(chunkIndex);
+            // 记录分片耗时
+            chunkDurations[chunkIndex] =
+              performance.now() - chunkStartTimes[chunkIndex];
+          } catch (error) {
+            // 记录失败分片的耗时（如果有）
+            if (chunkStartTimes[chunkIndex]) {
               chunkDurations[chunkIndex] =
                 performance.now() - chunkStartTimes[chunkIndex];
-            })
-            .catch((error) => {
-              // 记录失败分片的耗时（如果有）
-              if (chunkStartTimes[chunkIndex]) {
-                chunkDurations[chunkIndex] =
-                  performance.now() - chunkStartTimes[chunkIndex];
-              }
-              throw error;
-            }),
-        ),
+            }
+            throw error;
+          }
+        }),
       );
     }
     await Promise.all(uploadPromises);

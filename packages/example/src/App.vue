@@ -12,9 +12,9 @@ import Uploader from "@file-ud.js/core/uploader";
 import { IFile } from "@file-ud.js/core/types";
 import { uploadMonitor } from "@file-ud.js/core/utils";
 const isChunk = ref(true);
-FileUD.startUploadLogger({
-  enabled:true
-});
+// FileUD.startUploadLogger({
+//   enabled:true
+// });
 const test1 = FileUD.createUploader("test1", {
   action: "/api/upload-chunk",
   // file: "file",

@@ -461,7 +461,7 @@ export default class UploadFile<T = any> {
         })
         .catch((err) => {
           if (!this.chunkManager) {
-            this.proxy.percent = 0; // 上传失败时重置进度为 0%
+            !this.isCancel && (this.proxy.percent = 0); // 上传失败时重置进度为 0%
             up.totalPercent = 0;
             this.isCancel !== true && (this.proxy.status = "error");
           }
