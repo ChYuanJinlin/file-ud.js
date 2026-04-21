@@ -181,6 +181,10 @@ export default class UploadFile<T = any> {
    * @return {*}
    */
   cancel(fn: ((next: () => void) => void) | void) {
+    if (this.proxy.status !== "uploading") {
+      logger.warn("没有需要取消的上传", this.fileName);
+      return;
+    }
     const next = () => {
       this.abort?.();
       this.__uploader__.totalUploadBytes -= this.File.size;
@@ -226,28 +230,90 @@ export default class UploadFile<T = any> {
    * - 重试是异步操作,建议在 UI 上显示加载状态
    * - 重试失败后会再次触发 error 事件
    */
-  retry() {
+  async retry() {
     const up = this.__uploader__;
+    if (this.proxy.status === "success") {
+      logger.warn("没有需要重试的上传", this.fileName);
+      return;
+    }
+    // ✅ 根据当前状态决定重试策略
+    const isChunkUpload = up.config?.chunkOptions && this.chunkManager;
+    if (isChunkUpload && this.chunkManager) {
+      // 分片上传的重试逻辑
+      const hasFailedChunks = this.chunkManager.getFailedChunksCount() > 0;
+      const allChunksCompleted =
+        this.chunkManager.completedChunks === this.chunkManager.totalChunks;
 
-    // 重置状态
-    this.proxy.isRetry = true;
-    this.proxy.percent = 0;
-
-    // 分片上传: 使用当前文件的 ChunkManager 重试失败分片
-    if (up.config?.chunkOptions && this.chunkManager) {
-      logger.info("UploadFile", `文件 ${this.fileName} 开始重试分片上传`);
-      this.chunkManager.retryFailedChunks().catch((err: any) => {
-        logger.error("UploadFile", `文件 ${this.fileName} 重试失败`, err);
-        this.onError(err);
+      logger.info("UploadFile", `文件 ${this.fileName} 开始重试`, {
+        fileId: this.fileId,
+        fileName: this.fileName,
+        status: this.proxy.status,
+        completedChunks: this.chunkManager.completedChunks,
+        totalChunks: this.chunkManager.totalChunks,
+        hasFailedChunks,
+        allChunksCompleted,
       });
+
+      if (allChunksCompleted && !hasFailedChunks) {
+        // ✅ 场景1：所有分片都成功了（可能在 merging 阶段失败）
+        // 需要重新开始整个上传流程
+        logger.info(
+          "UploadFile",
+          `所有分片已完成，重新开始上传流程（可能是合并阶段失败）`,
+        );
+
+        // 重置状态
+        this.proxy.isRetry = true;
+        this.proxy.status = "uploading";
+        // ⚠️ 不要重置 percent，保持当前进度显示
+
+        // 重新初始化并启动上传
+        await this.chunkManager.startUpload().catch((err: any) => {
+          logger.error("UploadFile", `文件 ${this.fileName} 重试失败`, err);
+          this.onError(err);
+        });
+      } else if (hasFailedChunks) {
+        // ✅ 场景2：有失败的分片，只重试失败的分片
+        logger.info(
+          "UploadFile",
+          `发现 ${this.chunkManager.getFailedChunksCount()} 个失败分片，仅重试失败分片`,
+        );
+
+        // 重置状态
+        this.proxy.isRetry = true;
+        this.proxy.status = "uploading";
+
+        // 仅重试失败的分片
+        await this.chunkManager.retryFailedChunks().catch((err: any) => {
+          logger.error("UploadFile", `文件 ${this.fileName} 重试失败`, err);
+          this.onError(err);
+        });
+      } else {
+
+        // 尝试重新开始整个上传流程
+        this.proxy.isRetry = true;
+        this.proxy.status = "uploading";
+
+        await this.chunkManager.startUpload().catch((err: any) => {
+          logger.error("UploadFile", `文件 ${this.fileName} 重试失败`, err);
+          this.onError(err);
+        });
+      }
     } else {
-      // 普通上传: 重新调用 upload 方法
+      // 普通上传：重新调用 upload 方法
       logger.info("UploadFile", `文件 ${this.fileName} 开始重试普通上传`);
-      this.upload().catch((err: any) => {
+
+      // 重置状态
+      this.proxy.isRetry = true;
+      this.proxy.percent = 0;
+      this.proxy.status = "uploading";
+
+      await this.upload().catch((err: any) => {
         logger.error("UploadFile", `文件 ${this.fileName} 重试失败`, err);
         this.onError(err);
       });
     }
+    this.proxy.isRetry = false;
     this.__uploader__.emit("retry", this.proxy);
   }
 
@@ -415,7 +481,7 @@ export default class UploadFile<T = any> {
         }
       }
 
-      this.proxy.status = "uploading";
+      this.proxy.status !== "fail" && (this.proxy.status = "uploading");
 
       // ✅ 修复：只在首次上传时累加 totalBytes，避免重试时重复累加
       // 对于分片上传，应该在 ChunkManager.initUpload() 中初始化 totalBytes

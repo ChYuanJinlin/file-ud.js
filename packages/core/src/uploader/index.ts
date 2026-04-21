@@ -6,8 +6,8 @@ import {
   FileUDConfigs,
   IFile,
   IUploaderPlugin,
-  OnInitCallBack,
-  OnMergeCallBack,
+  onInitChunkCallback,
+  OnMergeChunkCallBack,
   OpenFileCallback,
   PluginContext,
   SelectCallBack,
@@ -100,8 +100,8 @@ export default class Uploader<T = any> extends EventEmitter {
   public updateCallback: UpdateCallBack | null | undefined = null;
   public uploadSuccessCallback: UploadSuccessCallBack<T> = () => null;
   public selectCallback: SelectCallBack | null | undefined = null;
-  public onInitCallback: OnInitCallBack | null = null;
-  public onMergeCallback: OnMergeCallBack | null = null;
+  public onInitChunkCallback: onInitChunkCallback | null = null;
+  public OnMergeChunkCallBack: OnMergeChunkCallBack | null = null;
   // 用于防抖的定时器
   private __updateTimer__: ReturnType<typeof setTimeout> | null = null;
   public totalUploadBytes: number = 0;
@@ -207,6 +207,7 @@ export default class Uploader<T = any> extends EventEmitter {
     Uploader.fileIndex = 0;
     Uploader.uploadFile = null;
     Uploader.objectUrls = [];
+    this.totalPercent = 0;
     this.totalBytes = 0;
     this.triggerUpdate();
   }
@@ -439,12 +440,12 @@ export default class Uploader<T = any> extends EventEmitter {
     this.updateCallback = callback;
   }
 
-  set onInit(callback: OnInitCallBack) {
-    this.onInitCallback = callback;
+  set onInitChunk(callback: onInitChunkCallback) {
+    this.onInitChunkCallback = callback;
   }
 
-  set onMerge(callback: OnMergeCallBack) {
-    this.onMergeCallback = callback;
+  set onMergeChunk(callback: OnMergeChunkCallBack) {
+    this.OnMergeChunkCallBack = callback;
   }
 
   public remObjectUrls(url: string) {

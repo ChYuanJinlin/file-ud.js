@@ -8,6 +8,24 @@ export const upload = () => {
   return Ajax.post("/upload");
 };
 
+export const checkFile = (data) => {
+  return Ajax.post("/check-file",data);
+};
+
+export const createUploadTask = (data) => {
+  return Ajax.post("/create-upload-task", data);
+};
+
+export const mergeChunks = (data) => {
+  return Ajax.post("/merge-chunks", data);
+};
+
+
+
+
+
+
+
 /**
  * 获取文件列表
  * @param params 查询参数

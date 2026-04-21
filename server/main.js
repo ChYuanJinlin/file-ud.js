@@ -124,9 +124,10 @@ app.post("/upload-multiple", uploadSingle.array("files", 10), (req, res) => {
  * 秒传检查
  * 前端传递文件 MD5，后端检查是否已存在相同文件
  * 如果存在，直接返回文件信息（实现秒传）
+ * 如果不存在，检查是否有其他文件的部分分片可以复用
  */
 app.post("/check-file", (req, res) => {
-  const { fileHash, fileName } = req.body;
+  const { fileHash, fileName, totalChunks } = req.body;
 
   if (!fileHash) {
     return res.status(400).json({
@@ -136,9 +137,15 @@ app.post("/check-file", (req, res) => {
   }
 
   const uploadDir = path.join(__dirname, "uploads");
+  const taskDir = path.join(uploadDir, "tasks");
 
-  // 检查文件是否已存在（通过 fileHash 作为标识）
-  const hashFilePath = path.join(uploadDir, `hash_${fileHash}.json`);
+  // 确保任务目录存在
+  if (!fs.existsSync(taskDir)) {
+    fs.mkdirSync(taskDir, { recursive: true });
+  }
+
+  // 1. 检查文件是否已完整上传（秒传）
+  const hashFilePath = path.join(taskDir, `${fileHash}.json`);
 
   if (fs.existsSync(hashFilePath)) {
     // 文件已存在，实现秒传
@@ -150,19 +157,57 @@ app.post("/check-file", (req, res) => {
       message: "文件已存在，秒传成功",
       data: {
         exists: true,
+        uploadedChunks: Array.from({ length: totalChunks || 0 }, (_, i) => i), // 返回所有分片索引
+        totalChunks: totalChunks || 0,
         ...fileInfo,
       },
     });
   }
 
+  // 2. 文件未完整上传，检查是否有其他文件的部分分片可以复用
+  // 遍历任务目录，查找相同 fileHash 的任务记录
+  let reusableChunks = [];
+  
+  try {
+    const taskFiles = fs.readdirSync(taskDir);
+    
+    for (const taskFile of taskFiles) {
+      if (!taskFile.endsWith('.json')) continue;
+      
+      const taskPath = path.join(taskDir, taskFile);
+      const taskInfo = JSON.parse(fs.readFileSync(taskPath, "utf-8"));
+      
+      // 找到相同 fileHash 的任务
+      if (taskInfo.fileHash === fileHash && taskInfo.uploadedChunks) {
+        reusableChunks = taskInfo.uploadedChunks;
+        console.log(`🔄 发现可复用分片: ${reusableChunks.length}/${totalChunks} (来自任务: ${taskFile})`);
+        break;
+      }
+    }
+  } catch (error) {
+    console.error("检查可复用分片失败:", error);
+  }
+
+  // 3. 检查物理分片文件是否存在
+  const existingChunks = [];
+  for (const chunkIndex of reusableChunks) {
+    const chunkPath = path.join(uploadDir, `${fileName}-${fileHash}-${chunkIndex}`);
+    if (fs.existsSync(chunkPath)) {
+      existingChunks.push(chunkIndex);
+    }
+  }
+
   // 文件不存在，返回需要上传的分片列表（用于断点续传检查）
   console.log(`📝 文件不存在，需要上传: ${fileName} (fileHash: ${fileHash})`);
+  console.log(`   可复用分片: ${existingChunks.length}/${totalChunks}`);
+  
   res.json({
     success: true,
     message: "文件不存在，需要上传",
     data: {
       exists: false,
-      uploadedChunks: [], // 空数组表示没有已上传的分片
+      uploadedChunks: existingChunks, // 返回已存在的分片索引
+      totalChunks: totalChunks || 0,
     },
   });
 });
@@ -233,6 +278,7 @@ app.get("/get-uploaded-chunks", (req, res) => {
  */
 app.post("/create-upload-task", (req, res) => {
   const { fileHash, fileName, fileSize, totalChunks, chunkSize } = req.body;
+  console.log("🚀 ~ req.body:", req.body);
 
   if (!fileHash || !fileName || !fileSize || !totalChunks) {
     return res.status(400).json({
@@ -285,8 +331,9 @@ app.post("/upload-chunk", upload.single("file"), (req, res) => {
     `接收到分片: ${fileName} - chunkIndex ${chunkIndex}/${totalChunks} (fileHash: ${fileHash || "unknown"})`,
   );
 
-  // 使用 fileHash 和 chunkIndex 作为分片标识
-  const chunkFileName = `${fileName}-${fileHash}-${chunkIndex}`;
+  // ✅ 修复：使用 fileHash 作为分片文件名的核心标识，而不是 fileName
+  // 这样相同内容（相同 fileHash）但不同文件名的文件可以共享分片
+  const chunkFileName = `chunk_${fileHash}_${chunkIndex}`;
   const filePath = path.join("uploads", chunkFileName);
 
   fs.rename(req.file.path, filePath, (err) => {
@@ -308,10 +355,25 @@ app.post("/upload-chunk", upload.single("file"), (req, res) => {
             taskInfo.uploadedChunks.push(parseInt(chunkIndex));
             taskInfo.updatedAt = Date.now();
             fs.writeFileSync(taskFile, JSON.stringify(taskInfo, null, 2));
+            
+            console.log(`   ✅ 分片 ${chunkIndex} 已保存，当前进度: ${taskInfo.uploadedChunks.length}/${taskInfo.totalChunks}`);
           }
         } catch (error) {
           console.error("更新任务记录失败:", error);
         }
+      } else {
+        // 如果任务记录不存在，创建一个新的
+        const newTaskInfo = {
+          fileHash,
+          fileName,
+          totalChunks: parseInt(totalChunks),
+          chunkSize: req.file.size,
+          uploadedChunks: [parseInt(chunkIndex)],
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+        fs.writeFileSync(taskFile, JSON.stringify(newTaskInfo, null, 2));
+        console.log(`   📋 创建新任务记录: ${fileName} (fileHash: ${fileHash})`);
       }
     }
 
@@ -327,7 +389,7 @@ app.post("/upload-chunk", upload.single("file"), (req, res) => {
 app.post("/merge-chunks", async (req, res) => {
   const { fileName, totalChunks, originalName, fileHash } = req.body;
 
-  if (!fileName || !totalChunks) {
+  if (!fileName || !totalChunks || !fileHash) {
     return res.status(400).json({ success: false, message: "缺少必要参数" });
   }
 
@@ -337,13 +399,18 @@ app.post("/merge-chunks", async (req, res) => {
 
   let completed = 0;
 
+  console.log(`🔀 开始合并分片: ${finalFileName} (fileHash: ${fileHash}, 总分片数: ${totalChunks})`);
+
   for (let i = 0; i < totalChunks; i++) {
-    const chunkPath = path.join("uploads", `${fileHash || fileName}-${i}`);
+    // ✅ 修复：使用新的分片文件名格式
+    const chunkPath = path.join("uploads", `chunk_${fileHash}_${i}`);
 
     if (!fs.existsSync(chunkPath)) {
+      writeStream.end();
       return res.status(500).json({
         success: false,
         message: `分片 ${i} 不存在`,
+        missingChunkIndex: i,
       });
     }
 
@@ -368,9 +435,11 @@ app.post("/merge-chunks", async (req, res) => {
   writeStream.end();
 
   writeStream.on("finish", () => {
+    console.log(`✅ 文件合并成功: ${finalFileName}`);
+    
     // 保存文件哈希记录（用于秒传）
     if (fileHash) {
-      const hashFilePath = path.join("uploads", `hash_${fileHash}.json`);
+      const hashFilePath = path.join("uploads/tasks", `${fileHash}.json`);
       const fileInfo = {
         fileName: finalFileName,
         fileSize: fs.statSync(filePath).size,
@@ -379,12 +448,14 @@ app.post("/merge-chunks", async (req, res) => {
         uploadedAt: Date.now(),
       };
       fs.writeFileSync(hashFilePath, JSON.stringify(fileInfo, null, 2));
+      console.log(`   💾 保存哈希记录: ${fileHash}`);
 
       // 删除任务记录
       const taskDir = path.join("uploads", "tasks");
       const taskFile = path.join(taskDir, `${fileHash}.json`);
       if (fs.existsSync(taskFile)) {
         fs.unlinkSync(taskFile);
+        console.log(`   🗑️  删除任务记录`);
       }
     }
 

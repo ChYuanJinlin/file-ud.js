@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { FileUD, UploadFile } from "@file-ud.js/core";
-import { uploadFile, upload, getFileList } from "./api";
+import {
+  uploadFile,
+  upload,
+  getFileList,
+  checkFile,
+  createUploadTask,
+  mergeChunks,
+} from "./api";
 import {
   CompressImagePlugin,
   FileValidatorPlugin,
@@ -11,10 +18,11 @@ import { ref } from "vue";
 import Uploader from "@file-ud.js/core/uploader";
 import { IFile } from "@file-ud.js/core/types";
 import { uploadMonitor } from "@file-ud.js/core/utils";
+import ChunkManager from "node_modules/@file-ud.js/core/src/uploader/ChunkManager";
 const isChunk = ref(true);
-// FileUD.startUploadLogger({
-//   enabled:true
-// });
+FileUD.startUploadLogger({
+  enabled: true,
+});
 const test1 = FileUD.createUploader("test1", {
   action: "/api/upload-chunk",
   // file: "file",
@@ -30,9 +38,42 @@ const test1 = FileUD.createUploader("test1", {
     );
   },
   multiple: true,
-  chunkOptions: isChunk.value ? {} : null,
+  chunkOptions: isChunk.value
+    ? {
+        retries: null,
+      }
+    : null,
 });
-
+test1.onMergeChunk = async (ch) => {
+  const { data } = await mergeChunks({
+    fileHash: ch.fileHash,
+    fileName: ch.uploadFile.fileName,
+    totalChunks: ch?.totalChunks!,
+  });
+  return data;
+};
+test1.onInitChunk = async (uploadFile) => {
+  const { data } = await checkFile({
+    fileHash: uploadFile.chunkManager?.fileHash!,
+    fileName: uploadFile.fileName,
+  });
+  if (!data.exists) {
+    await createUploadTask({
+      fileHash: uploadFile.chunkManager?.fileHash,
+      fileName: uploadFile.fileName,
+      totalChunks: uploadFile.chunkManager?.totalChunks!,
+      fileSize: uploadFile.File.size,
+    });
+    return {
+      uploadedChunks: [],
+      fileHash: "",
+    };
+  } else {
+    return {
+      ...data,
+    };
+  }
+};
 const test2 = FileUD.createUploader("test2", {
   action: "/upload",
   file: "file",
@@ -99,6 +140,7 @@ window.FileUD = FileUD;
     <button @click="test1.pauseAll()">全部暂停</button>
     <button @click="test1.resumeAll()">全部继续</button>
     <button @click="test1.cancelAll()">全部取消</button>
+    <button @click="test1.retryAll()">全部重试</button>
     总的大小:{{ test1.totalBytes }} 总进度:{{ test1.totalPercent }} 总速度:{{
       test1.uploadSpeed?.averageSpeedFormatted
     }}

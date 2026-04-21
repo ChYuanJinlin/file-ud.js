@@ -180,7 +180,7 @@ export interface ChunkOptions {
   /* 分片大小 */
   chunkSize?: number;
   /* 重试次数 */
-  retries?: number;
+  retries?: number | null;
   /* 重试延迟（毫秒） */
   retryDelay?: number;
   /* 超时时间（毫秒） */
@@ -391,19 +391,19 @@ export type UpdateCallBack = (file: UploadFile[]) => void;
 /* 
 初始化回调函数类型
 */
-export type OnInitCallBack = (
+export type onInitChunkCallback = (
   file: UploadFile,
   totalChunks: number,
   fileHash: string,
 ) => Promise<{
-  uploadId: string;
+  fileHash: string;
   uploadedChunks?: number[];
 }>;
 
 /* 
 合并分片回调函数类型
 */
-export type OnMergeCallBack = (chunkManager: ChunkManager) => Promise<any>;
+export type OnMergeChunkCallBack = (chunkManager: ChunkManager) => Promise<any>;
 /* 
 打开文件之后的回调
 */
