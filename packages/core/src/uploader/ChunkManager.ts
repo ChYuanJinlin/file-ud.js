@@ -353,43 +353,47 @@ export default class ChunkManager {
     const maxRetries = this.retries;
     let retryCount = this.retryCountMap.get(chunkIndex) || 0;
 
+    // ✅ 提取公共的上传执行逻辑（避免重复代码）
+    const executeUpload = async (): Promise<void> => {
+      // ✅ 使用 AbortController 实现真正的超时控制
+      const abortController = new AbortController();
+      const timeoutId = setTimeout(() => {
+        abortController.abort();
+      }, this.timeout);
+
+      try {
+        // 传递 signal 给 UploadFile.upload，实现真正的超时取消
+        await this.uploadChunk(chunkIndex, abortController.signal);
+
+        // 上传成功，清除超时定时器
+        clearTimeout(timeoutId);
+      } catch (error) {
+        // 确保清除定时器
+        clearTimeout(timeoutId);
+
+        // ✅ 添加详细的错误日志
+        if (error instanceof Error && error.name === "AbortError") {
+          logger.error(
+            "ChunkManager",
+            `分片 ${chunkIndex + 1} 被取消（可能是超时或手动取消）`,
+            {
+              fileId: this.uploadFile.fileId,
+              fileName: this.uploadFile.fileName,
+              chunkIndex,
+              timeout: this.timeout,
+              error: error.message,
+            },
+          );
+        }
+
+        throw error;
+      }
+    };
+
     // ✅ 如果 retries 为 null，禁用自动重试，只尝试一次
     if (maxRetries === null) {
       try {
-        // ✅ 使用 AbortController 实现真正的超时控制
-        const abortController = new AbortController();
-        const timeoutId = setTimeout(() => {
-          abortController.abort();
-        }, this.timeout);
-
-        try {
-          // 传递 signal 给 UploadFile.upload，实现真正的超时取消
-          await this.uploadChunk(chunkIndex, abortController.signal);
-
-          // 上传成功，清除超时定时器
-          clearTimeout(timeoutId);
-        } catch (error) {
-          // 确保清除定时器
-          clearTimeout(timeoutId);
-
-          // ✅ 添加详细的错误日志
-          if (error instanceof Error && error.name === "AbortError") {
-            logger.error(
-              "ChunkManager",
-              `分片 ${chunkIndex + 1} 被取消（可能是超时或手动取消）`,
-              {
-                fileId: this.uploadFile.fileId,
-                fileName: this.uploadFile.fileName,
-                chunkIndex,
-                timeout: this.timeout,
-                error: error.message,
-              },
-            );
-          }
-
-          throw error;
-        }
-
+        await executeUpload();
         // 上传成功，重置重试计数
         this.retryCountMap.set(chunkIndex, 0);
         return;
@@ -409,9 +413,7 @@ export default class ChunkManager {
             error: error instanceof Error ? error.message : String(error),
           },
         );
-        setTimeout(() => {
-          this.uploadFile.proxy.status = "fail";
-        }, 0);
+        this.setFileStatusToFail(); // ✅ 使用统一方法
         throw error;
       }
     }
@@ -434,39 +436,7 @@ export default class ChunkManager {
           );
         }
 
-        // ✅ 使用 AbortController 实现真正的超时控制
-        const abortController = new AbortController();
-        const timeoutId = setTimeout(() => {
-          abortController.abort();
-        }, this.timeout);
-
-        try {
-          // 传递 signal 给 UploadFile.upload，实现真正的超时取消
-          await this.uploadChunk(chunkIndex, abortController.signal);
-
-          // 上传成功，清除超时定时器
-          clearTimeout(timeoutId);
-        } catch (error) {
-          // 确保清除定时器
-          clearTimeout(timeoutId);
-
-          // ✅ 添加详细的错误日志
-          if (error instanceof Error && error.name === "AbortError") {
-            logger.error(
-              "ChunkManager",
-              `分片 ${chunkIndex + 1} 被取消（可能是超时或手动取消）`,
-              {
-                fileId: this.uploadFile.fileId,
-                fileName: this.uploadFile.fileName,
-                chunkIndex,
-                timeout: this.timeout,
-                error: error.message,
-              },
-            );
-          }
-
-          throw error;
-        }
+        await executeUpload();
 
         // 上传成功，重置重试计数
         this.retryCountMap.set(chunkIndex, 0);
@@ -523,6 +493,15 @@ export default class ChunkManager {
   }
 
   /**
+   * 设置文件状态为失败（统一处理，避免重复代码）
+   */
+  private setFileStatusToFail(): void {
+    setTimeout(() => {
+      this.uploadFile.proxy.status = "fail";
+    }, 0);
+  }
+
+  /**
    * 上传单个分片
    */
   private async uploadChunk(
@@ -576,6 +555,16 @@ export default class ChunkManager {
 
             // 更新进度
             this.updateProgress();
+
+            // ✅ 触发分片上传成功事件
+            const up = this.uploadFile.__uploader__;
+            up.emit("chunk-success", {
+              chunkIndex,
+              totalChunks: this.totalChunks,
+              completedChunks: this.completedChunks,
+              percent: this.uploadFile.proxy.percent || 0,
+              file: this.uploadFile.proxy,
+            });
 
             logger.info(
               "ChunkManager",
@@ -639,9 +628,16 @@ export default class ChunkManager {
           progress: this.uploadFile.proxy.progress,
         },
       );
-      setTimeout(() => {
-        this.uploadFile.proxy.status = "fail";
-      }, 0);
+
+      // ✅ 触发分片上传失败事件
+      const up = this.uploadFile.__uploader__;
+      up.emit("chunk-error", {
+        chunkIndex,
+        totalChunks: this.totalChunks,
+        error: error instanceof Error ? error.message : String(error),
+        file: this.uploadFile.proxy,
+      });
+
       throw error;
     }
   }
@@ -652,33 +648,57 @@ export default class ChunkManager {
   private async mergeChunks(): Promise<any> {
     const up = this.uploadFile.__uploader__;
     this.uploadFile.proxy.status = "merging";
+
+    // ✅ 触发合并开始事件
+    up.emit("merging", {
+      file: this.uploadFile.proxy,
+      completedChunks: this.completedChunks,
+      totalChunks: this.totalChunks,
+    });
+
     try {
       // 调用用户提供的合并回调
       const onMerge = up.OnMergeChunkCallBack;
-      if (onMerge) {
-        const response = await onMerge(this);
+      const response = onMerge ? await onMerge(this) : undefined;
 
-        // 清除保存的进度
-        if (this.enableResume) {
-          await this.clearProgress();
-        }
-
-        this.uploadFile.proxy.status = "success";
-
-        return response;
-      } else {
-        // 如果没有提供onMerge回调，直接认为成功
-        // 清除保存的进度
-        if (this.enableResume) {
-          await this.clearProgress();
-        }
-
-        return undefined;
+      // 清除保存的进度（统一处理，避免重复代码）
+      if (this.enableResume) {
+        await this.clearProgress();
       }
+
+      this.uploadFile.proxy.status = "success";
+
+      // ✅ 触发合并成功事件
+      up.emit("merge-success", {
+        file: this.uploadFile.proxy,
+        response,
+      });
+
+      return response;
     } catch (error) {
       this.uploadFile.proxy.status = "fail";
+
+      // ✅ 触发合并失败事件
+      up.emit("merge-error", {
+        file: this.uploadFile.proxy,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
       throw error;
     }
+  }
+
+  /**
+   * 计算上传统计信息（统一处理，避免重复代码）
+   */
+  private calculateUploadStats(): void {
+    this.uploadStatsInfos = {
+      totalTime: this.totalUploadTime,
+      fileSize: this.uploadFile.File.size,
+      completedChunks: this.completedChunks,
+      averageSpeed:
+        this.uploadFile.File.size / (this.totalUploadTime / 1000) / 1024, // KB/s
+    };
   }
 
   /**
@@ -732,14 +752,8 @@ export default class ChunkManager {
         return;
       }
 
-      // 添加上传统计信息
-      this.uploadStatsInfos = {
-        totalTime: this.totalUploadTime,
-        fileSize: this.uploadFile.File.size,
-        completedChunks: this.completedChunks,
-        averageSpeed:
-          this.uploadFile.File.size / (this.totalUploadTime / 1000) / 1024, // KB/s
-      };
+      // ✅ 使用统一方法计算上传统计信息
+      this.calculateUploadStats();
     } else {
       // ✅ 有分片失败的处理逻辑
       if (this.failedChunks.length > 0) {
@@ -756,9 +770,7 @@ export default class ChunkManager {
           );
 
           // ✅ 设置文件状态为 fail
-          setTimeout(() => {
-            this.uploadFile.proxy.status = "fail";
-          }, 0);
+          this.setFileStatusToFail(); // ✅ 使用统一方法
 
           this.uploadFile.onError(new Error("部分分片上传失败"));
           return;
@@ -884,7 +896,6 @@ export default class ChunkManager {
 
     this.isPaused = true;
     this.uploadFile.proxy.status = "paused";
-
     logger.info("ChunkManager", `文件 ${this.uploadFile.fileName} 已暂停`, {
       fileId: this.uploadFile.fileId,
       fileName: this.uploadFile.fileName,
@@ -911,6 +922,10 @@ export default class ChunkManager {
 
     this.isPaused = false;
     this.uploadFile.proxy.status = "uploading";
+
+    // ✅ 触发恢复事件
+    const up = this.uploadFile.__uploader__;
+    up.emit("resume", this.uploadFile.proxy);
 
     logger.info("ChunkManager", `文件 ${this.uploadFile.fileName} 已恢复`, {
       fileId: this.uploadFile.fileId,
@@ -1026,6 +1041,13 @@ export default class ChunkManager {
   public async startUpload() {
     const up = this.uploadFile.__uploader__;
 
+    // ✅ 触发分片上传开始事件
+    up.emit("chunk-upload-start", {
+      file: this.uploadFile.proxy,
+      totalChunks: this.totalChunks,
+      chunkSize: this.chunkSize,
+    });
+
     // ✅ 重置所有状态（避免重新上传时使用旧值）
     this.totalUploadedSize = 0;
     this.uploadFile.__uploadedBytes__ = 0;
@@ -1073,14 +1095,8 @@ export default class ChunkManager {
           this.uploadEndTime = performance.now();
           this.totalUploadTime = this.uploadEndTime - this.uploadStartTime;
 
-          // 添加上传统计信息
-          this.uploadStatsInfos = {
-            totalTime: this.totalUploadTime,
-            fileSize: this.uploadFile.File.size,
-            completedChunks: this.completedChunks,
-            averageSpeed:
-              this.uploadFile.File.size / (this.totalUploadTime / 1000) / 1024, // KB/s
-          };
+          // ✅ 使用统一方法计算上传统计信息
+          this.calculateUploadStats();
 
           // 触发成功回调
           this.uploadFile.onScuccess(mergeResult);

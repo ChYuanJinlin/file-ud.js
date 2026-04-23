@@ -167,6 +167,61 @@ export interface FileUDErrorJSON {
   options: ErrorOptions;
   stack?: string;
 }
+
+/**
+ * 错误码到中文描述的映射表（静态常量，避免重复创建）
+ */
+const ERROR_CODE_DESCRIPTIONS: Readonly<Record<number, string>> = {
+  // 通用错误
+  [ErrorCode.UNKNOWN]: "未知错误",
+  [ErrorCode.ABORTED]: "操作已中止",
+  [ErrorCode.TIMEOUT]: "请求超时",
+  [ErrorCode.NETWORK]: "网络错误",
+
+  // 文件验证错误
+  [ErrorCode.FILE_TOO_LARGE]: "文件过大",
+  [ErrorCode.FILE_TOO_SMALL]: "文件过小",
+  [ErrorCode.INVALID_TYPE]: "文件类型无效",
+  [ErrorCode.FILE_LIMIT_EXCEEDED]: "文件数量超限",
+  [ErrorCode.DUPLICATE_FILE]: "重复的文件",
+  [ErrorCode.FILE_EMPTY]: "文件为空",
+  [ErrorCode.FILE_CORRUPTED]: "文件已损坏",
+  [ErrorCode.FILE_TOO_EMPTY]: "文件内容不完整",
+
+  // 图片验证错误
+  [ErrorCode.IMAGE_WIDTH_INVALID]: "图片宽度不符合要求",
+  [ErrorCode.IMAGE_HEIGHT_INVALID]: "图片高度不符合要求",
+  [ErrorCode.IMAGE_ASPECT_RATIO_INVALID]: "图片宽高比不符合要求",
+  [ErrorCode.IMAGE_RESOLUTION_INVALID]: "图片分辨率不符合要求",
+  [ErrorCode.IMAGE_NOT_SQUARE]: "图片不是正方形",
+  [ErrorCode.IMAGE_ANIMATED]: "不支持动态图片",
+
+  // 视频验证错误
+  [ErrorCode.VIDEO_DURATION_INVALID]: "视频时长不符合要求",
+  [ErrorCode.VIDEO_WIDTH_INVALID]: "视频宽度不符合要求",
+  [ErrorCode.VIDEO_HEIGHT_INVALID]: "视频高度不符合要求",
+  [ErrorCode.VIDEO_BITRATE_INVALID]: "视频比特率不符合要求",
+  [ErrorCode.VIDEO_CODEC_INVALID]: "视频编码格式不支持",
+
+  // 上传错误
+  [ErrorCode.UPLOAD_FAILED]: "上传失败",
+  [ErrorCode.CHUNK_UPLOAD_FAILED]: "分片上传失败",
+  [ErrorCode.MERGE_FAILED]: "合并分片失败",
+  [ErrorCode.SERVER_ERROR]: "服务器错误",
+  [ErrorCode.UNAUTHORIZED]: "未授权访问",
+  [ErrorCode.FORBIDDEN]: "禁止访问",
+  [ErrorCode.NOT_FOUND]: "资源不存在",
+
+  // 下载错误
+  [ErrorCode.DOWNLOAD_FAILED]: "下载失败",
+  [ErrorCode.CHUNK_DOWNLOAD_FAILED]: "分片下载失败",
+
+  // 插件错误
+  [ErrorCode.PLUGIN_ERROR]: "插件错误",
+  [ErrorCode.PLUGIN_INIT_FAILED]: "插件初始化失败",
+  [ErrorCode.PLUGIN_EXECUTION_FAILED]: "插件执行失败",
+} as const;
+
 /**
  * 🔥 核心错误类
  */
@@ -187,7 +242,7 @@ export class FileUDError extends Error {
   readonly cause?: Error;
 
   /** 内部定时器（用于防抖） */
-  private __noticeTimer__: NodeJS.Timeout | null = null;
+  private __noticeTimer__: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     code: ErrorCode,
@@ -200,12 +255,14 @@ export class FileUDError extends Error {
     this.name = "FileUDError";
     this.code = code;
     this.level = this.determineLevel(code);
+    
+    // ✅ 使用辅助方法获取文件上下文，减少全局状态耦合
     this.context = {
       timestamp: Date.now(),
-      fileName: Uploader.uploadFile?.fileName,
-      fileSize: Uploader.uploadFile?.File.size,
+      ...this.getCurrentFileContext(),
       ...context,
     };
+    
     this.options = {
       recoverable: true,
       retryable: false,
@@ -214,8 +271,8 @@ export class FileUDError extends Error {
     };
     this.cause = cause;
 
-    // 捕获堆栈
-    Error.captureStackTrace?.(this, FileUDError);
+    // 捕获堆栈（V8 引擎特有，非标准 API）
+    (Error as any).captureStackTrace?.(this, FileUDError);
   }
 
   /**
@@ -226,6 +283,19 @@ export class FileUDError extends Error {
     if (code < 3000) return ErrorLevel.WARNING;
     if (code < 4000) return ErrorLevel.ERROR;
     return ErrorLevel.CRITICAL;
+  }
+
+  /**
+   * 获取当前上传文件的上下文信息（避免直接访问全局状态）
+   * @returns 文件上下文信息
+   * @private
+   */
+  private getCurrentFileContext(): Pick<ErrorContext, "fileName" | "fileSize"> {
+    const uploadFile = Uploader.uploadFile;
+    return {
+      fileName: uploadFile?.fileName,
+      fileSize: uploadFile?.File.size,
+    };
   }
 
   /**
@@ -255,12 +325,12 @@ export class FileUDError extends Error {
    * 通知错误（防抖处理）
    */
   private notice(): void {
-    // 清除之前的定时器
+    // ✅ 清除之前的定时器
     if (this.__noticeTimer__) {
       clearTimeout(this.__noticeTimer__);
     }
 
-    // 设置新的定时器
+    // ✅ 设置新的定时器，延迟通知以避免频繁触发
     this.__noticeTimer__ = setTimeout(() => {
       Uploader.onError?.(this.toJSON());
       this.__noticeTimer__ = null;
@@ -274,59 +344,7 @@ export class FileUDError extends Error {
    */
   getChineseDescription(code?: ErrorCode): string {
     const errorCode = code ?? this.code;
-
-    const descriptions: Record<number, string> = {
-      // 通用错误
-      [ErrorCode.UNKNOWN]: "未知错误",
-      [ErrorCode.ABORTED]: "操作已中止",
-      [ErrorCode.TIMEOUT]: "请求超时",
-      [ErrorCode.NETWORK]: "网络错误",
-
-      // 文件验证错误
-      [ErrorCode.FILE_TOO_LARGE]: "文件过大",
-      [ErrorCode.FILE_TOO_SMALL]: "文件过小",
-      [ErrorCode.INVALID_TYPE]: "文件类型无效",
-      [ErrorCode.FILE_LIMIT_EXCEEDED]: "文件数量超限",
-      [ErrorCode.DUPLICATE_FILE]: "重复的文件",
-      [ErrorCode.FILE_EMPTY]: "文件为空",
-      [ErrorCode.FILE_CORRUPTED]: "文件已损坏",
-      [ErrorCode.FILE_TOO_EMPTY]: "文件内容不完整",
-
-      // 图片验证错误
-      [ErrorCode.IMAGE_WIDTH_INVALID]: "图片宽度不符合要求",
-      [ErrorCode.IMAGE_HEIGHT_INVALID]: "图片高度不符合要求",
-      [ErrorCode.IMAGE_ASPECT_RATIO_INVALID]: "图片宽高比不符合要求",
-      [ErrorCode.IMAGE_RESOLUTION_INVALID]: "图片分辨率不符合要求",
-      [ErrorCode.IMAGE_NOT_SQUARE]: "图片不是正方形",
-      [ErrorCode.IMAGE_ANIMATED]: "不支持动态图片",
-
-      // 视频验证错误
-      [ErrorCode.VIDEO_DURATION_INVALID]: "视频时长不符合要求",
-      [ErrorCode.VIDEO_WIDTH_INVALID]: "视频宽度不符合要求",
-      [ErrorCode.VIDEO_HEIGHT_INVALID]: "视频高度不符合要求",
-      [ErrorCode.VIDEO_BITRATE_INVALID]: "视频比特率不符合要求",
-      [ErrorCode.VIDEO_CODEC_INVALID]: "视频编码格式不支持",
-
-      // 上传错误
-      [ErrorCode.UPLOAD_FAILED]: "上传失败",
-      [ErrorCode.CHUNK_UPLOAD_FAILED]: "分片上传失败",
-      [ErrorCode.MERGE_FAILED]: "合并分片失败",
-      [ErrorCode.SERVER_ERROR]: "服务器错误",
-      [ErrorCode.UNAUTHORIZED]: "未授权访问",
-      [ErrorCode.FORBIDDEN]: "禁止访问",
-      [ErrorCode.NOT_FOUND]: "资源不存在",
-
-      // 下载错误
-      [ErrorCode.DOWNLOAD_FAILED]: "下载失败",
-      [ErrorCode.CHUNK_DOWNLOAD_FAILED]: "分片下载失败",
-
-      // 插件错误
-      [ErrorCode.PLUGIN_ERROR]: "插件错误",
-      [ErrorCode.PLUGIN_INIT_FAILED]: "插件初始化失败",
-      [ErrorCode.PLUGIN_EXECUTION_FAILED]: "插件执行失败",
-    };
-
-    return descriptions[errorCode as number] || "未知错误";
+    return ERROR_CODE_DESCRIPTIONS[errorCode as number] || "未知错误";
   }
 
   /**
@@ -370,10 +388,20 @@ export class FileUDError extends Error {
  * 错误工厂（方便创建常见错误）
  */
 export const Errors = {
+  /**
+   * 内部辅助方法：创建并发出错误事件
+   * @param uploader - 上传器实例
+   * @param error - 错误实例
+   * @private
+   */
+  _emitError(uploader: Uploader, error: FileUDError): void {
+    uploader.emit("error", error);
+  },
+
   // 文件相关
   fileTooLarge(this: Uploader, maxSize: number) {
-    this.emit(
-      "error",
+    Errors._emitError(
+      this,
       new FileUDError(
         ErrorCode.FILE_TOO_LARGE,
         `文件大小 ${Uploader.uploadFile?.formatSize} 超过限制 ${formatFileSize(maxSize)}`,
@@ -382,8 +410,8 @@ export const Errors = {
     );
   },
   fileTooType(this: Uploader, options: { accept?: any[]; fileName: string }) {
-    this.emit(
-      "error",
+    Errors._emitError(
+      this,
       new FileUDError(
         ErrorCode.INVALID_TYPE,
         `文件${options.fileName}类型不支持，允许：${options.accept?.join(", ")}`,
@@ -396,8 +424,8 @@ export const Errors = {
     );
   },
   fileTooLimit(this: Uploader, limit: number) {
-    this.emit(
-      "error",
+    Errors._emitError(
+      this,
       new FileUDError(
         ErrorCode.FILE_LIMIT_EXCEEDED,
         "文件数量超过限制",
@@ -412,8 +440,8 @@ export const Errors = {
 
   // 网络相关
   networkError(this: Uploader, cause?: Error) {
-    this.emit(
-      "error",
+    Errors._emitError(
+      this,
       new FileUDError(
         ErrorCode.NETWORK,
         "网络连接失败，请检查网络后重试",
@@ -426,8 +454,8 @@ export const Errors = {
 
   // 上传相关
   uploadFailed(this: Uploader, fileName: string, status?: number) {
-    this.emit(
-      "error",
+    Errors._emitError(
+      this,
       new FileUDError(
         ErrorCode.UPLOAD_FAILED,
         `文件 ${fileName} 上传失败${status ? ` (${status})` : ""}`,
@@ -439,15 +467,18 @@ export const Errors = {
 
   // 插件错误
   pluginError(this: Uploader, pluginName: string, cause?: Error) {
-    new FileUDError(
-      ErrorCode.PLUGIN_ERROR,
-      `插件 ${pluginName} 执行失败`,
-      {
-        plugin: pluginName,
-        uploader: this,
-      },
-      { recoverable: false },
-      cause,
+    Errors._emitError(
+      this,
+      new FileUDError(
+        ErrorCode.PLUGIN_ERROR,
+        `插件 ${pluginName} 执行失败`,
+        {
+          plugin: pluginName,
+          uploader: this,
+        },
+        { recoverable: false },
+        cause,
+      ),
     );
   },
 };

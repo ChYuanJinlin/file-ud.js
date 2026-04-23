@@ -126,6 +126,28 @@ export default class Uploader<T = any> extends EventEmitter {
   }
 
   /**
+   * 判断文件是否处于活跃上传状态（统一判断逻辑）
+   * @param file 文件实例
+   * @returns 是否为活跃上传状态
+   * @private
+   */
+  private isFileActive(file: UploadFile): boolean {
+    return ["uploading", "paused", "fail"].includes(file.status!);
+  }
+
+  /**
+   * 获取文件的已上传字节数（统一获取逻辑）
+   * @param file 文件实例
+   * @returns 已上传字节数
+   * @private
+   */
+  private getFileUploadedBytes(file: UploadFile): number {
+    return file.chunkManager
+      ? file.chunkManager.totalUploadedSize
+      : file.__uploadedBytes__ || 0;
+  }
+
+  /**
    * 计算全局上传速率(所有文件的聚合)
    * @returns 全局速率对象
    * @private
@@ -143,17 +165,14 @@ export default class Uploader<T = any> extends EventEmitter {
 
     // ✅ 遍历所有正在上传的文件，累加速率和字节数
     this.files.forEach((file) => {
-      if (["uploading", "paused", "fail"].includes(file.status!)) {
+      if (this.isFileActive(file)) {
         uploadingFileCount++;
 
         // 累加文件大小（用于计算平均速度）
         totalFileSize += file.File.size;
 
-        // 获取已上传字节数
-        const uploadedBytes = file.chunkManager
-          ? file.chunkManager.totalUploadedSize
-          : file.__uploadedBytes__ || 0;
-        totalUploadedBytes += uploadedBytes;
+        // ✅ 使用统一方法获取已上传字节数
+        totalUploadedBytes += this.getFileUploadedBytes(file);
 
         // 如果文件有速度信息，累加瞬时速度
         if (file.uploadSpeed) {
@@ -172,12 +191,7 @@ export default class Uploader<T = any> extends EventEmitter {
       // 找到最早开始上传的文件的时间
       let earliestStartTime = Date.now();
       this.files.forEach((file) => {
-        if (
-          (file.status === "uploading" ||
-            file.status === "paused" ||
-            file.status === "fail") &&
-          file.uploadTime.startTime > 0
-        ) {
+        if (this.isFileActive(file) && file.uploadTime.startTime > 0) {
           earliestStartTime = Math.min(
             earliestStartTime,
             file.uploadTime.startTime,
@@ -353,11 +367,13 @@ export default class Uploader<T = any> extends EventEmitter {
     return results;
   }
 
-  private init() {
+  /**
+   * 重置上传器状态为初始值（统一重置逻辑）
+   * @private
+   */
+  private resetUploaderState(): void {
     this.lastLoadedMap = new Map();
     this.id = Uploader.id++;
-    // 继承默认插件
-    this.plugins = [...Uploader.defaultPlugins];
     this.uploadedBytes = 0;
     this.totalBytes = 0;
     this.totalUploadBytes = 0;
@@ -386,6 +402,14 @@ export default class Uploader<T = any> extends EventEmitter {
     this.uploadFiles = [];
     this.events = new Map<EventName, Set<Function>>();
     this.files = [];
+  }
+
+  private init() {
+    // ✅ 使用统一的重置方法
+    this.resetUploaderState();
+    
+    // 继承默认插件
+    this.plugins = [...Uploader.defaultPlugins];
   }
   private createInput() {
     const input = document.createElement("input");
@@ -508,6 +532,56 @@ export default class Uploader<T = any> extends EventEmitter {
   }
 
   /**
+   * 验证文件是否符合上传条件（统一验证逻辑）
+   * @param file 原始文件对象
+   * @param uploadFileInstance 上传文件实例
+   * @returns 验证结果 { valid: boolean, error?: any }
+   * @private
+   */
+  private validateFile(
+    file: File,
+    uploadFileInstance: UploadFile,
+  ): { valid: boolean; error?: any } {
+    // 大小限制检查
+    if (
+      this.config?.maxSize &&
+      !validator.size(file.size, this.config.maxSize)
+    ) {
+      return {
+        valid: false,
+        error: Errors.fileTooLarge.call(this, this.config?.maxSize),
+      };
+    }
+
+    // 类型限制检查
+    if (
+      this.config?.accept?.toString() &&
+      !validator.type(this.config?.accept, uploadFileInstance)
+    ) {
+      return {
+        valid: false,
+        error: Errors.fileTooType.call(this, {
+          accept: this.config?.accept,
+          fileName: file.name,
+        }),
+      };
+    }
+
+    // 数量限制检查
+    if (
+      this.config?.limit &&
+      !validator.limit(this.config?.limit, this.files.length)
+    ) {
+      return {
+        valid: false,
+        error: Errors.fileTooLimit.call(this, this.config?.limit),
+      };
+    }
+
+    return { valid: true };
+  }
+
+  /**
    * 处理文件选择（内部方法）
    */
   private async processSelectedFiles(files: File[]) {
@@ -555,6 +629,7 @@ export default class Uploader<T = any> extends EventEmitter {
         continue;
       }
       Uploader.uploadFile = uploadFileInstance;
+      
       // 调用选择回调
       if (this.selectCallback) {
         try {
@@ -567,29 +642,14 @@ export default class Uploader<T = any> extends EventEmitter {
         }
       }
 
-      // 大小限制检查
-      if (
-        this.config?.maxSize &&
-        !validator.size(file.size, this.config.maxSize)
-      ) {
-        this.emit(
-          "error",
-          Errors.fileTooLarge.call(this, this.config?.maxSize),
-        );
-        continue;
-      }
-      // 类型限制检查
-      if (
-        this.config?.accept?.toString() &&
-        !validator.type(this.config?.accept, uploadFileInstance)
-      ) {
-        this.emit(
-          "error",
-          Errors.fileTooType.call(this, {
-            accept: this.config?.accept,
-            fileName: file.name,
-          }),
-        );
+      // ✅ 使用统一的验证方法
+      const validation = this.validateFile(file, uploadFileInstance);
+      if (!validation.valid) {
+        this.emit("error", validation.error);
+        // 如果是数量限制，跳出循环
+        if (validation.error?.code === "FILE_TOO_LIMIT") {
+          break;
+        }
         continue;
       }
 
@@ -607,13 +667,6 @@ export default class Uploader<T = any> extends EventEmitter {
         this.openCallBack?.(uploadFileInstance);
       });
 
-      if (
-        this.config?.limit &&
-        !validator.limit(this.config?.limit, this.files.length)
-      ) {
-        this.emit("error", Errors.fileTooLimit.call(this, this.config?.limit));
-        break;
-      }
       const beforeResults = await this.runHook(
         "beforeUpload",
         uploadFileInstance,

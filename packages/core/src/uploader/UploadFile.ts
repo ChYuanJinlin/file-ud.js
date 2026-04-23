@@ -592,6 +592,48 @@ export default class UploadFile<T = any> {
   }
 
   /**
+   * 计算全局上传进度（统一处理，避免重复代码）
+   */
+  private calculateGlobalProgress(): void {
+    const up = this.__uploader__;
+
+    // ✅ 动态计算当前正在上传的文件总字节数和已上传字节数
+    let totalUploadedBytes = 0;
+    let currentTotalBytes = 0;
+
+    up.files.forEach((file) => {
+      // ✅ 根据上传类型决定状态过滤条件
+      const isActiveUpload = this.chunkManager
+        ? ["uploading", "paused", "fail"].includes(file.status!)
+        : file.status === "uploading" || file.status === "paused";
+
+      if (isActiveUpload) {
+        currentTotalBytes += file.File.size;
+
+        if (file.chunkManager) {
+          // 分片上传：使用 chunkManager 的已上传字节数
+          totalUploadedBytes += file.chunkManager.totalUploadedSize;
+        } else {
+          // 普通上传：使用 __uploadedBytes__
+          totalUploadedBytes += file.__uploadedBytes__ || 0;
+        }
+      }
+    });
+
+    // 更新全局已上传字节数和总进度
+    up.uploadedBytes = totalUploadedBytes;
+    up.totalPercent =
+      currentTotalBytes > 0
+        ? Math.min(
+            100,
+            Math.floor((totalUploadedBytes / currentTotalBytes) * 100),
+          )
+        : this.chunkManager
+        ? up.totalPercent
+        : 0;
+  }
+
+  /**
    * 处理上传进度事件
    *
    * 根据上传类型(分片/普通)采用不同的进度计算策略:
@@ -616,79 +658,19 @@ export default class UploadFile<T = any> {
     const up = this.__uploader__;
     // 统一处理不同类型的事件对象
     const loaded = (event as any).loaded || event.loaded;
+
     if (!this.chunkManager) {
+      // 普通上传：直接计算百分比
       if (event.total) {
         this.proxy.percent = Math.floor((event.loaded * 100) / event.total);
       }
 
-      // ✅ 修复：使用 uploadedBytes 累加，而不是 totalProgress
-      const up = this.__uploader__;
-
       // 更新当前文件的已上传字节数
       this.__uploadedBytes__ = loaded;
-
-      // ✅ 计算所有文件的总已上传字节数和总字节数
-      let totalUploadedBytes = 0;
-      let currentTotalBytes = 0; // ✅ 动态计算当前正在上传的文件总字节数
-
-      up.files.forEach((file) => {
-        // ✅ 只累加正在上传或暂停的文件
-        if (file.status === "uploading" || file.status === "paused") {
-          currentTotalBytes += file.File.size; // ✅ 累加文件大小
-
-          if (file.chunkManager) {
-            // 分片上传：使用 chunkManager 的已上传字节数
-            totalUploadedBytes += file.chunkManager.totalUploadedSize;
-          } else {
-            // 普通上传：使用 __uploadedBytes__
-            totalUploadedBytes += file.__uploadedBytes__ || 0;
-          }
-        }
-      });
-
-      // 更新全局已上传字节数和总进度
-      up.uploadedBytes = totalUploadedBytes;
-      up.totalPercent =
-        currentTotalBytes > 0
-          ? Math.min(
-              100,
-              Math.floor((totalUploadedBytes / currentTotalBytes) * 100),
-            )
-          : 0;
-    } else {
-      // 分片上传: 委托给 ChunkManager 处理,返回当前文件的百分比
-      // ✅ 计算全局总进度
-      const up = this.__uploader__;
-
-      // ✅ 动态计算当前正在上传的文件总字节数
-      let totalUploadedBytes = 0;
-      let currentTotalBytes = 0;
-
-      up.files.forEach((file) => {
-        // ✅ 只累加正在上传或暂停的文件
-        if (["uploading", "paused", "fail"].includes(file.status!)) {
-          currentTotalBytes += file.File.size;
-
-          if (file.chunkManager) {
-            // 分片上传：使用 chunkManager 的已上传字节数
-            totalUploadedBytes += file.chunkManager.totalUploadedSize;
-          } else {
-            // 普通上传：使用 __uploadedBytes__
-            totalUploadedBytes += file.__uploadedBytes__ || 0;
-          }
-        }
-      });
-
-      // 更新全局已上传字节数和总进度
-      up.uploadedBytes = totalUploadedBytes;
-      up.totalPercent =
-        currentTotalBytes > 0
-          ? Math.min(
-              100,
-              Math.floor((totalUploadedBytes / currentTotalBytes) * 100),
-            )
-          : up.totalPercent;
     }
+
+    // ✅ 使用统一方法计算全局进度
+    this.calculateGlobalProgress();
 
     // 触发进度事件,通知外部监听器
     // 计算并更新当前文件的上传速率

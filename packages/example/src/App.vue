@@ -18,7 +18,7 @@ import { ref } from "vue";
 import Uploader from "@file-ud.js/core/uploader";
 import { IFile } from "@file-ud.js/core/types";
 import { uploadMonitor } from "@file-ud.js/core/utils";
-import ChunkManager from "node_modules/@file-ud.js/core/src/uploader/ChunkManager";
+
 const isChunk = ref(true);
 FileUD.startUploadLogger({
   enabled: true,

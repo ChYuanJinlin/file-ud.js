@@ -439,6 +439,45 @@ export interface UploaderEvents {
   "files-start": (files: UploadFile[]) => void;
   /* 文件完成上传事件 */
   "files-complete": (files: UploadFile[]) => void;
+  
+  // ✅ 分片上传相关事件
+  /* 分片上传开始事件 */
+  "chunk-upload-start": (data: {
+    file: UploadFile;
+    totalChunks: number;
+    chunkSize: number;
+  }) => void;
+  /* 分片上传成功事件 */
+  "chunk-success": (data: {
+    chunkIndex: number;
+    totalChunks: number;
+    completedChunks: number;
+    percent: number;
+    file: UploadFile;
+  }) => void;
+  /* 分片上传失败事件 */
+  "chunk-error": (data: {
+    chunkIndex: number;
+    totalChunks: number;
+    error: string;
+    file: UploadFile;
+  }) => void;
+  /* 合并开始事件 */
+  merging: (data: {
+    file: UploadFile;
+    completedChunks: number;
+    totalChunks: number;
+  }) => void;
+  /* 合并成功事件 */
+  "merge-success": (data: {
+    file: UploadFile;
+    response?: any;
+  }) => void;
+  /* 合并失败事件 */
+  "merge-error": (data: {
+    file: UploadFile;
+    error: string;
+  }) => void;
 }
 
 /* 事件名称类型 */
