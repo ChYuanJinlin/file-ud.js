@@ -57,7 +57,26 @@ test1.onInitChunk = async (uploadFile) => {
     fileHash: uploadFile.chunkManager?.fileHash!,
     fileName: uploadFile.fileName,
   });
-  if (!data.exists) {
+  
+  // ✅ 关键修复：只有当文件真正存在时才秒传
+  if (data.exists && data.canReuseChunks !== true) {
+    // 真正的秒传：文件已存在
+    console.log("⚡ 秒传成功，跳过上传和合并");
+    return {
+      ...data,
+      isInstantUpload: true, // ✅ 明确标记为秒传，前端不会调用合并接口
+    };
+  } else if (data.canReuseChunks) {
+    // 分片可复用但目标文件不存在，需要重新上传
+    console.log("🔄 分片可复用，但需要重新上传以创建新文件");
+    // 返回空数组，让前端重新上传所有分片
+    // 后端会检测到分片已存在，直接返回成功（秒传分片）
+    return {
+      uploadedChunks: [],
+      fileHash: "",
+    };
+  } else {
+    // 文件不存在，需要创建任务并上传
     await createUploadTask({
       fileHash: uploadFile.chunkManager?.fileHash,
       fileName: uploadFile.fileName,
@@ -67,10 +86,6 @@ test1.onInitChunk = async (uploadFile) => {
     return {
       uploadedChunks: [],
       fileHash: "",
-    };
-  } else {
-    return {
-      ...data,
     };
   }
 };

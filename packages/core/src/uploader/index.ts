@@ -163,7 +163,7 @@ export default class Uploader<T = any> extends EventEmitter {
     let totalFileSize = 0;
     let uploadingFileCount = 0;
 
-    // ✅ 遍历所有正在上传的文件，累加速率和字节数
+    // 遍历所有正在上传的文件，累加速率和字节数
     this.files.forEach((file) => {
       if (this.isFileActive(file)) {
         uploadingFileCount++;
@@ -171,7 +171,7 @@ export default class Uploader<T = any> extends EventEmitter {
         // 累加文件大小（用于计算平均速度）
         totalFileSize += file.File.size;
 
-        // ✅ 使用统一方法获取已上传字节数
+        // 使用统一方法获取已上传字节数
         totalUploadedBytes += this.getFileUploadedBytes(file);
 
         // 如果文件有速度信息，累加瞬时速度
@@ -185,7 +185,7 @@ export default class Uploader<T = any> extends EventEmitter {
       }
     });
 
-    // ✅ 计算全局平均速度：总已上传字节 / 总耗时
+    // 计算全局平均速度：总已上传字节 / 总耗时
     let globalAverageSpeed = 0;
     if (totalUploadedBytes > 0 && uploadingFileCount > 0) {
       // 找到最早开始上传的文件的时间
@@ -405,7 +405,7 @@ export default class Uploader<T = any> extends EventEmitter {
   }
 
   private init() {
-    // ✅ 使用统一的重置方法
+    // 使用统一的重置方法
     this.resetUploaderState();
     
     // 继承默认插件
@@ -486,7 +486,7 @@ export default class Uploader<T = any> extends EventEmitter {
    * @return {Promise<void>}
    */
   public async submit(): Promise<void> {
-    // ✅ 上传前检查网络状态
+    // 上传前检查网络状态
     try {
       const networkCheck = checkNetworkStatus();
       if (!networkCheck.online) {
@@ -642,7 +642,7 @@ export default class Uploader<T = any> extends EventEmitter {
         }
       }
 
-      // ✅ 使用统一的验证方法
+      // 使用统一的验证方法
       const validation = this.validateFile(file, uploadFileInstance);
       if (!validation.valid) {
         this.emit("error", validation.error);

@@ -84,7 +84,7 @@ export function computeUploadTime(uploadTime: UploadTimeInfo) {
     start() {
       // 记录全局上传开始时间
       const now = Date.now();
-      // ✅ 修复：直接修改对象属性，而不是重新赋值引用
+      // ✅ 直接修改对象属性，而不是重新赋值引用
       uploadTime.startTime = now;
       uploadTime.endTime = 0;
       uploadTime.duration = 0;
@@ -94,7 +94,7 @@ export function computeUploadTime(uploadTime: UploadTimeInfo) {
       // 记录上传结束时间并计算持续时间
       const endTime = Date.now();
       const duration = endTime - uploadTime.startTime;
-      // ✅ 修复：直接修改对象属性，而不是重新赋值引用
+      // ✅ 直接修改对象属性，而不是重新赋值引用
       uploadTime.endTime = endTime;
       uploadTime.duration = duration;
       uploadTime.durationFormatted = formatDuration(duration);

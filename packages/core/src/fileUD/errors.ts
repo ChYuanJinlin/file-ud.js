@@ -256,7 +256,7 @@ export class FileUDError extends Error {
     this.code = code;
     this.level = this.determineLevel(code);
     
-    // ✅ 使用辅助方法获取文件上下文，减少全局状态耦合
+    // 使用辅助方法获取文件上下文，减少全局状态耦合
     this.context = {
       timestamp: Date.now(),
       ...this.getCurrentFileContext(),
@@ -325,12 +325,12 @@ export class FileUDError extends Error {
    * 通知错误（防抖处理）
    */
   private notice(): void {
-    // ✅ 清除之前的定时器
+    // 清除之前的定时器
     if (this.__noticeTimer__) {
       clearTimeout(this.__noticeTimer__);
     }
 
-    // ✅ 设置新的定时器，延迟通知以避免频繁触发
+    // 设置新的定时器，延迟通知以避免频繁触发
     this.__noticeTimer__ = setTimeout(() => {
       Uploader.onError?.(this.toJSON());
       this.__noticeTimer__ = null;

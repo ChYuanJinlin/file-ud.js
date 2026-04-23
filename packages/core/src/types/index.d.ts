@@ -398,6 +398,7 @@ export type onInitChunkCallback = (
 ) => Promise<{
   fileHash: string;
   uploadedChunks?: number[];
+  isInstantUpload?: boolean; // ✅ 标记是否为真正的秒传（文件已存在，无需合并）
 }>;
 
 /* 
@@ -440,7 +441,7 @@ export interface UploaderEvents {
   /* 文件完成上传事件 */
   "files-complete": (files: UploadFile[]) => void;
   
-  // ✅ 分片上传相关事件
+  // 分片上传相关事件
   /* 分片上传开始事件 */
   "chunk-upload-start": (data: {
     file: UploadFile;

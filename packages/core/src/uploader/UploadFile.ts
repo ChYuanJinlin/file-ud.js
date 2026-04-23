@@ -237,7 +237,7 @@ export default class UploadFile<T = any> {
       logger.warn("没有需要重试的上传", this.fileName);
       return;
     }
-    // ✅ 根据当前状态决定重试策略
+    // 根据当前状态决定重试策略
     const isChunkUpload = up.config?.chunkOptions && this.chunkManager;
     if (isChunkUpload && this.chunkManager) {
       // 分片上传的重试逻辑
@@ -256,7 +256,7 @@ export default class UploadFile<T = any> {
       });
 
       if (allChunksCompleted && !hasFailedChunks) {
-        // ✅ 场景1：所有分片都成功了（可能在 merging 阶段失败）
+        // 场景1：所有分片都成功了（可能在 merging 阶段失败）
         // 需要重新开始整个上传流程
         logger.info(
           "UploadFile",
@@ -274,7 +274,7 @@ export default class UploadFile<T = any> {
           this.onError(err);
         });
       } else if (hasFailedChunks) {
-        // ✅ 场景2：有失败的分片，只重试失败的分片
+        // 场景2：有失败的分片，只重试失败的分片
         logger.info(
           "UploadFile",
           `发现 ${this.chunkManager.getFailedChunksCount()} 个失败分片，仅重试失败分片`,
@@ -422,7 +422,7 @@ export default class UploadFile<T = any> {
   async upload(
     onChunkComplete?: (res: T) => void,
     signal?: AbortSignal,
-    chunkFormData?: FormData, // ✅ 新增参数：接收分片的 FormData
+    chunkFormData?: FormData, // 新增参数：接收分片的 FormData
   ) {
     this.proxy.loading = true;
 
@@ -431,7 +431,7 @@ export default class UploadFile<T = any> {
       this.reject = reject;
       const up = this.__uploader__;
 
-      // ✅ 重置已上传字节数（避免重新上传时使用旧值）
+      // 重置已上传字节数（避免重新上传时使用旧值）
       this.__uploadedBytes__ = 0;
 
       if (!up.config?.action) {
@@ -439,7 +439,7 @@ export default class UploadFile<T = any> {
         return;
       }
 
-      // ✅ 记录上传开始（用于监控模块追踪）
+      // 记录上传开始（用于监控模块追踪）
       // 注意：对于分片上传，这个日志会在 ChunkManager.initUpload() 中输出
       // 这里只输出普通上传的开始日志，避免分片上传时每个分片都输出一次
       if (!this.chunkManager) {
@@ -483,7 +483,7 @@ export default class UploadFile<T = any> {
 
       this.proxy.status = "uploading";
 
-      // ✅ 修复：只在首次上传时累加 totalBytes，避免重试时重复累加
+      // 只在首次上传时累加 totalBytes，避免重试时重复累加
       // 对于分片上传，应该在 ChunkManager.initUpload() 中初始化 totalBytes
       // 对于普通上传，在这里初始化
       if (!this.chunkManager && up.config?.autoUpload) {
@@ -496,7 +496,7 @@ export default class UploadFile<T = any> {
       }
 
       let promise: Promise<T>;
-      // ✅ 修复：优先使用传入的 chunkFormData，避免使用共享的 this.formData
+      // 优先使用传入的 chunkFormData，避免使用共享的 this.formData
       // 对于分片上传，每个分片都有独立的 FormData，通过参数传递
       // 对于普通上传，使用 this.formData
       const requestData = chunkFormData || this.formData || new FormData();
@@ -515,11 +515,11 @@ export default class UploadFile<T = any> {
       promise
         .then((res) => {
           if (this.chunkManager) {
-            // ✅ 分片上传：只调用分片完成回调，不调用文件成功回调
+            // 分片上传：只调用分片完成回调，不调用文件成功回调
             // 文件成功回调会在 ChunkManager.checkStatistics 中所有分片完成后调用
             onChunkComplete?.(res);
           } else {
-            // ✅ 普通上传：直接设置为成功并调用成功回调
+            // 普通上传：直接设置为成功并调用成功回调
             this.onScuccess(res);
             this.proxy.status = "success";
           }
@@ -527,7 +527,6 @@ export default class UploadFile<T = any> {
         })
         .catch((err) => {
           if (!this.chunkManager) {
-            // ✅ 修复：失败时重新计算全局进度，而不是直接设为0
             this.isCancel !== true && (this.proxy.status = "error");
           }
           this.onError(err);
@@ -552,7 +551,7 @@ export default class UploadFile<T = any> {
     up.uploadFiles.splice(up.uploadFiles.indexOf(this), 1);
     up.remObjectUrls(this.url);
 
-    // ✅ 修复：添加 fileId 到日志参数中，供监控模块提取
+    // 添加 fileId 到日志参数中，供监控模块提取
     logger.info("UploadFile", `文件上传成功: ${this.fileName}`, {
       fileId: this.fileId,
       fileName: this.fileName,
@@ -579,7 +578,7 @@ export default class UploadFile<T = any> {
       });
       return;
     }
-    // ✅ 修复：添加 fileId 到错误日志中，供监控模块提取
+    // 添加 fileId 到错误日志中，供监控模块提取
     logger.error("UploadFile", `文件上传失败: ${this.fileName}`, {
       fileId: this.fileId,
       fileName: this.fileName,
@@ -597,12 +596,12 @@ export default class UploadFile<T = any> {
   private calculateGlobalProgress(): void {
     const up = this.__uploader__;
 
-    // ✅ 动态计算当前正在上传的文件总字节数和已上传字节数
+    // 动态计算当前正在上传的文件总字节数和已上传字节数
     let totalUploadedBytes = 0;
     let currentTotalBytes = 0;
 
     up.files.forEach((file) => {
-      // ✅ 根据上传类型决定状态过滤条件
+      // 根据上传类型决定状态过滤条件
       const isActiveUpload = this.chunkManager
         ? ["uploading", "paused", "fail"].includes(file.status!)
         : file.status === "uploading" || file.status === "paused";
@@ -669,7 +668,7 @@ export default class UploadFile<T = any> {
       this.__uploadedBytes__ = loaded;
     }
 
-    // ✅ 使用统一方法计算全局进度
+    // 使用统一方法计算全局进度
     this.calculateGlobalProgress();
 
     // 触发进度事件,通知外部监听器

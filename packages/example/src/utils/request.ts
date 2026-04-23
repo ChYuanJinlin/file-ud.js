@@ -13,7 +13,7 @@ const instance = axios.create({
 
 instance.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
-    // ✅ 修复：合并 headers 而不是替换，保留 axios 自动设置的 Content-Type
+    // ✅ 合并 headers 而不是替换，保留 axios 自动设置的 Content-Type
     config.headers.Authorization = `Bearer xxxxx`;
     config.headers["Accept-Language"] = "111";
     return config;

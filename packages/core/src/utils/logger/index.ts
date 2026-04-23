@@ -275,7 +275,7 @@ function log(level: LogLevel, module: string, message: string, ...args: any[]): 
 
   const formattedMessage = formatMessage(level, module, message, args);
 
-  // ✅ 关键修复：使用 Error().stack 获取真实的调用位置
+  // ✅ 关键使用 Error().stack 获取真实的调用位置
   // 这样浏览器控制台的代码跳转会指向调用日志的位置，而不是 logger 文件
   let stackInfo: string | undefined;
   try {
