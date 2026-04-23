@@ -142,7 +142,9 @@ export default class ChunkManager {
       } catch (error) {
         logger.error("ChunkManager", "计算文件哈希失败，使用备用标识", error);
         // 如果计算失败，使用时间戳作为备用标识
-        this.fileHash = `fallback_${Date.now()}_${Math.random().toString(36).substring(2)}`;
+        this.fileHash = `fallback_${Date.now()}_${Math.random()
+          .toString(36)
+          .substring(2)}`;
       } finally {
         this.uploadFile.proxy.hashLoading = false;
       }
@@ -247,7 +249,7 @@ export default class ChunkManager {
             // ✅ 更新全局进度和速度（不依赖 lastUpdateTime）
             const up = this.uploadFile.__uploader__;
             up.triggerUpdate();
-            
+
             return;
           }
 
@@ -281,6 +283,7 @@ export default class ChunkManager {
         }
       } catch (error) {
         logger.warn("ChunkManager", "初始化失败", error);
+        this.uploadFile.proxy.status = "error";
         // 降级到本地 IndexedDB 存储
         return Promise.reject(error);
       }
@@ -396,7 +399,9 @@ export default class ChunkManager {
 
         logger.error(
           "ChunkManager",
-          `文件 ${this.uploadFile.fileName} 的分片 ${chunkIndex + 1}/${this.totalChunks} 上传失败（自动重试已禁用，请手动重试）`,
+          `文件 ${this.uploadFile.fileName} 的分片 ${chunkIndex + 1}/${
+            this.totalChunks
+          } 上传失败（自动重试已禁用，请手动重试）`,
           {
             fileId: this.uploadFile.fileId,
             fileName: this.uploadFile.fileName,
@@ -404,7 +409,9 @@ export default class ChunkManager {
             error: error instanceof Error ? error.message : String(error),
           },
         );
-
+        setTimeout(() => {
+          this.uploadFile.proxy.status = "fail";
+        }, 0);
         throw error;
       }
     }
@@ -415,7 +422,9 @@ export default class ChunkManager {
         if (retryCount > 0) {
           logger.warn(
             "ChunkManager",
-            `文件 ${this.uploadFile.fileName} 的分片 ${chunkIndex + 1}/${this.totalChunks} 第 ${retryCount} 次重试`,
+            `文件 ${this.uploadFile.fileName} 的分片 ${chunkIndex + 1}/${
+              this.totalChunks
+            } 第 ${retryCount} 次重试`,
             {
               fileId: this.uploadFile.fileId,
               fileName: this.uploadFile.fileName,
@@ -465,7 +474,9 @@ export default class ChunkManager {
         if (retryCount > 0) {
           logger.info(
             "ChunkManager",
-            `文件 ${this.uploadFile.fileName} 的分片 ${chunkIndex + 1}/${this.totalChunks} 重试成功（共重试 ${retryCount} 次）`,
+            `文件 ${this.uploadFile.fileName} 的分片 ${chunkIndex + 1}/${
+              this.totalChunks
+            } 重试成功（共重试 ${retryCount} 次）`,
             {
               fileId: this.uploadFile.fileId,
               fileName: this.uploadFile.fileName,
@@ -485,7 +496,9 @@ export default class ChunkManager {
 
           logger.error(
             "ChunkManager",
-            `文件 ${this.uploadFile.fileName} 的分片 ${chunkIndex + 1}/${this.totalChunks} 最终失败（已重试 ${maxRetries} 次）`,
+            `文件 ${this.uploadFile.fileName} 的分片 ${chunkIndex + 1}/${
+              this.totalChunks
+            } 最终失败（已重试 ${maxRetries} 次）`,
             {
               fileId: this.uploadFile.fileId,
               fileName: this.uploadFile.fileName,
@@ -547,12 +560,22 @@ export default class ChunkManager {
         (res) => {
           // ✅ 使用 countedChunks 来防止重复累加
           this.response = res; // 暂存最新的响应数据，供外部访问
+
+          // ✅ 关键修复：只有当该分片未被标记为已上传时，才进行累加
           if (!this.uploadedChunks[chunkIndex]) {
-            // 新上传的分片，累加计数
-            this.updateProgress();
-            this.totalUploadedSize += chunkSizeValue;
             this.uploadedChunks[chunkIndex] = true;
+
+            // ✅ 先累加字节数
+            this.totalUploadedSize += chunkSizeValue;
+
+            // ✅ 再累加完成分片计数
+            this.completedChunks++;
+
+            // ✅ 标记为已计数，防止重试时重复累加
+            this.countedChunks.add(chunkIndex);
+
             // 更新进度
+            this.updateProgress();
 
             logger.info(
               "ChunkManager",
@@ -616,7 +639,9 @@ export default class ChunkManager {
           progress: this.uploadFile.proxy.progress,
         },
       );
-
+      setTimeout(() => {
+        this.uploadFile.proxy.status = "fail";
+      }, 0);
       throw error;
     }
   }
@@ -638,7 +663,7 @@ export default class ChunkManager {
           await this.clearProgress();
         }
 
-        this.uploadFile.status = "success";
+        this.uploadFile.proxy.status = "success";
 
         return response;
       } else {
@@ -651,7 +676,7 @@ export default class ChunkManager {
         return undefined;
       }
     } catch (error) {
-      this.uploadFile.status = "fail";
+      this.uploadFile.proxy.status = "fail";
       throw error;
     }
   }
@@ -683,47 +708,6 @@ export default class ChunkManager {
       // ✅ 所有分片上传成功，强制设置进度为 100%
       const up = this.uploadFile.__uploader__;
 
-      // ✅ 更新全局上传数据量：累加所有已完成文件 + 当前文件
-      let totalUploadedBytes = 0;
-      up.files.forEach((file) => {
-        if (file.status === "success") {
-          // 已完成的文件：累加整个文件大小
-          totalUploadedBytes += file.File.size;
-        } else if (file === this.uploadFile) {
-          // 当前文件：累加整个文件大小（因为所有分片都完成了）
-          totalUploadedBytes += file.File.size;
-        } else if (file.status === "uploading" || file.status === "paused") {
-          // 其他正在上传的文件：累加已上传字节数
-          if (file.chunkManager) {
-            totalUploadedBytes += file.chunkManager.totalUploadedSize;
-          } else {
-            totalUploadedBytes += file.__uploadedBytes__ || 0;
-          }
-        }
-      });
-
-      up.uploadedBytes = totalUploadedBytes;
-
-      // ✅ 计算总进度：基于动态计算的总字节数
-      let currentTotalBytes = 0;
-      up.files.forEach((file) => {
-        if (
-          file.status === "uploading" ||
-          file.status === "paused" ||
-          file.status === "success"
-        ) {
-          currentTotalBytes += file.File.size;
-        }
-      });
-
-      up.totalPercent =
-        currentTotalBytes > 0
-          ? Math.min(
-              100,
-              Math.floor((totalUploadedBytes / currentTotalBytes) * 100),
-            )
-          : 100;
-
       // ✅ 计算并更新全局上传速度
       this.calculateAndUpdateSpeed(this.uploadFile.File.size);
 
@@ -738,12 +722,10 @@ export default class ChunkManager {
         averageSpeedFormatted: formatSpeed(averageSpeed),
       };
 
-      // 更新单个文件进度
-      this.uploadFile.proxy.percent = 100;
-
       // 调用合并接口
       try {
         const mergeResult = await this.mergeChunks();
+        this.uploadFile.proxy.percent = 100; // 确保合并完成后进度为 100%
         this.uploadFile.onScuccess(mergeResult);
       } catch (error) {
         this.uploadFile.onError(error);
@@ -774,7 +756,10 @@ export default class ChunkManager {
           );
 
           // ✅ 设置文件状态为 fail
-          this.uploadFile.proxy.status = "fail";
+          setTimeout(() => {
+            this.uploadFile.proxy.status = "fail";
+          }, 0);
+
           this.uploadFile.onError(new Error("部分分片上传失败"));
           return;
         }
@@ -794,7 +779,7 @@ export default class ChunkManager {
 
         // ✅ 重试完成后，再次检查统计信息
         // 如果重试成功，会触发合并和状态转换
-        // 如果重试仍然失败，会触发错误回调
+        // 如果重试仍然失败，会触发错误处理
         await this.checkStatistics();
       }
     }
@@ -978,14 +963,23 @@ export default class ChunkManager {
    * completedChunks 只在分片真正上传成功时才累加
    */
   public updateProgress() {
+    // ✅ 修复：不再在此处自增 completedChunks，而是由调用方（uploadChunk 成功回调）确保状态一致
+    // 此处仅负责根据当前的 completedChunks 计算百分比
+
+    // 防止除以0
+    if (this.totalChunks === 0) {
+      this.uploadFile.proxy.percent = 100;
+      return;
+    }
+
     // ✅ 简单直接的进度计算
-    let percent = Math.round((this.completedChunks++ / this.totalChunks) * 100);
+    let percent = Math.round((this.completedChunks / this.totalChunks) * 100);
 
     // ✅ 边界保护：确保不超过 100%
     percent = Math.min(100, Math.max(0, percent));
 
     // ✅ 如果所有分片都完成，强制设置为 100%
-    if (this.completedChunks === this.totalChunks) {
+    if (this.completedChunks >= this.totalChunks) {
       percent = 100;
     }
 
@@ -993,6 +987,9 @@ export default class ChunkManager {
 
     // ✅ 计算并更新全局上传速度
     this.calculateAndUpdateSpeed(this.totalUploadedSize);
+
+    // ✅ 触发全局更新，确保总进度条实时响应
+    this.uploadFile.__uploader__.triggerUpdate();
   }
 
   /**

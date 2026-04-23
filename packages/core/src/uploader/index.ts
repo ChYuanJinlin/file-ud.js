@@ -143,7 +143,7 @@ export default class Uploader<T = any> extends EventEmitter {
 
     // ✅ 遍历所有正在上传的文件，累加速率和字节数
     this.files.forEach((file) => {
-      if (file.status === "uploading" || file.status === "paused") {
+      if (["uploading", "paused", "fail"].includes(file.status!)) {
         uploadingFileCount++;
 
         // 累加文件大小（用于计算平均速度）
@@ -173,7 +173,9 @@ export default class Uploader<T = any> extends EventEmitter {
       let earliestStartTime = Date.now();
       this.files.forEach((file) => {
         if (
-          (file.status === "uploading" || file.status === "paused") &&
+          (file.status === "uploading" ||
+            file.status === "paused" ||
+            file.status === "fail") &&
           file.uploadTime.startTime > 0
         ) {
           earliestStartTime = Math.min(

@@ -193,7 +193,7 @@ export default class UploadFile<T = any> {
     fn ? fn(next) : next();
   }
   remove() {
-    this.cancel();
+    this.abort?.();
     const up = this.__uploader__;
     up.files = up.files.filter((f) => f.fileId !== this.fileId);
     if (up.files.length === 0) {
@@ -201,6 +201,7 @@ export default class UploadFile<T = any> {
     }
     up.remObjectUrls(this.url);
     up.totalBytes -= this.File.size;
+    up.triggerUpdate();
     up.emit("remove", this.proxy);
   }
   /**
@@ -289,7 +290,6 @@ export default class UploadFile<T = any> {
           this.onError(err);
         });
       } else {
-
         // 尝试重新开始整个上传流程
         this.proxy.isRetry = true;
         this.proxy.status = "uploading";
@@ -481,7 +481,7 @@ export default class UploadFile<T = any> {
         }
       }
 
-      this.proxy.status !== "fail" && (this.proxy.status = "uploading");
+      this.proxy.status = "uploading";
 
       // ✅ 修复：只在首次上传时累加 totalBytes，避免重试时重复累加
       // 对于分片上传，应该在 ChunkManager.initUpload() 中初始化 totalBytes
@@ -527,8 +527,7 @@ export default class UploadFile<T = any> {
         })
         .catch((err) => {
           if (!this.chunkManager) {
-            !this.isCancel && (this.proxy.percent = 0); // 上传失败时重置进度为 0%
-            up.totalPercent = 0;
+            // ✅ 修复：失败时重新计算全局进度，而不是直接设为0
             this.isCancel !== true && (this.proxy.status = "error");
           }
           this.onError(err);
@@ -563,6 +562,7 @@ export default class UploadFile<T = any> {
       up.emit("files-complete", up.files);
       console.log("所有文件上传完成");
       up.totalProgress = 0;
+      up.totalPercent = 100;
       up.totalUploadBytes = 0;
       computeUploadTime(up.uploadTime).end();
       up.uploadTime.startTime = 0;
@@ -616,9 +616,6 @@ export default class UploadFile<T = any> {
     const up = this.__uploader__;
     // 统一处理不同类型的事件对象
     const loaded = (event as any).loaded || event.loaded;
-    let percent = 0;
-    // 普通上传: 直接计算百分比
-
     if (!this.chunkManager) {
       if (event.total) {
         this.proxy.percent = Math.floor((event.loaded * 100) / event.total);
@@ -669,7 +666,7 @@ export default class UploadFile<T = any> {
 
       up.files.forEach((file) => {
         // ✅ 只累加正在上传或暂停的文件
-        if (file.status === "uploading" || file.status === "paused") {
+        if (["uploading", "paused", "fail"].includes(file.status!)) {
           currentTotalBytes += file.File.size;
 
           if (file.chunkManager) {
@@ -690,7 +687,7 @@ export default class UploadFile<T = any> {
               100,
               Math.floor((totalUploadedBytes / currentTotalBytes) * 100),
             )
-          : 0;
+          : up.totalPercent;
     }
 
     // 触发进度事件,通知外部监听器
