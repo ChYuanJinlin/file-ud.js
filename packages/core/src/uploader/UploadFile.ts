@@ -204,6 +204,60 @@ export default class UploadFile<T = any> {
     up.triggerUpdate();
     up.emit("remove", this.proxy);
   }
+
+  /**
+   * 开始上传
+   *
+   * 统一的上传入口，自动根据配置选择分片上传或普通上传：
+   * - **分片上传**: 调用 ChunkManager.startUpload()
+   * - **普通上传**: 调用 upload() 方法
+   *
+   * @example
+   * ```typescript
+   * // 手动上传模式
+   * const file = uploader.addFile(fileObject);
+   *
+   * // 用户点击按钮时
+   * button.onclick = () => {
+   *   file.start();
+   * };
+   * ```
+   *
+   * @remarks
+   * - 如果文件已经在上传中，会忽略此次调用
+   * - 如果文件已上传成功，会抛出警告
+   * - 这是异步操作，建议在 UI 上显示加载状态
+   */
+  async start(): Promise<T> {
+    return new Promise(async (resolve, reject) => {
+      this.resolve = resolve;
+      this.reject = reject;
+      try {
+        if (this.chunkManager) {
+          // 分片上传
+          logger.info("UploadFile", `开始分片上传: ${this.fileName}`, {
+            fileId: this.fileId,
+            fileName: this.fileName,
+          });
+          await this.chunkManager.startUpload();
+        } else {
+          // 普通上传
+          logger.info("UploadFile", `开始普通上传: ${this.fileName}`, {
+            fileId: this.fileId,
+            fileName: this.fileName,
+          });
+          const res = await this.upload();
+          resolve(res);
+        }
+      } catch (error) {
+        logger.error("UploadFile", `文件 ${this.fileName} 上传失败`, error);
+        this.onError(error);
+        this.reject(error);
+        throw error;
+      }
+    });
+  }
+
   /**
    * 重试上传
    *
@@ -233,7 +287,7 @@ export default class UploadFile<T = any> {
    */
   async retry() {
     const up = this.__uploader__;
-    if (this.proxy.status === "success") {
+    if (this.proxy.status === "success" || this.proxy.status === "merging") {
       logger.warn("没有需要重试的上传", this.fileName);
       return;
     }
@@ -423,12 +477,9 @@ export default class UploadFile<T = any> {
     onChunkComplete?: (res: T) => void,
     signal?: AbortSignal,
     chunkFormData?: FormData, // 新增参数：接收分片的 FormData
-  ) {
+  ): Promise<T> {
     this.proxy.loading = true;
-
     return new Promise(async (resolve, reject) => {
-      this.resolve = resolve;
-      this.reject = reject;
       const up = this.__uploader__;
 
       // 重置已上传字节数（避免重新上传时使用旧值）
@@ -764,6 +815,40 @@ export default class UploadFile<T = any> {
         // 拦截 send - 这是关键！
         const originalSend = xhr.send;
         xhr.send = function (body?: any) {
+          // ✅ 在发送请求前检查网络状态
+          const networkCheck = checkNetworkStatus();
+          if (!networkCheck.online) {
+            const error = new FileUDError(
+              ErrorCode.NETWORK,
+              "网络连接异常，请检查网络设置后重试",
+              {
+                fileName: currentFileInstance?.fileName,
+                fileId: currentFileInstance?.fileId,
+                timestamp: networkCheck.timestamp,
+              },
+              {
+                recoverable: true,
+                retryable: true,
+                suggestion: "请检查网络连接后重试",
+                userVisible: true,
+              },
+            );
+
+            logger.error("UploadFile", `网络检查失败: ${error.message}`, {
+              fileId: currentFileInstance?.fileId,
+              fileName: currentFileInstance?.fileName,
+            });
+
+            // 设置文件状态为 error
+            if (currentFileInstance) {
+              currentFileInstance.proxy.status = "error";
+              currentFileInstance.onError(error);
+            }
+
+            // 中止请求
+            throw error;
+          }
+
           // 优先从请求体获取 formData
           let formDataToSend = body;
 

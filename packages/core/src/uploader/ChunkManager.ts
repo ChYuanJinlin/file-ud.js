@@ -235,6 +235,7 @@ export default class ChunkManager {
             logger.info("ChunkManager", "⚡ 检测到秒传标记，文件已存在", {
               fileHash: this.fileHash,
               fileName: this.uploadFile.fileName,
+              shouldRemove: initResult.shouldRemove,
             });
 
             // 标记为真正的秒传
@@ -246,10 +247,27 @@ export default class ChunkManager {
             );
             this.uploadedChunks = new Array(this.totalChunks).fill(true);
             this.uploadFile.proxy.percent = 100;
+            this.uploadFile.proxy.status = "success";
 
             // 更新全局进度和速度
             const up = this.uploadFile.__uploader__;
             up.triggerUpdate();
+
+            // ✅ 如果需要移除文件，则从文件列表中移除
+            if (initResult.shouldRemove === true) {
+              logger.info("ChunkManager", "🗑️ 秒传成功，自动移除文件", {
+                fileName: this.uploadFile.fileName,
+              });
+
+              // 触发秒传成功事件
+              up.emit("instant-upload", {
+                file: this.uploadFile.proxy,
+                reason: "文件已存在，自动移除",
+              });
+
+              // 移除文件（调用 UploadFile 实例的 remove 方法）
+              this.uploadFile.remove();
+            }
 
             return;
           }
@@ -265,11 +283,12 @@ export default class ChunkManager {
               fileName: this.uploadFile.fileName,
               uploadedChunksCount: initResult.uploadedChunks.length,
               totalChunks: this.totalChunks,
+              shouldRemove: initResult.shouldRemove,
             });
 
             // ✅ 标记为真正的秒传（文件已存在，无需合并）
             this.isInstantUpload = true;
-            
+
             this.completedChunks = this.totalChunks;
             this.totalUploadedSize = this.uploadFile.File.size;
             this.countedChunks = new Set(
@@ -282,6 +301,22 @@ export default class ChunkManager {
             // 更新全局进度和速度（不依赖 lastUpdateTime）
             const up = this.uploadFile.__uploader__;
             up.triggerUpdate();
+
+            // ✅ 如果需要移除文件，则从文件列表中移除
+            if (initResult.shouldRemove === true) {
+              logger.info("ChunkManager", "🗑️ 秒传成功，自动移除文件", {
+                fileName: this.uploadFile.fileName,
+              });
+
+              // 触发秒传成功事件
+              up.emit("instant-upload", {
+                file: this.uploadFile.proxy,
+                reason: "文件已存在，自动移除",
+              });
+
+              // 移除文件（调用 UploadFile 实例的 remove 方法）
+              this.uploadFile.remove();
+            }
 
             return;
           }
@@ -529,9 +564,11 @@ export default class ChunkManager {
    * 设置文件状态为失败（统一处理，避免重复代码）
    */
   private setFileStatusToFail(): void {
-    setTimeout(() => {
-      this.uploadFile.proxy.status = "fail";
-    }, 0);
+    if (this.retries === null) {
+      setTimeout(() => {
+        this.uploadFile.proxy.status = "fail";
+      }, 0);
+    }
   }
 
   /**
@@ -801,12 +838,12 @@ export default class ChunkManager {
               failedChunks: this.failedChunks,
             },
           );
-          this.setFileStatusToFail(); // 使用统一方法
+
           this.uploadFile.onError(new Error("部分分片上传失败"));
           return;
         }
         // 设置文件状态为 fail
-        this.setFileStatusToFail(); // 使用统一方法
+
         // 正常重试逻辑（retries >= 0）
         logger.warn(
           "ChunkManager",
@@ -1019,7 +1056,7 @@ export default class ChunkManager {
     }
 
     // 简单直接的进度计算
-    let percent = Math.round((this.completedChunks / this.totalChunks) * 100);
+    let percent = Math.floor((this.completedChunks / this.totalChunks) * 100);
 
     // 边界保护：确保不超过 100%
     percent = Math.min(100, Math.max(0, percent));
@@ -1033,9 +1070,6 @@ export default class ChunkManager {
 
     // 计算并更新全局上传速度
     this.calculateAndUpdateSpeed(this.totalUploadedSize);
-
-    // 触发全局更新，确保总进度条实时响应
-    this.uploadFile.__uploader__.triggerUpdate();
   }
 
   /**
@@ -1177,11 +1211,13 @@ export default class ChunkManager {
       await this.uploadWithConcurrency();
 
       // 检查统计信息并触发合并或错误处理
+
       await this.checkStatistics();
 
       computeUploadTime(this.uploadFile.proxy.uploadTime).end();
     } catch (error) {
       // 错误时也要检查统计信息，确保正确更新状态和进度
+
       await this.checkStatistics();
 
       // 记录耗时
@@ -1241,8 +1277,8 @@ export default class ChunkManager {
         }),
       );
     }
-    await Promise.all(uploadPromises);
 
+    await Promise.all(uploadPromises);
     // 统计信息
     const completedDurations = chunkDurations.filter(
       (duration) => duration > 0,
@@ -1259,5 +1295,6 @@ export default class ChunkManager {
         minTime: Math.min(...completedDurations),
       };
     }
+    return Promise.resolve();
   }
 }

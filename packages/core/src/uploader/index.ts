@@ -519,10 +519,8 @@ export default class Uploader<T = any> extends EventEmitter {
             return Promise.resolve();
           }
 
-          // 直接开始上传，由 UploadFile 内部管理 ChunkManager
-          return file.chunkManager
-            ? file.chunkManager.startUpload()
-            : file.upload();
+          // ✅ 使用统一的 start() 方法
+          return file.start();
         } catch (error) {
           console.error(file.fileName + "文件上传失败:", error);
         }
@@ -679,9 +677,7 @@ export default class Uploader<T = any> extends EventEmitter {
       this.files.unshift(uploadFileInstance);
       this.uploadFiles.unshift(uploadFileInstance);
       if (this.config?.autoUpload) {
-        uploadFileInstance.chunkManager
-          ? uploadFileInstance.chunkManager.startUpload()
-          : uploadFileInstance.upload();
+        uploadFileInstance.start();
       }
     }
   }

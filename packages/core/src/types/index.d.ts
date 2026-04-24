@@ -399,6 +399,7 @@ export type onInitChunkCallback = (
   fileHash: string;
   uploadedChunks?: number[];
   isInstantUpload?: boolean; // ✅ 标记是否为真正的秒传（文件已存在，无需合并）
+  shouldRemove?: boolean;    // ✅ 标记是否需要移除该文件（秒传时自动移除）
 }>;
 
 /* 
@@ -478,6 +479,12 @@ export interface UploaderEvents {
   "merge-error": (data: {
     file: UploadFile;
     error: string;
+  }) => void;
+  
+  /* 秒传成功事件（文件已存在，自动移除） */
+  "instant-upload": (data: {
+    file: UploadFile;
+    reason: string;
   }) => void;
 }
 

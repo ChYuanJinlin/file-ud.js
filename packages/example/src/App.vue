@@ -58,36 +58,63 @@ test1.onInitChunk = async (uploadFile) => {
     fileName: uploadFile.fileName,
   });
   
-  // ✅ 关键修复：只有当文件真正存在时才秒传
-  if (data.exists && data.canReuseChunks !== true) {
-    // 真正的秒传：文件已存在
+  console.log("📋 check-file 返回:", data);
+  
+  // ✅ 情况1：真正的秒传 - 文件已完整存在
+  if (data.exists && data.isInstantUpload === true) {
     console.log("⚡ 秒传成功，跳过上传和合并");
     return {
       ...data,
-      isInstantUpload: true, // ✅ 明确标记为秒传，前端不会调用合并接口
+      isInstantUpload: true, // 明确标记为秒传// ✅ 自动移除重复文件
     };
-  } else if (data.canReuseChunks) {
-    // 分片可复用但目标文件不存在，需要重新上传
+  }
+  
+  // ✅ 情况2：分片可复用但文件不存在 - 需要重新上传以创建新文件
+  if (data.canReuseChunks === true) {
     console.log("🔄 分片可复用，但需要重新上传以创建新文件");
     // 返回空数组，让前端重新上传所有分片
     // 后端会检测到分片已存在，直接返回成功（秒传分片）
     return {
-      uploadedChunks: [],
-      fileHash: "",
+      uploadedChunks: [], // 告诉前端需要上传所有分片
+      fileHash: data.fileHash || "",
+      shouldRemove: false,  // ❌ 不移除，需要继续上传
     };
-  } else {
-    // 文件不存在，需要创建任务并上传
+  }
+  
+  // ✅ 情况3：普通断点续传或新文件
+  if (!data.exists) {
+    // 检查是否有已上传的分片
+    if (data.uploadedChunks && data.uploadedChunks.length > 0) {
+      console.log(`🔄 断点续传: ${data.uploadedChunks.length}/${data.totalChunks} 分片已上传`);
+      return {
+        uploadedChunks: data.uploadedChunks,
+        fileHash: data.fileHash || "",
+        shouldRemove: false,
+      };
+    }
+    
+    // 新文件，需要创建任务
+    console.log("📝 新文件，创建上传任务");
     await createUploadTask({
       fileHash: uploadFile.chunkManager?.fileHash,
       fileName: uploadFile.fileName,
       totalChunks: uploadFile.chunkManager?.totalChunks!,
       fileSize: uploadFile.File.size,
     });
+    
     return {
       uploadedChunks: [],
       fileHash: "",
+      shouldRemove: false,
     };
   }
+  
+  // 默认返回
+  return {
+    uploadedChunks: data.uploadedChunks || [],
+    fileHash: data.fileHash || "",
+    shouldRemove: false,
+  };
 };
 const test2 = FileUD.createUploader("test2", {
   action: "/upload",
