@@ -10,13 +10,7 @@ const cors = require("cors");
  * 文件上传服务器 - 支持秒传和断点续传
  * ========================================
  *
- * 🎯 核心特性：
- * 1. 秒传：相同内容的文件只需上传一次
- * 2. 断点续传：上传中断后可从断点继续
- * 3. 分片共享：相同 hash 的文件共享分片，节省存储
- * 4. 自动清理：7天未使用的分片自动删除
- *
- * 📋 接口列表：
+ * 接口列表：
  * 1. POST /check-file - 秒传检查
  * 2. GET /get-uploaded-chunks - 获取已上传分片列表（断点续传）
  * 3. POST /create-upload-task - 创建上传任务
@@ -26,17 +20,12 @@ const cors = require("cors");
  * 7. POST /upload-multiple - 多文件上传
  * 8. GET /files - 获取文件列表
  *
- * 💾 存储结构：
+ * 存储结构：
  * - uploads/ - 上传文件目录
- * - uploads/tasks/ - 上传任务记录（断点续传 + 秒传）
- * - uploads/hash_{fileHash}.json - 秒传记录（包含 filenames 数组）
- * - uploads/chunk_{fileHash}_{chunkIndex} - 分片文件（共享）
+ * - uploads/tasks/ - 上传任务记录（断点续传）
+ * - uploads/hash_{fileHash}.json - 秒传记录
+ * - uploads/{fileHash}-{chunkIndex} - 分片文件
  * - uploads/{fileName} - 合并后的完整文件
- *
- * 🔧 修复的问题：
- * - ✅ 相同 hash 不同文件名的文件可以正常上传
- * - ✅ 第二个文件不会因分片被删除而报错
- * - ✅ 真正的秒传：第二次上传瞬间完成
  */
 
 // 配置 multer 存储（普通上传用）
@@ -159,67 +148,20 @@ app.post("/check-file", (req, res) => {
   const hashFilePath = path.join(taskDir, `${fileHash}.json`);
 
   if (fs.existsSync(hashFilePath)) {
-    // 文件哈希记录存在，实现秒传
+    // 文件已存在，实现秒传
     const fileInfo = JSON.parse(fs.readFileSync(hashFilePath, "utf-8"));
-    
-    // ✅ 关键修复：检查目标文件是否真的存在
-    const uploadDir = path.join(__dirname, "uploads");
-    const targetFilePath = path.join(uploadDir, fileName);
-    
-    if (fs.existsSync(targetFilePath)) {
-      // 目标文件存在，真正的秒传
-      console.log(`⚡ 秒传成功: ${fileName} (fileHash: ${fileHash})`);
+    console.log(`⚡ 秒传成功: ${fileName} (fileHash: ${fileHash})`);
 
-      return res.json({
-        success: true,
-        message: "文件已存在，秒传成功",
-        data: {
-          exists: true,
-          isInstantUpload: true, // ✅ 标记为真正的秒传
-          uploadedChunks: Array.from({ length: totalChunks || 0 }, (_, i) => i), // 返回所有分片索引
-          totalChunks: totalChunks || 0,
-          ...fileInfo,
-        },
-      });
-    } else {
-      // ✅ 目标文件不存在，但 hash 记录存在（可能是不同文件名）
-      // 需要检查分片文件是否存在，如果存在可以复用
-      console.log(`📝 文件不存在但 hash 记录存在: ${fileName} (fileHash: ${fileHash})`);
-      console.log(`   已有文件: ${fileInfo.fileName || fileInfo.filenames?.[0]}`);
-      
-      // 检查分片文件是否存在
-      let chunksExist = true;
-      if (totalChunks > 0) {
-        const firstChunkPath = path.join(uploadDir, `chunk_${fileHash}_0`);
-        const lastChunkPath = path.join(uploadDir, `chunk_${fileHash}_${totalChunks - 1}`);
-        
-        if (!fs.existsSync(firstChunkPath) || !fs.existsSync(lastChunkPath)) {
-          chunksExist = false;
-          console.log(`   ⚠️  分片文件已被清理，需要重新上传`);
-          
-          // 删除过期的哈希记录
-          fs.unlinkSync(hashFilePath);
-        }
-      }
-      
-      if (chunksExist) {
-        // 分片存在，可以断点续传
-        console.log(`   ✅ 分片文件存在，可以复用`);
-        
-        return res.json({
-          success: true,
-          message: "分片可复用，请继续上传",
-          data: {
-            exists: false, // 注意：这里返回 false，表示需要继续上传
-            uploadedChunks: Array.from({ length: totalChunks || 0 }, (_, i) => i), // 返回所有分片索引
-            totalChunks: totalChunks || 0,
-            canReuseChunks: true, // ✅ 标记可以复用分片
-            ...fileInfo,
-          },
-        });
-      }
-      // 如果分片也不存在，继续下面的逻辑，当作新文件处理
-    }
+    return res.json({
+      success: true,
+      message: "文件已存在，秒传成功",
+      data: {
+        exists: true,
+        uploadedChunks: Array.from({ length: totalChunks || 0 }, (_, i) => i), // 返回所有分片索引
+        totalChunks: totalChunks || 0,
+        ...fileInfo,
+      },
+    });
   }
 
   // 2. 文件未完整上传，检查是否有其他文件的部分分片可以复用
@@ -249,7 +191,8 @@ app.post("/check-file", (req, res) => {
   // 3. 检查物理分片文件是否存在
   const existingChunks = [];
   for (const chunkIndex of reusableChunks) {
-    const chunkPath = path.join(uploadDir, `${fileName}-${fileHash}-${chunkIndex}`);
+    // ✅ 修复：使用与 upload-chunk 接口一致的分片文件名格式
+    const chunkPath = path.join(uploadDir, `chunk_${fileHash}_${chunkIndex}`);
     if (fs.existsSync(chunkPath)) {
       existingChunks.push(chunkIndex);
     }
@@ -394,68 +337,6 @@ app.post("/upload-chunk", upload.single("file"), (req, res) => {
   const chunkFileName = `chunk_${fileHash}_${chunkIndex}`;
   const filePath = path.join("uploads", chunkFileName);
 
-  // ✅ 关键修复：检查分片文件是否已存在（秒传分片）
-  if (fs.existsSync(filePath)) {
-    console.log(`   ⚡ 分片已存在，跳过保存: chunk ${chunkIndex}`);
-    
-    // 删除临时上传的文件
-    fs.unlink(req.file.path, (err) => {
-      if (err) console.error("删除临时文件失败:", err);
-    });
-    
-    // 但仍然更新任务记录
-    if (fileHash) {
-      const taskDir = path.join("uploads", "tasks");
-      const taskFile = path.join(taskDir, `${fileHash}.json`);
-
-      if (fs.existsSync(taskFile)) {
-        try {
-          const taskInfo = JSON.parse(fs.readFileSync(taskFile, "utf-8"));
-
-          // 添加已上传的分片索引
-          if (!taskInfo.uploadedChunks.includes(parseInt(chunkIndex))) {
-            taskInfo.uploadedChunks.push(parseInt(chunkIndex));
-            taskInfo.updatedAt = Date.now();
-            
-            // 增加引用计数
-            if (!taskInfo.chunkReferences) {
-              taskInfo.chunkReferences = {};
-            }
-            taskInfo.chunkReferences[chunkIndex] = (taskInfo.chunkReferences[chunkIndex] || 0) + 1;
-            
-            fs.writeFileSync(taskFile, JSON.stringify(taskInfo, null, 2));
-            
-            console.log(`   ✅ 分片 ${chunkIndex} 已记录，当前进度: ${taskInfo.uploadedChunks.length}/${taskInfo.totalChunks}`);
-          }
-        } catch (error) {
-          console.error("更新任务记录失败:", error);
-        }
-      } else {
-        // 如果任务记录不存在，创建一个新的
-        const newTaskInfo = {
-          fileHash,
-          fileName,
-          totalChunks: parseInt(totalChunks),
-          chunkSize: req.file.size,
-          uploadedChunks: [parseInt(chunkIndex)],
-          chunkReferences: { [chunkIndex]: 1 },
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        };
-        fs.writeFileSync(taskFile, JSON.stringify(newTaskInfo, null, 2));
-        console.log(`   📋 创建新任务记录: ${fileName} (fileHash: ${fileHash})`);
-      }
-    }
-    
-    return res.json({
-      success: true,
-      message: "分片已存在，秒传成功",
-      chunkIndex: parseInt(chunkIndex),
-      isDuplicate: true, // ✅ 标记为重复分片
-    });
-  }
-
-  // 分片不存在，正常保存
   fs.rename(req.file.path, filePath, (err) => {
     if (err) {
       return res.status(500).json({ success: false, message: "保存分片失败" });
@@ -474,13 +355,6 @@ app.post("/upload-chunk", upload.single("file"), (req, res) => {
           if (!taskInfo.uploadedChunks.includes(parseInt(chunkIndex))) {
             taskInfo.uploadedChunks.push(parseInt(chunkIndex));
             taskInfo.updatedAt = Date.now();
-            
-            // ✅ 新增：增加分片的引用计数（用于追踪有多少文件在使用这个分片）
-            if (!taskInfo.chunkReferences) {
-              taskInfo.chunkReferences = {};
-            }
-            taskInfo.chunkReferences[chunkIndex] = (taskInfo.chunkReferences[chunkIndex] || 0) + 1;
-            
             fs.writeFileSync(taskFile, JSON.stringify(taskInfo, null, 2));
             
             console.log(`   ✅ 分片 ${chunkIndex} 已保存，当前进度: ${taskInfo.uploadedChunks.length}/${taskInfo.totalChunks}`);
@@ -496,7 +370,6 @@ app.post("/upload-chunk", upload.single("file"), (req, res) => {
           totalChunks: parseInt(totalChunks),
           chunkSize: req.file.size,
           uploadedChunks: [parseInt(chunkIndex)],
-          chunkReferences: { [chunkIndex]: 1 }, // ✅ 初始化引用计数
           createdAt: Date.now(),
           updatedAt: Date.now(),
         };
@@ -523,55 +396,6 @@ app.post("/merge-chunks", async (req, res) => {
 
   const finalFileName = originalName || fileName;
   const filePath = path.join("uploads", finalFileName);
-  
-  // ✅ 检查文件是否已存在（秒传场景）
-  if (fs.existsSync(filePath)) {
-    console.log(`⚡ 文件已存在，跳过合并: ${finalFileName} (fileHash: ${fileHash})`);
-    
-    // 更新哈希记录，添加当前文件名
-    const hashFilePath = path.join("uploads/tasks", `${fileHash}.json`);
-    let fileInfo;
-    
-    if (fs.existsSync(hashFilePath)) {
-      fileInfo = JSON.parse(fs.readFileSync(hashFilePath, "utf-8"));
-      // 如果 filenames 不存在，初始化数组
-      if (!fileInfo.filenames) {
-        fileInfo.filenames = [fileInfo.fileName];
-      }
-      // 添加新文件名（避免重复）
-      if (!fileInfo.filenames.includes(finalFileName)) {
-        fileInfo.filenames.push(finalFileName);
-      }
-      fileInfo.lastAccessedAt = Date.now();
-    } else {
-      // 创建新的哈希记录
-      fileInfo = {
-        fileName: finalFileName,
-        filenames: [finalFileName],
-        fileSize: fs.statSync(filePath).size,
-        fileHash,
-        url: `http://localhost:3000/uploads/${finalFileName}`,
-        uploadedAt: Date.now(),
-        lastAccessedAt: Date.now(),
-      };
-    }
-    
-    fs.writeFileSync(hashFilePath, JSON.stringify(fileInfo, null, 2));
-    console.log(`   💾 更新哈希记录: ${fileHash}`);
-    
-    return res.json({
-      success: true,
-      message: "文件已存在，秒传成功",
-      data: {
-        filename: finalFileName,
-        path: filePath,
-        url: `http://localhost:3000/uploads/${finalFileName}`,
-        fileHash: fileHash || null,
-        isDuplicate: true, // ✅ 标记为重复文件
-      },
-    });
-  }
-  
   const writeStream = fs.createWriteStream(filePath);
 
   let completed = 0;
@@ -598,8 +422,10 @@ app.post("/merge-chunks", async (req, res) => {
 
       readStream.on("end", () => {
         completed++;
-        // ✅ 不再删除分片文件！让其他相同 hash 的文件可以复用
-        // 分片文件会在定期清理任务中处理
+        // 删除已合并的分片
+        fs.unlink(chunkPath, (err) => {
+          if (err) console.error(`删除分片 ${i} 失败:`, err);
+        });
         resolve();
       });
 
@@ -617,23 +443,21 @@ app.post("/merge-chunks", async (req, res) => {
       const hashFilePath = path.join("uploads/tasks", `${fileHash}.json`);
       const fileInfo = {
         fileName: finalFileName,
-        filenames: [finalFileName], // ✅ 支持多个文件名
         fileSize: fs.statSync(filePath).size,
         fileHash,
         url: `http://localhost:3000/uploads/${finalFileName}`,
         uploadedAt: Date.now(),
-        lastAccessedAt: Date.now(),
       };
       fs.writeFileSync(hashFilePath, JSON.stringify(fileInfo, null, 2));
       console.log(`   💾 保存哈希记录: ${fileHash}`);
 
-      // ✅ 不再删除任务记录！保留引用计数信息
-      // const taskDir = path.join("uploads", "tasks");
-      // const taskFile = path.join(taskDir, `${fileHash}.json`);
-      // if (fs.existsSync(taskFile)) {
-      //   fs.unlinkSync(taskFile);
-      //   console.log(`   🗑️  删除任务记录`);
-      // }
+      // 删除任务记录
+      const taskDir = path.join("uploads", "tasks");
+      const taskFile = path.join(taskDir, `${fileHash}.json`);
+      if (fs.existsSync(taskFile)) {
+        fs.unlinkSync(taskFile);
+        console.log(`   🗑️  删除任务记录`);
+      }
     }
 
     res.json({
@@ -644,7 +468,6 @@ app.post("/merge-chunks", async (req, res) => {
         path: filePath,
         url: `http://localhost:3000/uploads/${finalFileName}`,
         fileHash: fileHash || null,
-        isDuplicate: false,
       },
     });
   });
@@ -806,75 +629,7 @@ app.get("/files", (req, res) => {
 // ========== 6. 静态文件服务（让前端可以访问上传的文件） ==========
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-// ========== 7. 定期清理过期的分片文件 ==========
-/**
- * 清理策略：
- * 1. 检查所有哈希记录文件
- * 2. 如果某个 hash 对应的文件超过 7 天未被访问，删除其分片文件
- * 3. 保留最近使用的分片文件，提高秒传效率
- */
-function cleanupOldChunks() {
-  const taskDir = path.join(__dirname, "uploads", "tasks");
-  const uploadDir = path.join(__dirname, "uploads");
-  
-  if (!fs.existsSync(taskDir)) return;
-  
-  console.log("🧹 开始清理过期的分片文件...");
-  
-  const now = Date.now();
-  const sevenDays = 7 * 24 * 60 * 60 * 1000; // 7天的毫秒数
-  
-  try {
-    const taskFiles = fs.readdirSync(taskDir);
-    
-    for (const taskFile of taskFiles) {
-      if (!taskFile.endsWith('.json')) continue;
-      
-      const taskPath = path.join(taskDir, taskFile);
-      const fileInfo = JSON.parse(fs.readFileSync(taskPath, "utf-8"));
-      
-      // 跳过没有 lastAccessedAt 的旧记录
-      if (!fileInfo.lastAccessedAt) continue;
-      
-      // 检查是否超过7天未访问
-      if (now - fileInfo.lastAccessedAt > sevenDays) {
-        const fileHash = fileInfo.fileHash;
-        console.log(`   🗑️  清理过期分片: ${fileHash} (最后访问: ${new Date(fileInfo.lastAccessedAt).toLocaleString()})`);
-        
-        // 删除该 hash 的所有分片文件
-        const files = fs.readdirSync(uploadDir);
-        for (const file of files) {
-          if (file.startsWith(`chunk_${fileHash}_`)) {
-            const chunkPath = path.join(uploadDir, file);
-            try {
-              fs.unlinkSync(chunkPath);
-              console.log(`      - 删除分片: ${file}`);
-            } catch (err) {
-              console.error(`      - 删除失败: ${file}`, err.message);
-            }
-          }
-        }
-        
-        // 删除哈希记录
-        fs.unlinkSync(taskPath);
-        console.log(`      - 删除记录: ${taskFile}`);
-      }
-    }
-    
-    console.log("✅ 分片清理完成");
-  } catch (error) {
-    console.error("❌ 分片清理失败:", error);
-  }
-}
-
-// ✅ 每天凌晨3点执行清理任务
-const cleanupInterval = setInterval(cleanupOldChunks, 24 * 60 * 60 * 1000);
-// 服务器启动后5分钟执行第一次清理
-setTimeout(cleanupOldChunks, 5 * 60 * 1000);
-
-console.log("⏰ 已设置分片清理定时任务（每天凌晨3点执行）");
-
-// ========== 8. 启动服务器 ==========
+// ========== 启动服务器 ==========
 app.listen(3000, () => {
   console.log("Server is running on port 3000");
   console.log("📁 普通上传: POST /upload");
@@ -886,18 +641,4 @@ app.listen(3000, () => {
   console.log("📁 合并分片: POST /merge-chunks");
   console.log("📁 文件列表: GET /files");
   console.log("📁 静态文件: GET /uploads/:filename");
-  console.log("🧹 自动清理: 每天凌晨3点清理7天未使用的分片文件");
-});
-
-// ✅ 优雅关闭：清理定时器
-process.on('SIGTERM', () => {
-  console.log('\n🛑 收到终止信号，正在关闭服务器...');
-  clearInterval(cleanupInterval);
-  process.exit(0);
-});
-
-process.on('SIGINT', () => {
-  console.log('\n🛑 收到中断信号，正在关闭服务器...');
-  clearInterval(cleanupInterval);
-  process.exit(0);
 });

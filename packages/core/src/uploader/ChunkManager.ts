@@ -481,7 +481,7 @@ export default class ChunkManager {
             error: error instanceof Error ? error.message : String(error),
           },
         );
-
+        this.setFileStatusToFail()
         throw error;
       }
     }
@@ -793,76 +793,117 @@ export default class ChunkManager {
       uploadedChunksTrue: this.uploadedChunks.filter((u) => u).length,
       failedChunks: this.failedChunks.length,
     });
-
     if (allSuccess) {
-      // 所有分片上传成功，强制设置进度为 100%
-      const up = this.uploadFile.__uploader__;
-
-      // 计算并更新全局上传速度
-      this.calculateAndUpdateSpeed(this.uploadFile.File.size);
-
-      // 更新单个文件的 uploadSpeed（分片上传完成时）
-      const totalTime = (performance.now() - this.uploadStartTime) / 1000;
-      const averageSpeed =
-        totalTime > 0 ? this.uploadFile.File.size / totalTime : 0;
-      this.uploadFile.proxy.uploadSpeed = {
-        currentSpeed: 0, // 上传已完成，瞬时速度为 0
-        averageSpeed,
-        currentSpeedFormatted: "0 B/s",
-        averageSpeedFormatted: formatSpeed(averageSpeed),
-      };
-
-      // 调用合并接口
-      try {
-        const mergeResult = await this.mergeChunks();
-        this.uploadFile.proxy.percent = 100; // 确保合并完成后进度为 100%
-        this.uploadFile.onScuccess(mergeResult);
-      } catch (error) {
-        this.uploadFile.onError(error);
-        return;
-      }
-
-      // 使用统一方法计算上传统计信息
-      this.calculateUploadStats();
+      // 所有分片上传成功，执行合并
+      await this.handleAllChunksSuccess();
+    } else if (this.failedChunks.length > 0) {
+      // 有失败分片，执行重试逻辑
+      await this.handleFailedChunks();
     } else {
-      // 有分片失败的处理逻辑
-      if (this.failedChunks.length > 0) {
-        // 如果 retries 为 null，禁用自动重试，直接报错
-        if (this.retries === null) {
-          logger.warn(
-            "ChunkManager",
-            `发现 ${this.failedChunks.length} 个失败分片，自动重试已禁用，请手动重试`,
-            {
-              fileId: this.uploadFile.fileId,
-              fileName: this.uploadFile.fileName,
-              failedChunks: this.failedChunks,
-            },
-          );
-
-          this.uploadFile.onError(new Error("部分分片上传失败"));
-          return;
-        }
-        // 设置文件状态为 fail
-
-        // 正常重试逻辑（retries >= 0）
-        logger.warn(
-          "ChunkManager",
-          `发现 ${this.failedChunks.length} 个失败分片，开始自动重试`,
-          {
-            fileId: this.uploadFile.fileId,
-            fileName: this.uploadFile.fileName,
-            failedChunks: this.failedChunks,
-          },
-        );
-
-        await this.retryFailedChunks();
-
-        // 重试完成后，再次检查统计信息
-        // 如果重试成功，会触发合并和状态转换
-        // 如果重试仍然失败，会触发错误处理
-        await this.checkStatistics();
-      }
+      // 没有失败分片，但也没有全部完成（可能是被取消了）
+      logger.warn("ChunkManager", `上传未完成`, {
+        fileId: this.uploadFile.fileId,
+        fileName: this.uploadFile.fileName,
+        completedChunks: this.completedChunks,
+        totalChunks: this.totalChunks,
+      });
     }
+  }
+
+  /**
+   * 处理所有分片成功的情况
+   */
+  private async handleAllChunksSuccess(): Promise<void> {
+    // 计算并更新全局上传速度
+    this.calculateAndUpdateSpeed(this.uploadFile.File.size);
+
+    // 更新单个文件的 uploadSpeed（分片上传完成时）
+    const totalTime = (performance.now() - this.uploadStartTime) / 1000;
+    const averageSpeed =
+      totalTime > 0 ? this.uploadFile.File.size / totalTime : 0;
+    this.uploadFile.proxy.uploadSpeed = {
+      currentSpeed: 0, // 上传已完成，瞬时速度为 0
+      averageSpeed,
+      currentSpeedFormatted: "0 B/s",
+      averageSpeedFormatted: formatSpeed(averageSpeed),
+    };
+
+    // 调用合并接口
+    try {
+      const mergeResult = await this.mergeChunks();
+      this.uploadFile.proxy.percent = 100; // 确保合并完成后进度为 100%
+      this.uploadFile.onScuccess(mergeResult);
+    } catch (error) {
+      this.uploadFile.onError(error);
+      return;
+    }
+
+    // 使用统一方法计算上传统计信息
+    this.calculateUploadStats();
+  }
+
+  /**
+   * 处理失败分片的情况（自动重试）
+   */
+  private async handleFailedChunks(): Promise<void> {
+    // 如果 retries 为 null，禁用自动重试，直接报错
+    if (this.retries === null) {
+      logger.warn(
+        "ChunkManager",
+        `发现 ${this.failedChunks.length} 个失败分片，自动重试已禁用，请手动重试`,
+        {
+          fileId: this.uploadFile.fileId,
+          fileName: this.uploadFile.fileName,
+          failedChunks: this.failedChunks,
+        },
+      );
+
+      this.setFileStatusToFail();
+      this.uploadFile.onError(new Error("部分分片上传失败"));
+      return;
+    }
+
+    // 正常重试逻辑（retries >= 0）
+    logger.warn(
+      "ChunkManager",
+      `发现 ${this.failedChunks.length} 个失败分片，开始自动重试`,
+      {
+        fileId: this.uploadFile.fileId,
+        fileName: this.uploadFile.fileName,
+        failedChunks: this.failedChunks,
+      },
+    );
+
+    await this.retryFailedChunks();
+
+    // ✅ 重试完成后，检查是否还有失败分片
+    if (this.failedChunks.length > 0) {
+      // 重试后仍然有失败分片，设置文件状态为失败
+      this.handleRetryFailure();
+    } else {
+      // 重试成功，所有分片都完成了，继续检查统计信息
+      await this.checkStatistics();
+    }
+  }
+
+  /**
+   * 处理重试失败的情况（统一错误处理）
+   */
+  private handleRetryFailure(): void {
+    logger.error(
+      "ChunkManager",
+      `重试后仍有 ${this.failedChunks.length} 个分片失败，设置文件状态为失败`,
+      {
+        fileId: this.uploadFile.fileId,
+        fileName: this.uploadFile.fileName,
+        failedChunks: this.failedChunks,
+      },
+    );
+
+    this.setFileStatusToFail();
+    this.uploadFile.onError(
+      new Error("部分分片上传失败，重试后仍未成功"),
+    );
   }
 
   /**
@@ -1210,10 +1251,6 @@ export default class ChunkManager {
       // 使用信号量控制并发
       await this.uploadWithConcurrency();
 
-      // 检查统计信息并触发合并或错误处理
-
-      await this.checkStatistics();
-
       computeUploadTime(this.uploadFile.proxy.uploadTime).end();
     } catch (error) {
       // 错误时也要检查统计信息，确保正确更新状态和进度
@@ -1278,7 +1315,9 @@ export default class ChunkManager {
       );
     }
 
-    await Promise.all(uploadPromises);
+    await Promise.allSettled(uploadPromises);
+    // 检查统计信息并触发合并或错误处理
+    await this.checkStatistics();
     // 统计信息
     const completedDurations = chunkDurations.filter(
       (duration) => duration > 0,
