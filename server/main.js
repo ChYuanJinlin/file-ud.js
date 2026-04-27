@@ -5,61 +5,510 @@ const multer = require("multer");
 const app = express();
 const cors = require("cors");
 
-/**
- * ========================================
- * 文件上传服务器 - 支持秒传和断点续传
- * ========================================
- *
- * 接口列表：
- * 1. POST /check-file - 秒传检查
- * 2. GET /get-uploaded-chunks - 获取已上传分片列表（断点续传）
- * 3. POST /create-upload-task - 创建上传任务
- * 4. POST /upload-chunk - 分片上传
- * 5. POST /merge-chunks - 合并分片
- * 6. POST /upload - 普通上传
- * 7. POST /upload-multiple - 多文件上传
- * 8. GET /files - 获取文件列表
- *
- * 存储结构：
- * - uploads/ - 上传文件目录
- * - uploads/tasks/ - 上传任务记录（断点续传）
- * - uploads/hash_{fileHash}.json - 秒传记录
- * - uploads/{fileHash}-{chunkIndex} - 分片文件
- * - uploads/{fileName} - 合并后的完整文件
- */
-
-// 配置 multer 存储（普通上传用）
+// 配置 multer 存储
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     const uploadDir = path.join(__dirname, "uploads");
-    // 确保目录存在
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
     cb(null, uploadDir);
   },
   filename: function (req, file, cb) {
-    // 生成唯一文件名：时间戳 + 随机数 + 原文件名
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
     const ext = path.extname(file.originalname);
     cb(null, file.fieldname + "-" + uniqueSuffix + ext);
   },
 });
 
-// 分片上传用 multer（临时存储）
 const upload = multer({ dest: "uploads/" });
-// 普通上传用 multer（持久化存储）
 const uploadSingle = multer({ storage: storage });
+
+// 目录定义
+const UPLOAD_DIR = path.join(__dirname, "uploads");
+const TASK_DIR = path.join(UPLOAD_DIR, "tasks");
+const DEDUP_DIR = path.join(UPLOAD_DIR, "dedup");
+
+// 确保所有目录存在
+[UPLOAD_DIR, TASK_DIR, DEDUP_DIR].forEach(dir => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+});
 
 app.use(express.json());
 app.use(cors());
 
-// ========== 1. 普通上传接口 ==========
-/**
- * 普通文件上传
- * 前端用 FormData 传文件
- * 字段名: file
- */
+// ============================================
+// 1. 秒传检查接口（适配前端逻辑）
+// ============================================
+app.post("/check-file", (req, res) => {
+  const { fileHash, fileName, fileSize, totalChunks } = req.body;
+
+  console.log("🔍 check-file 请求:", { fileHash, fileName, totalChunks });
+
+  if (!fileHash) {
+    return res.status(400).json({
+      success: false,
+      message: "缺少文件哈希值",
+    });
+  }
+
+  // 1. 检查是否已有完整文件（秒传）
+  const dedupRecordPath = path.join(DEDUP_DIR, `${fileHash}.json`);
+  
+  if (fs.existsSync(dedupRecordPath)) {
+    const fileInfo = JSON.parse(fs.readFileSync(dedupRecordPath, "utf-8"));
+    console.log(`⚡ 秒传成功: ${fileName} (hash: ${fileHash})`);
+    
+    // ✅ 适配前端：返回 isInstantUpload = true
+    return res.json({
+      success: true,
+      data: {
+        exists: true,
+        isInstantUpload: true,        // 前端需要这个字段
+        canReuseChunks: false,
+        fileHash: fileHash,
+        fileInfo: {
+          fileName: fileInfo.fileName,
+          fileHash: fileInfo.fileHash,
+          fileSize: fileInfo.fileSize,
+          url: fileInfo.url,
+        },
+        uploadedChunks: totalChunks ? Array.from({ length: totalChunks }, (_, i) => i) : [],
+        totalChunks: totalChunks || 0,
+      }
+    });
+  }
+
+  // 2. 检查是否有未完成的上传任务（分片可复用）
+  let existingChunks = [];
+  let hasTask = false;
+  
+  const taskRecordPath = path.join(TASK_DIR, `${fileHash}.json`);
+  if (fs.existsSync(taskRecordPath)) {
+    try {
+      const taskInfo = JSON.parse(fs.readFileSync(taskRecordPath, "utf-8"));
+      existingChunks = taskInfo.uploadedChunks || [];
+      hasTask = true;
+      console.log(`🔄 发现未完成上传: ${taskInfo.fileName}，已上传 ${existingChunks.length}/${taskInfo.totalChunks} 分片`);
+    } catch (error) {
+      console.error("读取任务记录失败:", error);
+    }
+  } else {
+    // 检查物理分片文件（可能没有任务记录但有残留分片）
+    for (let i = 0; i < (totalChunks || 100); i++) {
+      const chunkPath = path.join(UPLOAD_DIR, `chunk_${fileHash}_${i}`);
+      if (fs.existsSync(chunkPath)) {
+        existingChunks.push(i);
+      } else {
+        break;
+      }
+    }
+    
+    if (existingChunks.length > 0) {
+      console.log(`🔄 发现残留分片: ${existingChunks.length}/${totalChunks}`);
+    }
+  }
+
+  // 3. 判断是否可复用分片（有分片但文件未完成）
+  const canReuseChunks = existingChunks.length > 0;
+  
+  if (canReuseChunks) {
+    console.log(`🔄 分片可复用: ${existingChunks.length}/${totalChunks} 分片已存在`);
+    console.log(`   已上传分片索引:`, existingChunks);
+    
+    // ✅ 适配前端：返回 canReuseChunks = true
+    return res.json({
+      success: true,
+      data: {
+        exists: false,
+        isInstantUpload: false,
+        canReuseChunks: true,         // 前端需要这个字段
+        fileHash: fileHash,
+        uploadedChunks: existingChunks,
+        totalChunks: totalChunks || 0,
+      }
+    });
+  }
+
+  // 4. 新文件，需要上传所有分片
+  console.log(`📝 新文件: ${fileName} (hash: ${fileHash})，需要上传所有分片`);
+  
+  // 如果已有任务记录但没有分片，清理任务记录
+  if (hasTask && existingChunks.length === 0) {
+    try {
+      fs.unlinkSync(taskRecordPath);
+      console.log(`   🗑️ 清理无效任务记录`);
+    } catch (error) {
+      console.error("清理任务记录失败:", error);
+    }
+  }
+  
+  res.json({
+    success: true,
+    data: {
+      exists: false,
+      isInstantUpload: false,
+      canReuseChunks: false,
+      fileHash: fileHash,
+      uploadedChunks: [],
+      totalChunks: totalChunks || 0,
+    }
+  });
+});
+
+// ============================================
+// 2. 获取已上传分片列表
+// ============================================
+app.get("/get-uploaded-chunks", (req, res) => {
+  const { fileHash } = req.query;
+
+  if (!fileHash) {
+    return res.status(400).json({
+      success: false,
+      message: "缺少文件哈希值",
+    });
+  }
+
+  const taskFile = path.join(TASK_DIR, `${fileHash}.json`);
+
+  if (!fs.existsSync(taskFile)) {
+    return res.json({
+      success: true,
+      data: {
+        fileHash,
+        uploadedChunks: [],
+        totalChunks: 0,
+      },
+    });
+  }
+
+  try {
+    const taskInfo = JSON.parse(fs.readFileSync(taskFile, "utf-8"));
+    console.log(`📂 断点续传: ${taskInfo.fileName} (已上传: ${taskInfo.uploadedChunks.length}/${taskInfo.totalChunks})`);
+
+    res.json({
+      success: true,
+      data: {
+        fileHash,
+        fileName: taskInfo.fileName,
+        totalChunks: taskInfo.totalChunks,
+        uploadedChunks: taskInfo.uploadedChunks,
+        chunkSize: taskInfo.chunkSize,
+        fileSize: taskInfo.fileSize,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "读取上传记录失败",
+      error: error.message,
+    });
+  }
+});
+
+// ============================================
+// 3. 创建上传任务
+// ============================================
+app.post("/create-upload-task", (req, res) => {
+  const { fileHash, fileName, fileSize, totalChunks, chunkSize } = req.body;
+
+  console.log("📋 创建上传任务:", { fileHash, fileName, totalChunks, fileSize });
+
+  if (!fileHash || !fileName || !fileSize || !totalChunks) {
+    return res.status(400).json({
+      success: false,
+      message: "缺少必要参数",
+    });
+  }
+
+  const taskFile = path.join(TASK_DIR, `${fileHash}.json`);
+
+  // 检查是否已有去重记录（文件已完成）
+  const dedupRecordPath = path.join(DEDUP_DIR, `${fileHash}.json`);
+  if (fs.existsSync(dedupRecordPath)) {
+    const fileInfo = JSON.parse(fs.readFileSync(dedupRecordPath, "utf-8"));
+    console.log(`⚠️ 文件已存在，无需创建任务: ${fileName}`);
+    return res.json({
+      success: true,
+      message: "文件已存在",
+      data: {
+        fileHash,
+        fileName: fileInfo.fileName,
+        fileSize: fileInfo.fileSize,
+        totalChunks,
+        uploadedChunks: Array.from({ length: totalChunks }, (_, i) => i),
+      },
+    });
+  }
+
+  // 如果任务已存在，返回现有任务信息
+  if (fs.existsSync(taskFile)) {
+    const existingTask = JSON.parse(fs.readFileSync(taskFile, "utf-8"));
+    console.log(`📋 任务已存在: ${fileName}`);
+    return res.json({
+      success: true,
+      message: "任务已存在",
+      data: existingTask,
+    });
+  }
+
+  // 创建新任务记录
+  const taskInfo = {
+    fileHash,
+    fileName,
+    fileSize: parseInt(fileSize),
+    totalChunks: parseInt(totalChunks),
+    chunkSize: chunkSize || 5 * 1024 * 1024,
+    uploadedChunks: [],
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+
+  fs.writeFileSync(taskFile, JSON.stringify(taskInfo, null, 2));
+  console.log(`✅ 创建上传任务成功: ${fileName} (hash: ${fileHash})`);
+
+  res.json({
+    success: true,
+    message: "上传任务创建成功",
+    data: taskInfo,
+  });
+});
+
+// ============================================
+// 4. 分片上传接口
+// ============================================
+app.post("/upload-chunk", upload.single("file"), (req, res) => {
+  const { chunkIndex, totalChunks, fileName, fileHash } = req.body;
+
+  if (!req.file) {
+    return res.status(400).json({ success: false, message: "没有文件分片" });
+  }
+
+  console.log(`📤 接收分片: ${fileHash} - ${chunkIndex}/${totalChunks}`);
+
+  const chunkFileName = `chunk_${fileHash}_${chunkIndex}`;
+  const chunkPath = path.join(UPLOAD_DIR, chunkFileName);
+
+  // 检查分片是否已存在（秒传分片）
+  if (fs.existsSync(chunkPath)) {
+    console.log(`   ⚡ 分片已存在，秒传成功: ${chunkIndex}`);
+    // 删除临时文件
+    fs.unlink(req.file.path, () => {});
+    
+    // 更新任务记录
+    if (fileHash) {
+      const taskFile = path.join(TASK_DIR, `${fileHash}.json`);
+      if (fs.existsSync(taskFile)) {
+        try {
+          const taskInfo = JSON.parse(fs.readFileSync(taskFile, "utf-8"));
+          const chunkIdx = parseInt(chunkIndex);
+          if (!taskInfo.uploadedChunks.includes(chunkIdx)) {
+            taskInfo.uploadedChunks.push(chunkIdx);
+            taskInfo.uploadedChunks.sort((a, b) => a - b);
+            taskInfo.updatedAt = Date.now();
+            fs.writeFileSync(taskFile, JSON.stringify(taskInfo, null, 2));
+          }
+        } catch (error) {
+          console.error("更新任务记录失败:", error);
+        }
+      }
+    }
+    
+    return res.json({
+      success: true,
+      message: "分片已存在（秒传）",
+      chunkIndex: parseInt(chunkIndex),
+    });
+  }
+
+  // 保存新分片
+  fs.rename(req.file.path, chunkPath, (err) => {
+    if (err) {
+      console.error("保存分片失败:", err);
+      return res.status(500).json({ success: false, message: "保存分片失败" });
+    }
+
+    // 更新任务记录
+    if (fileHash) {
+      const taskFile = path.join(TASK_DIR, `${fileHash}.json`);
+
+      if (fs.existsSync(taskFile)) {
+        try {
+          const taskInfo = JSON.parse(fs.readFileSync(taskFile, "utf-8"));
+          
+          const chunkIdx = parseInt(chunkIndex);
+          if (!taskInfo.uploadedChunks.includes(chunkIdx)) {
+            taskInfo.uploadedChunks.push(chunkIdx);
+            taskInfo.uploadedChunks.sort((a, b) => a - b);
+            taskInfo.updatedAt = Date.now();
+            fs.writeFileSync(taskFile, JSON.stringify(taskInfo, null, 2));
+            
+            console.log(`   ✅ 分片 ${chunkIndex} 已保存，进度: ${taskInfo.uploadedChunks.length}/${taskInfo.totalChunks}`);
+          }
+        } catch (error) {
+          console.error("更新任务记录失败:", error);
+        }
+      } else {
+        // 创建新任务记录
+        const newTaskInfo = {
+          fileHash,
+          fileName: fileName || "unknown",
+          totalChunks: parseInt(totalChunks),
+          chunkSize: req.file.size,
+          uploadedChunks: [parseInt(chunkIndex)],
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+        fs.writeFileSync(taskFile, JSON.stringify(newTaskInfo, null, 2));
+        console.log(`   📋 创建新任务记录: ${fileHash}`);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: "分片上传成功",
+      chunkIndex: parseInt(chunkIndex),
+    });
+  });
+});
+
+// ============================================
+// 5. 合并分片接口
+// ============================================
+app.post("/merge-chunks", async (req, res) => {
+  const { fileName, totalChunks, originalName, fileHash, fileSize } = req.body;
+
+  console.log("🔀 合并请求:", { fileName, totalChunks, fileHash, fileSize });
+
+  if (!fileName || !totalChunks || !fileHash) {
+    return res.status(400).json({ 
+      success: false, 
+      message: "缺少必要参数: fileName, totalChunks, fileHash 为必填" 
+    });
+  }
+
+  const finalFileName = originalName || fileName;
+  const filePath = path.join(UPLOAD_DIR, finalFileName);
+  
+  // 先检查去重记录，避免重复保存
+  const dedupRecordPath = path.join(DEDUP_DIR, `${fileHash}.json`);
+  if (fs.existsSync(dedupRecordPath)) {
+    const existingFile = JSON.parse(fs.readFileSync(dedupRecordPath, "utf-8"));
+    console.log(`⚠️ 文件已存在，跳过合并: ${fileHash}`);
+    
+    // 清理残留的分片文件
+    for (let i = 0; i < totalChunks; i++) {
+      const chunkPath = path.join(UPLOAD_DIR, `chunk_${fileHash}_${i}`);
+      if (fs.existsSync(chunkPath)) {
+        fs.unlinkSync(chunkPath);
+      }
+    }
+    
+    return res.json({
+      success: true,
+      message: "文件已存在（秒传）",
+      data: {
+        filename: existingFile.fileName,
+        path: path.join(UPLOAD_DIR, existingFile.fileName),
+        url: existingFile.url,
+        fileHash: fileHash,
+        fileSize: existingFile.fileSize,
+      },
+    });
+  }
+
+  // 收集所有分片
+  const chunks = [];
+  for (let i = 0; i < totalChunks; i++) {
+    const chunkPath = path.join(UPLOAD_DIR, `chunk_${fileHash}_${i}`);
+    if (!fs.existsSync(chunkPath)) {
+      return res.status(500).json({
+        success: false,
+        message: `分片 ${i} 不存在`,
+        missingChunkIndex: i,
+      });
+    }
+    chunks.push(chunkPath);
+  }
+
+  console.log(`🔀 开始合并分片: ${finalFileName} (hash: ${fileHash}, 总分片: ${totalChunks})`);
+
+  try {
+    // 创建写入流
+    const writeStream = fs.createWriteStream(filePath);
+    
+    // 按顺序写入所有分片
+    for (const chunkPath of chunks) {
+      const chunkData = fs.readFileSync(chunkPath);
+      writeStream.write(chunkData);
+    }
+    
+    writeStream.end();
+
+    // 等待写入完成
+    await new Promise((resolve, reject) => {
+      writeStream.on("finish", resolve);
+      writeStream.on("error", reject);
+    });
+
+    // 获取文件大小
+    const stats = fs.statSync(filePath);
+    const actualSize = stats.size;
+
+    console.log(`✅ 文件合并成功: ${finalFileName} (大小: ${actualSize} bytes)`);
+    
+    // 保存去重记录（用于秒传）
+    const fileInfo = {
+      fileName: finalFileName,
+      originalFileName: originalName || fileName,
+      fileHash: fileHash,
+      fileSize: actualSize,
+      url: `http://localhost:3000/uploads/${encodeURIComponent(finalFileName)}`,
+      uploadedAt: Date.now(),
+    };
+    
+    fs.writeFileSync(dedupRecordPath, JSON.stringify(fileInfo, null, 2));
+    console.log(`💾 保存去重记录: ${fileHash} -> ${finalFileName}`);
+
+    // 删除所有分片文件
+    for (const chunkPath of chunks) {
+      fs.unlinkSync(chunkPath);
+      console.log(`   🗑️ 删除分片: ${path.basename(chunkPath)}`);
+    }
+
+    // 删除任务记录
+    const taskFile = path.join(TASK_DIR, `${fileHash}.json`);
+    if (fs.existsSync(taskFile)) {
+      fs.unlinkSync(taskFile);
+      console.log(`   🗑️ 删除任务记录: ${fileHash}`);
+    }
+
+    res.json({
+      success: true,
+      message: "文件合并成功",
+      data: {
+        filename: finalFileName,
+        path: filePath,
+        url: `http://localhost:3000/uploads/${encodeURIComponent(finalFileName)}`,
+        fileHash: fileHash,
+        fileSize: actualSize,
+      },
+    });
+  } catch (error) {
+    console.error("合并文件失败:", error);
+    res.status(500).json({ 
+      success: false, 
+      message: "合并文件失败", 
+      error: error.message 
+    });
+  }
+});
+
+// ============================================
+// 6. 普通上传接口
+// ============================================
 app.post("/upload", uploadSingle.single("file"), (req, res) => {
   if (!req.file) {
     return res.status(400).json({
@@ -68,7 +517,6 @@ app.post("/upload", uploadSingle.single("file"), (req, res) => {
     });
   }
 
-  // 获取文件信息
   const fileInfo = {
     success: true,
     message: "文件上传成功",
@@ -82,18 +530,13 @@ app.post("/upload", uploadSingle.single("file"), (req, res) => {
     },
   };
 
-  console.log(
-    `✅ 文件上传成功: ${req.file.originalname} (${req.file.size} bytes)`,
-  );
+  console.log(`✅ 文件上传成功: ${req.file.originalname} (${req.file.size} bytes)`);
   res.json(fileInfo);
 });
 
-// ========== 2. 普通多文件上传接口 ==========
-/**
- * 多文件上传
- * 前端用 FormData 传多个文件
- * 字段名: files
- */
+// ============================================
+// 7. 多文件上传接口
+// ============================================
 app.post("/upload-multiple", uploadSingle.array("files", 10), (req, res) => {
   if (!req.files || req.files.length === 0) {
     return res.status(400).json({
@@ -119,474 +562,41 @@ app.post("/upload-multiple", uploadSingle.array("files", 10), (req, res) => {
   });
 });
 
-// ========== 3. 秒传检查接口 ==========
-/**
- * 秒传检查
- * 前端传递文件 MD5，后端检查是否已存在相同文件
- * 如果存在，直接返回文件信息（实现秒传）
- * 如果不存在，检查是否有其他文件的部分分片可以复用
- */
-app.post("/check-file", (req, res) => {
-  const { fileHash, fileName, totalChunks } = req.body;
-
-  if (!fileHash) {
-    return res.status(400).json({
-      success: false,
-      message: "缺少文件哈希值",
-    });
-  }
-
-  const uploadDir = path.join(__dirname, "uploads");
-  const taskDir = path.join(uploadDir, "tasks");
-
-  // 确保任务目录存在
-  if (!fs.existsSync(taskDir)) {
-    fs.mkdirSync(taskDir, { recursive: true });
-  }
-
-  // 1. 检查文件是否已完整上传（秒传）
-  const hashFilePath = path.join(taskDir, `${fileHash}.json`);
-
-  if (fs.existsSync(hashFilePath)) {
-    // 文件已存在，实现秒传
-    const fileInfo = JSON.parse(fs.readFileSync(hashFilePath, "utf-8"));
-    console.log(`⚡ 秒传成功: ${fileName} (fileHash: ${fileHash})`);
-
-    return res.json({
-      success: true,
-      message: "文件已存在，秒传成功",
-      data: {
-        exists: true,
-        uploadedChunks: Array.from({ length: totalChunks || 0 }, (_, i) => i), // 返回所有分片索引
-        totalChunks: totalChunks || 0,
-        ...fileInfo,
-      },
-    });
-  }
-
-  // 2. 文件未完整上传，检查是否有其他文件的部分分片可以复用
-  // 遍历任务目录，查找相同 fileHash 的任务记录
-  let reusableChunks = [];
-  
-  try {
-    const taskFiles = fs.readdirSync(taskDir);
-    
-    for (const taskFile of taskFiles) {
-      if (!taskFile.endsWith('.json')) continue;
-      
-      const taskPath = path.join(taskDir, taskFile);
-      const taskInfo = JSON.parse(fs.readFileSync(taskPath, "utf-8"));
-      
-      // 找到相同 fileHash 的任务
-      if (taskInfo.fileHash === fileHash && taskInfo.uploadedChunks) {
-        reusableChunks = taskInfo.uploadedChunks;
-        console.log(`🔄 发现可复用分片: ${reusableChunks.length}/${totalChunks} (来自任务: ${taskFile})`);
-        break;
-      }
-    }
-  } catch (error) {
-    console.error("检查可复用分片失败:", error);
-  }
-
-  // 3. 检查物理分片文件是否存在
-  const existingChunks = [];
-  for (const chunkIndex of reusableChunks) {
-    // ✅ 修复：使用与 upload-chunk 接口一致的分片文件名格式
-    const chunkPath = path.join(uploadDir, `chunk_${fileHash}_${chunkIndex}`);
-    if (fs.existsSync(chunkPath)) {
-      existingChunks.push(chunkIndex);
-    }
-  }
-
-  // 文件不存在，返回需要上传的分片列表（用于断点续传检查）
-  console.log(`📝 文件不存在，需要上传: ${fileName} (fileHash: ${fileHash})`);
-  console.log(`   可复用分片: ${existingChunks.length}/${totalChunks}`);
-  
-  res.json({
-    success: true,
-    message: "文件不存在，需要上传",
-    data: {
-      exists: false,
-      uploadedChunks: existingChunks, // 返回已存在的分片索引
-      totalChunks: totalChunks || 0,
-    },
-  });
-});
-
-// ========== 4. 获取已上传分片列表接口（断点续传） ==========
-/**
- * 获取已上传分片列表
- * 前端传递 fileHash，后端返回已上传的分片索引数组
- * 用于断点续传时恢复上传进度
- */
-app.get("/get-uploaded-chunks", (req, res) => {
-  const { fileHash } = req.query;
-
-  if (!fileHash) {
-    return res.status(400).json({
-      success: false,
-      message: "缺少文件哈希值",
-    });
-  }
-
-  const uploadDir = path.join(__dirname, "uploads");
-  const taskDir = path.join(uploadDir, "tasks");
-  const taskFile = path.join(taskDir, `${fileHash}.json`);
-
-  if (!fs.existsSync(taskFile)) {
-    // 没有上传记录，返回空数组
-    return res.json({
-      success: true,
-      data: {
-        fileHash,
-        uploadedChunks: [],
-        totalChunks: 0,
-      },
-    });
-  }
-
-  try {
-    const taskInfo = JSON.parse(fs.readFileSync(taskFile, "utf-8"));
-    console.log(`📂 断点续传: ${taskInfo.fileName} (fileHash: ${fileHash})`);
-    console.log(
-      `   已上传分片: ${taskInfo.uploadedChunks.length}/${taskInfo.totalChunks}`,
-    );
-
-    res.json({
-      success: true,
-      data: {
-        fileHash,
-        fileName: taskInfo.fileName,
-        totalChunks: taskInfo.totalChunks,
-        uploadedChunks: taskInfo.uploadedChunks,
-        chunkSize: taskInfo.chunkSize,
-        fileSize: taskInfo.fileSize,
-      },
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "读取上传记录失败",
-      error: error.message,
-    });
-  }
-});
-
-// ========== 5. 创建上传任务接口 ==========
-/**
- * 创建上传任务
- * 前端开始上传前调用，后端创建任务记录
- */
-app.post("/create-upload-task", (req, res) => {
-  const { fileHash, fileName, fileSize, totalChunks, chunkSize } = req.body;
-  console.log("🚀 ~ req.body:", req.body);
-
-  if (!fileHash || !fileName || !fileSize || !totalChunks) {
-    return res.status(400).json({
-      success: false,
-      message: "缺少必要参数",
-    });
-  }
-
-  const uploadDir = path.join(__dirname, "uploads");
-  const taskDir = path.join(uploadDir, "tasks");
-
-  // 确保任务目录存在
-  if (!fs.existsSync(taskDir)) {
-    fs.mkdirSync(taskDir, { recursive: true });
-  }
-
-  const taskFile = path.join(taskDir, `${fileHash}.json`);
-
-  // 创建任务记录
-  const taskInfo = {
-    fileHash,
-    fileName,
-    fileSize,
-    totalChunks,
-    chunkSize,
-    uploadedChunks: [],
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-  };
-
-  fs.writeFileSync(taskFile, JSON.stringify(taskInfo, null, 2));
-  console.log(`📋 创建上传任务: ${fileName} (fileHash: ${fileHash})`);
-
-  res.json({
-    success: true,
-    message: "上传任务创建成功",
-    data: taskInfo,
-  });
-});
-
-// ========== 6. 分片上传接口 ==========
-app.post("/upload-chunk", upload.single("file"), (req, res) => {
-  const { chunkIndex, totalChunks, fileName, fileHash } = req.body;
-
-  if (!req.file) {
-    return res.status(400).json({ success: false, message: "没有文件分片" });
-  }
-
-  console.log(
-    `接收到分片: ${fileName} - chunkIndex ${chunkIndex}/${totalChunks} (fileHash: ${fileHash || "unknown"})`,
-  );
-
-  // ✅ 使用 fileHash 作为分片文件名的核心标识，而不是 fileName
-  // 这样相同内容（相同 fileHash）但不同文件名的文件可以共享分片
-  const chunkFileName = `chunk_${fileHash}_${chunkIndex}`;
-  const filePath = path.join("uploads", chunkFileName);
-
-  fs.rename(req.file.path, filePath, (err) => {
-    if (err) {
-      return res.status(500).json({ success: false, message: "保存分片失败" });
-    }
-
-    // 更新任务记录（断点续传支持）
-    if (fileHash) {
-      const taskDir = path.join("uploads", "tasks");
-      const taskFile = path.join(taskDir, `${fileHash}.json`);
-
-      if (fs.existsSync(taskFile)) {
-        try {
-          const taskInfo = JSON.parse(fs.readFileSync(taskFile, "utf-8"));
-
-          // 添加已上传的分片索引
-          if (!taskInfo.uploadedChunks.includes(parseInt(chunkIndex))) {
-            taskInfo.uploadedChunks.push(parseInt(chunkIndex));
-            taskInfo.updatedAt = Date.now();
-            fs.writeFileSync(taskFile, JSON.stringify(taskInfo, null, 2));
-            
-            console.log(`   ✅ 分片 ${chunkIndex} 已保存，当前进度: ${taskInfo.uploadedChunks.length}/${taskInfo.totalChunks}`);
-          }
-        } catch (error) {
-          console.error("更新任务记录失败:", error);
-        }
-      } else {
-        // 如果任务记录不存在，创建一个新的
-        const newTaskInfo = {
-          fileHash,
-          fileName,
-          totalChunks: parseInt(totalChunks),
-          chunkSize: req.file.size,
-          uploadedChunks: [parseInt(chunkIndex)],
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        };
-        fs.writeFileSync(taskFile, JSON.stringify(newTaskInfo, null, 2));
-        console.log(`   📋 创建新任务记录: ${fileName} (fileHash: ${fileHash})`);
-      }
-    }
-
-    res.json({
-      success: true,
-      message: "分片上传成功",
-      chunkIndex: parseInt(chunkIndex),
-    });
-  });
-});
-
-// ========== 7. 合并分片接口 ==========
-app.post("/merge-chunks", async (req, res) => {
-  const { fileName, totalChunks, originalName, fileHash } = req.body;
-
-  if (!fileName || !totalChunks || !fileHash) {
-    return res.status(400).json({ success: false, message: "缺少必要参数" });
-  }
-
-  const finalFileName = originalName || fileName;
-  const filePath = path.join("uploads", finalFileName);
-  const writeStream = fs.createWriteStream(filePath);
-
-  let completed = 0;
-
-  console.log(`🔀 开始合并分片: ${finalFileName} (fileHash: ${fileHash}, 总分片数: ${totalChunks})`);
-
-  for (let i = 0; i < totalChunks; i++) {
-    // ✅ 使用新的分片文件名格式
-    const chunkPath = path.join("uploads", `chunk_${fileHash}_${i}`);
-
-    if (!fs.existsSync(chunkPath)) {
-      writeStream.end();
-      return res.status(500).json({
-        success: false,
-        message: `分片 ${i} 不存在`,
-        missingChunkIndex: i,
-      });
-    }
-
-    const readStream = fs.createReadStream(chunkPath);
-
-    await new Promise((resolve, reject) => {
-      readStream.pipe(writeStream, { end: false });
-
-      readStream.on("end", () => {
-        completed++;
-        // 删除已合并的分片
-        fs.unlink(chunkPath, (err) => {
-          if (err) console.error(`删除分片 ${i} 失败:`, err);
-        });
-        resolve();
-      });
-
-      readStream.on("error", reject);
-    });
-  }
-
-  writeStream.end();
-
-  writeStream.on("finish", () => {
-    console.log(`✅ 文件合并成功: ${finalFileName}`);
-    
-    // 保存文件哈希记录（用于秒传）
-    if (fileHash) {
-      const hashFilePath = path.join("uploads/tasks", `${fileHash}.json`);
-      const fileInfo = {
-        fileName: finalFileName,
-        fileSize: fs.statSync(filePath).size,
-        fileHash,
-        url: `http://localhost:3000/uploads/${finalFileName}`,
-        uploadedAt: Date.now(),
-      };
-      fs.writeFileSync(hashFilePath, JSON.stringify(fileInfo, null, 2));
-      console.log(`   💾 保存哈希记录: ${fileHash}`);
-
-      // 删除任务记录
-      const taskDir = path.join("uploads", "tasks");
-      const taskFile = path.join(taskDir, `${fileHash}.json`);
-      if (fs.existsSync(taskFile)) {
-        fs.unlinkSync(taskFile);
-        console.log(`   🗑️  删除任务记录`);
-      }
-    }
-
-    res.json({
-      success: true,
-      message: "文件合并成功",
-      data: {
-        filename: finalFileName,
-        path: filePath,
-        url: `http://localhost:3000/uploads/${finalFileName}`,
-        fileHash: fileHash || null,
-      },
-    });
-  });
-
-  writeStream.on("error", (err) => {
-    res
-      .status(500)
-      .json({ success: false, message: "合并文件失败", error: err.message });
-  });
-});
-
-// ========== 5. 获取文件列表接口（支持参数） ==========
-/**
- * 查询参数：
- * - page: 页码（默认 1）
- * - pageSize: 每页数量（默认 10）
- * - fileType: 文件类型过滤（image, video, audio, document, other）
- * - search: 搜索文件名关键词
- * - sortBy: 排序字段（name, size, date）
- * - sortOrder: 排序方式（asc, desc）
- */
+// ============================================
+// 8. 获取文件列表
+// ============================================
 app.get("/files", (req, res) => {
-  const uploadDir = path.join(__dirname, "uploads");
-
-  if (!fs.existsSync(uploadDir)) {
+  if (!fs.existsSync(UPLOAD_DIR)) {
     return res.json({ success: true, data: [], total: 0 });
   }
 
-  // 获取查询参数
-  const {
-    page = 1,
-    pageSize = 10,
-    fileType,
-    search,
-    sortBy = "name",
-    sortOrder = "asc",
-  } = req.query;
-
-  const pageNum = parseInt(page);
-  const pageSizeNum = parseInt(pageSize);
-
-  fs.readdir(uploadDir, (err, files) => {
+  fs.readdir(UPLOAD_DIR, (err, files) => {
     if (err) {
-      return res
-        .status(500)
-        .json({ success: false, message: "读取文件列表失败" });
+      return res.status(500).json({ success: false, message: "读取文件列表失败" });
     }
 
-    // 过滤掉分片文件
-    let filteredFiles = files.filter((f) => !f.includes("-"));
+    // 过滤掉分片文件、tasks目录、dedup目录
+    const filteredFiles = files.filter(f => 
+      !f.startsWith("chunk_") && 
+      f !== "tasks" && 
+      f !== "dedup" &&
+      !f.endsWith(".json")
+    );
 
-    // 按文件类型过滤
-    if (fileType) {
-      const typeMap = {
-        image: [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".svg", ".webp"],
-        video: [".mp4", ".avi", ".mov", ".wmv", ".flv", ".mkv"],
-        audio: [".mp3", ".wav", ".ogg", ".aac", ".flac"],
-        document: [
-          ".pdf",
-          ".doc",
-          ".docx",
-          ".xls",
-          ".xlsx",
-          ".ppt",
-          ".pptx",
-          ".txt",
-          ".md",
-        ],
-      };
-
-      const extensions = typeMap[fileType] || [];
-      if (extensions.length > 0) {
-        filteredFiles = filteredFiles.filter((f) =>
-          extensions.some((ext) => f.toLowerCase().endsWith(ext)),
-        );
-      }
-    }
-
-    // 按文件名搜索
-    if (search) {
-      const searchLower = search.toLowerCase();
-      filteredFiles = filteredFiles.filter((f) =>
-        f.toLowerCase().includes(searchLower),
-      );
-    }
-
-    // 获取文件详细信息并排序
     const fileList = filteredFiles.map((file) => {
-      const filePath = path.join(uploadDir, file);
+      const filePath = path.join(UPLOAD_DIR, file);
       const stats = fs.statSync(filePath);
       const ext = path.extname(file).toLowerCase();
 
       let type = "other";
-      if (
-        [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".svg", ".webp"].includes(ext)
-      )
-        type = "image";
-      else if ([".mp4", ".avi", ".mov", ".wmv", ".flv", ".mkv"].includes(ext))
-        type = "video";
-      else if ([".mp3", ".wav", ".ogg", ".aac", ".flac"].includes(ext))
-        type = "audio";
-      else if (
-        [
-          ".pdf",
-          ".doc",
-          ".docx",
-          ".xls",
-          ".xlsx",
-          ".ppt",
-          ".pptx",
-          ".txt",
-          ".md",
-        ].includes(ext)
-      )
-        type = "document";
+      if ([".jpg", ".jpeg", ".png", ".gif", ".bmp", ".svg", ".webp"].includes(ext)) type = "image";
+      else if ([".mp4", ".avi", ".mov", ".wmv", ".flv", ".mkv"].includes(ext)) type = "video";
+      else if ([".mp3", ".wav", ".ogg", ".aac", ".flac"].includes(ext)) type = "audio";
+      else if ([".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".md"].includes(ext)) type = "document";
 
       return {
         name: file,
-        url: `http://localhost:3000/uploads/${file}`,
+        url: `http://localhost:3000/uploads/${encodeURIComponent(file)}`,
         size: stats.size,
         type,
         extension: ext,
@@ -595,50 +605,51 @@ app.get("/files", (req, res) => {
       };
     });
 
-    // 排序
-    fileList.sort((a, b) => {
-      let comparison = 0;
-      if (sortBy === "name") {
-        comparison = a.name.localeCompare(b.name);
-      } else if (sortBy === "size") {
-        comparison = a.size - b.size;
-      } else if (sortBy === "date") {
-        comparison =
-          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-      }
-      return sortOrder === "desc" ? -comparison : comparison;
-    });
-
-    // 分页
-    const total = fileList.length;
-    const startIndex = (pageNum - 1) * pageSizeNum;
-    const endIndex = startIndex + pageSizeNum;
-    const paginatedFiles = fileList.slice(startIndex, endIndex);
-
     res.json({
       success: true,
-      data: paginatedFiles,
-      total,
-      page: pageNum,
-      pageSize: pageSizeNum,
-      totalPages: Math.ceil(total / pageSizeNum),
+      data: fileList,
+      total: fileList.length,
     });
   });
 });
 
-// ========== 6. 静态文件服务（让前端可以访问上传的文件） ==========
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+// ============================================
+// 9. 删除重复文件记录接口（可选）
+// ============================================
+app.delete("/dedup-record/:fileHash", (req, res) => {
+  const { fileHash } = req.params;
+  const dedupRecordPath = path.join(DEDUP_DIR, `${fileHash}.json`);
+  
+  if (fs.existsSync(dedupRecordPath)) {
+    fs.unlinkSync(dedupRecordPath);
+    console.log(`🗑️ 删除去重记录: ${fileHash}`);
+    res.json({ success: true, message: "删除成功" });
+  } else {
+    res.status(404).json({ success: false, message: "记录不存在" });
+  }
+});
 
-// ========== 启动服务器 ==========
+// ============================================
+// 10. 静态文件服务
+// ============================================
+app.use("/uploads", express.static(UPLOAD_DIR));
+
+// ============================================
+// 11. 启动服务器
+// ============================================
 app.listen(3000, () => {
-  console.log("Server is running on port 3000");
+  console.log("\n========================================");
+  console.log("🚀 Server is running on port 3000");
+  console.log("========================================");
+  console.log("⚡ 秒传检查: POST /check-file");
+  console.log("📂 断点续传: GET /get-uploaded-chunks");
+  console.log("📋 创建任务: POST /create-upload-task");
+  console.log("📤 分片上传: POST /upload-chunk");
+  console.log("🔀 合并分片: POST /merge-chunks");
   console.log("📁 普通上传: POST /upload");
   console.log("📁 多文件上传: POST /upload-multiple");
-  console.log("⚡ 秒传检查: POST /check-file");
-  console.log("📂 获取已上传分片: GET /get-uploaded-chunks?fileHash=xxx");
-  console.log("📋 创建上传任务: POST /create-upload-task");
-  console.log("📁 分片上传: POST /upload-chunk");
-  console.log("📁 合并分片: POST /merge-chunks");
   console.log("📁 文件列表: GET /files");
+  console.log("🗑️ 删除记录: DELETE /dedup-record/:fileHash");
   console.log("📁 静态文件: GET /uploads/:filename");
+  console.log("========================================\n");
 });

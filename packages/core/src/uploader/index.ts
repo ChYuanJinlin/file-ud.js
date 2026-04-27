@@ -49,6 +49,13 @@ export default class Uploader<T = any> extends EventEmitter {
   public uploadFiles: UploadFile[] = [];
   public totalBytes: number = 0;
   public uploadedBytes: number = 0;
+  
+  /** 全局已上传的总大小（格式化字符串），如 "125.50 MB" */
+  public uploadedFormatSize: string = "0 Bytes";
+  
+  /** 全局待上传的总大小（格式化字符串），如 "256.80 MB" */
+  public totalFormatSize: string = "0 Bytes";
+  
   public progress: UploadProgress = {
     uploadedBytes: 0,
     totalBytes: 0,
@@ -205,6 +212,9 @@ export default class Uploader<T = any> extends EventEmitter {
       }
     }
 
+    // 更新全局已上传大小（使用 formatFileSize 格式化）
+    this.uploadedFormatSize = formatFileSize(totalUploadedBytes);
+
     return {
       currentSpeed: totalCurrentSpeed,
       averageSpeed: globalAverageSpeed,
@@ -225,6 +235,7 @@ export default class Uploader<T = any> extends EventEmitter {
     Uploader.objectUrls = [];
     this.totalPercent = 0;
     this.totalBytes = 0;
+    this.totalFormatSize = "0 Bytes";
     this.triggerUpdate();
   }
 
@@ -274,7 +285,7 @@ export default class Uploader<T = any> extends EventEmitter {
    * @param {OpenFileCallback} fn
    * @return {*}
    */
-  public open(fn: OpenFileCallback): any {
+  public open(fn?:OpenFileCallback): any {
     if (this.inputHTML) {
       this.inputHTML.click();
     } else {
@@ -376,6 +387,7 @@ export default class Uploader<T = any> extends EventEmitter {
     this.id = Uploader.id++;
     this.uploadedBytes = 0;
     this.totalBytes = 0;
+    this.totalFormatSize = "0 Bytes";
     this.totalUploadBytes = 0;
     this.uploadSpeed = {
       currentSpeedFormatted: "",
@@ -502,7 +514,7 @@ export default class Uploader<T = any> extends EventEmitter {
     // 检查是否有待上传的文件
     if (this.files.length === 0) {
       console.warn("没有待上传的文件");
-      return Promise.resolve();
+      return Promise.reject();
     }
 
     // 如果是第一次调用 submit，触发批量开始事件并记录开始时间

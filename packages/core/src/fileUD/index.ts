@@ -19,7 +19,7 @@ export default class FileUD {
   public static createUploader<T = any>(
     name: string,
     config?: FileUDConfigs,
-  ): Uploader {
+  ): Uploader<T> {
     if (!name) {
       throw new Error("Uploader name is required");
     }

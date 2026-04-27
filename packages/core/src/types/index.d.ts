@@ -218,7 +218,9 @@ export interface FileUDConfigs {
    * 文件上传地址，可以是字符串或者promise函数
    * @return {Promise}
    */
-  action: string | ((formData: FormData, uploadFile: UploadFile) => Promise<any>);
+  action:
+    | string
+    | ((formData: FormData, uploadFile: UploadFile) => Promise<any>);
   /* 上传文件的数量限制 */
   limit?: number;
   /* 上传文件限制的大小 */
@@ -397,10 +399,11 @@ export type onInitChunkCallback = (
   fileHash: string,
 ) => Promise<{
   fileHash: string;
-  uploadedChunks?: number[];
+  uploadedChunks?: number[] | null | undefined;
   isInstantUpload?: boolean; // ✅ 标记是否为真正的秒传（文件已存在，无需合并）
-  shouldRemove?: boolean;    // ✅ 标记是否需要移除该文件（秒传时自动移除）
-}>;
+  url?: string;
+  shouldRemove?: boolean; // ✅ 标记是否需要移除该文件（秒传时自动移除）
+}> | undefined;
 
 /* 
 合并分片回调函数类型
@@ -441,7 +444,7 @@ export interface UploaderEvents {
   "files-start": (files: UploadFile[]) => void;
   /* 文件完成上传事件 */
   "files-complete": (files: UploadFile[]) => void;
-  
+
   // 分片上传相关事件
   /* 分片上传开始事件 */
   "chunk-upload-start": (data: {
@@ -471,21 +474,12 @@ export interface UploaderEvents {
     totalChunks: number;
   }) => void;
   /* 合并成功事件 */
-  "merge-success": (data: {
-    file: UploadFile;
-    response?: any;
-  }) => void;
+  "merge-success": (data: { file: UploadFile; response?: any }) => void;
   /* 合并失败事件 */
-  "merge-error": (data: {
-    file: UploadFile;
-    error: string;
-  }) => void;
-  
+  "merge-error": (data: { file: UploadFile; error: string }) => void;
+
   /* 秒传成功事件（文件已存在，自动移除） */
-  "instant-upload": (data: {
-    file: UploadFile;
-    reason: string;
-  }) => void;
+  "instant-upload": (data: { file: UploadFile; reason: string }) => void;
 }
 
 /* 事件名称类型 */

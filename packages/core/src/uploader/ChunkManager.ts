@@ -1,11 +1,12 @@
 import { AxiosProgressEvent } from "axios";
-import { ChunkOptions } from "../types";
+import { ChunkOptions, onInitChunkCallback } from "../types";
 import UploadFile from "./UploadFile";
 import PQueue from "p-queue";
 import {
   calculateFileMD5,
   formatSpeed,
   formatDuration,
+  formatFileSize,
   sleep,
   logger,
   checkNetworkStatus,
@@ -195,7 +196,9 @@ export default class ChunkManager {
   /**
    * 初始化上传（获取uploadId或检查已上传分片）
    */
-  private async initUpload(): Promise<void> {
+  private async initUpload(): Promise<
+    ReturnType<onInitChunkCallback> | undefined
+  > {
     const up = this.uploadFile.__uploader__;
     this.fileHash = await this.getFileHash(this.uploadFile.File);
 
@@ -269,19 +272,21 @@ export default class ChunkManager {
               this.uploadFile.remove();
             }
 
-            return;
+            return Promise.resolve(initResult);
           }
 
           // 秒传判断：如果服务端返回的已上传分片数量等于总分片数，说明文件已存在
           if (
             initResult.uploadedChunks &&
             Array.isArray(initResult.uploadedChunks) &&
-            initResult.uploadedChunks.length === this.totalChunks
+            (initResult.uploadedChunks?.length === this.totalChunks ||
+              initResult.uploadedChunks === undefined ||
+              initResult.uploadedChunks === null)
           ) {
             logger.info("ChunkManager", "✅ 秒传成功！文件已存在于服务端", {
               fileHash: this.fileHash,
               fileName: this.uploadFile.fileName,
-              uploadedChunksCount: initResult.uploadedChunks.length,
+              uploadedChunksCount: initResult.uploadedChunks?.length,
               totalChunks: this.totalChunks,
               shouldRemove: initResult.shouldRemove,
             });
@@ -318,14 +323,14 @@ export default class ChunkManager {
               this.uploadFile.remove();
             }
 
-            return;
+            return Promise.resolve(initResult);
           }
 
           // 断点续传：如果服务端返回部分已上传分片
           if (
             initResult.uploadedChunks &&
             Array.isArray(initResult.uploadedChunks) &&
-            initResult.uploadedChunks.length > 0
+            initResult.uploadedChunks?.length > 0
           ) {
             logger.info("ChunkManager", "恢复已上传分片（断点续传）", {
               uploadedChunksCount: initResult.uploadedChunks.length,
@@ -481,7 +486,7 @@ export default class ChunkManager {
             error: error instanceof Error ? error.message : String(error),
           },
         );
-        this.setFileStatusToFail()
+        this.setFileStatusToFail();
         throw error;
       }
     }
@@ -901,9 +906,7 @@ export default class ChunkManager {
     );
 
     this.setFileStatusToFail();
-    this.uploadFile.onError(
-      new Error("部分分片上传失败，重试后仍未成功"),
-    );
+    this.uploadFile.onError(new Error("部分分片上传失败，重试后仍未成功"));
   }
 
   /**
@@ -1171,6 +1174,7 @@ export default class ChunkManager {
     if (!this.uploadFile.__hasCountedTotalBytes__) {
       up.totalUploadBytes += this.uploadFile.File.size;
       up.totalBytes += this.uploadFile.File.size;
+      up.totalFormatSize = formatFileSize(up.totalBytes);
       this.uploadFile.__hasCountedTotalBytes__ = true;
     }
 
@@ -1178,7 +1182,7 @@ export default class ChunkManager {
     this.timeout = Math.max(this.timeout, 60000);
 
     try {
-      await this.initUpload();
+      const res = await this.initUpload();
 
       // ✅ 关键修复：区分真正的秒传和断点续传
       if (this.completedChunks === this.totalChunks) {
@@ -1201,6 +1205,7 @@ export default class ChunkManager {
           // 触发成功回调，传递秒传标记
           this.uploadFile.onScuccess({
             isInstantUpload: true,
+            url: res?.url,
             message: "文件已存在，秒传成功",
           });
 

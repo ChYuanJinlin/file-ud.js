@@ -11,6 +11,7 @@ import {
   createReactiveUploadFile,
   formatSpeed,
   formatDuration,
+  formatFileSize,
   logger,
   checkNetworkStatus,
   computeUploadTime,
@@ -50,6 +51,9 @@ export default class UploadFile<T = any> {
   public hashLoading = false;
   /** 格式化后的文件大小,如 "5.23 MB" */
   formatSize: string | undefined;
+
+  /** 当前文件已上传的大小（格式化字符串），如 "45.23 MB" */
+  uploadedFormatSize: string = "0 Bytes";
 
   /** 表单数据对象,用于携带上传参数 */
   formData: FormData | null = null;
@@ -182,7 +186,7 @@ export default class UploadFile<T = any> {
    */
   cancel(fn: ((next: () => void) => void) | void) {
     if (this.proxy.status !== "uploading") {
-      logger.warn("没有需要取消的上传", this.fileName);
+      console.warn("没有需要取消的上传", this.fileName);
       return;
     }
     const next = () => {
@@ -201,6 +205,7 @@ export default class UploadFile<T = any> {
     }
     up.remObjectUrls(this.url);
     up.totalBytes -= this.File.size;
+    up.totalFormatSize = formatFileSize(up.totalBytes);
     up.triggerUpdate();
     up.emit("remove", this.proxy);
   }
@@ -288,7 +293,7 @@ export default class UploadFile<T = any> {
   async retry() {
     const up = this.__uploader__;
     if (this.proxy.status === "success" || this.proxy.status === "merging") {
-      logger.warn("没有需要重试的上传", this.fileName);
+      console.warn("没有需要重试的上传", this.fileName);
       return;
     }
     // 根据当前状态决定重试策略
@@ -396,7 +401,7 @@ export default class UploadFile<T = any> {
    */
   pause(): void {
     if (this.proxy.status !== "uploading") {
-      logger.warn(
+      console.warn(
         "UploadFile",
         `文件 ${this.fileName} 当前状态为 ${this.proxy.status},无法暂停`,
       );
@@ -407,7 +412,7 @@ export default class UploadFile<T = any> {
     if (this.chunkManager) {
       this.chunkManager.pause();
     } else {
-      logger.warn("该模式不支持暂停", this.fileName);
+      console.warn("该模式不支持暂停", this.fileName);
     }
     this.__uploader__.emit("pause", this.proxy);
   }
@@ -435,7 +440,7 @@ export default class UploadFile<T = any> {
    */
   async resume(): Promise<void> {
     if (this.proxy.status !== "paused") {
-      logger.warn(
+      console.warn(
         "UploadFile",
         `文件 ${this.fileName} 当前状态为 ${this.proxy.status},无法恢复`,
       );
@@ -446,7 +451,7 @@ export default class UploadFile<T = any> {
     if (this.chunkManager) {
       await this.chunkManager.resume();
     } else {
-      logger.warn("该模式不支持恢复", this.fileName);
+      console.warn("该模式不支持恢复", this.fileName);
     }
     this.__uploader__.emit("resume", this.proxy);
   }
@@ -542,6 +547,7 @@ export default class UploadFile<T = any> {
         if (up.totalBytes === 0 || !this.__hasCountedTotalBytes__) {
           up.totalUploadBytes += this.File.size;
           up.totalBytes += this.File.size;
+          up.totalFormatSize = formatFileSize(up.totalBytes);
           this.__hasCountedTotalBytes__ = true; // 标记已计数
         }
       }
@@ -718,6 +724,9 @@ export default class UploadFile<T = any> {
       // 更新当前文件的已上传字节数
       this.__uploadedBytes__ = loaded;
     }
+
+    // 更新当前文件已上传的大小（使用 formatFileSize 格式化）
+    this.proxy.uploadedFormatSize = formatFileSize(loaded);
 
     // 使用统一方法计算全局进度
     this.calculateGlobalProgress();
