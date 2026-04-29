@@ -13,4 +13,9 @@ export { ImageValidatorPlugin } from "./validator/image-validator-plugin";
 export type { ImageValidatorOptions } from "./validator/image-validator-plugin";
 export { VideoValidatorPlugin } from "./validator/video-validator-plugin";
 export type { VideoValidatorOptions } from "./validator/video-validator-plugin";
+
+// 智能重试插件
+export { SmartRetryPlugin } from "./retry/smart-retry-plugin";
+export type { SmartRetryConfig } from "./retry/smart-retry-plugin";
+
 export {BasePlugin} from './base-plugin'

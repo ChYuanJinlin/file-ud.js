@@ -26,6 +26,7 @@ import {
   generateFileId,
   getFileExtension,
   handleFile,
+  isFileActive,
   logger,
   mergeObjects,
   validator,
@@ -49,13 +50,13 @@ export default class Uploader<T = any> extends EventEmitter {
   public uploadFiles: UploadFile[] = [];
   public totalBytes: number = 0;
   public uploadedBytes: number = 0;
-  
+
   /** 全局已上传的总大小（格式化字符串），如 "125.50 MB" */
   public uploadedFormatSize: string = "0 Bytes";
-  
+
   /** 全局待上传的总大小（格式化字符串），如 "256.80 MB" */
   public totalFormatSize: string = "0 Bytes";
-  
+
   public progress: UploadProgress = {
     uploadedBytes: 0,
     totalBytes: 0,
@@ -133,16 +134,6 @@ export default class Uploader<T = any> extends EventEmitter {
   }
 
   /**
-   * 判断文件是否处于活跃上传状态（统一判断逻辑）
-   * @param file 文件实例
-   * @returns 是否为活跃上传状态
-   * @private
-   */
-  private isFileActive(file: UploadFile): boolean {
-    return ["uploading", "paused", "fail"].includes(file.status!);
-  }
-
-  /**
    * 获取文件的已上传字节数（统一获取逻辑）
    * @param file 文件实例
    * @returns 已上传字节数
@@ -172,7 +163,7 @@ export default class Uploader<T = any> extends EventEmitter {
 
     // 遍历所有正在上传的文件，累加速率和字节数
     this.files.forEach((file) => {
-      if (this.isFileActive(file)) {
+      if (isFileActive(file)) {
         uploadingFileCount++;
 
         // 累加文件大小（用于计算平均速度）
@@ -198,7 +189,7 @@ export default class Uploader<T = any> extends EventEmitter {
       // 找到最早开始上传的文件的时间
       let earliestStartTime = Date.now();
       this.files.forEach((file) => {
-        if (this.isFileActive(file) && file.uploadTime.startTime > 0) {
+        if (isFileActive(file) && file.uploadTime.startTime > 0) {
           earliestStartTime = Math.min(
             earliestStartTime,
             file.uploadTime.startTime,
@@ -237,6 +228,91 @@ export default class Uploader<T = any> extends EventEmitter {
     this.totalBytes = 0;
     this.totalFormatSize = "0 Bytes";
     this.triggerUpdate();
+  }
+
+  /**
+   * 设置文件列表（用于回显已上传的文件）
+   * @param files - 要回显的文件列表，可以是 UploadFile 实例或文件信息对象
+   * @example
+   * ```typescript
+   * //从服务端获取文件列表后回显
+   * const savedFiles = await fetchSavedFiles();
+   * uploader.setFiles(savedFiles.map(fileInfo => ({
+   *   fileId: fileInfo.id,
+   *   fileName: fileInfo.name,
+   *   url: fileInfo.url,
+   *   percent: 100,
+   *   status: 'success',
+   *   formatSize: fileInfo.size
+   * })));
+   *
+   */
+  public setFiles(files: IFile[]) {
+    if (!files || !Array.isArray(files)) {
+      logger.warn("Uploader", "setFiles: 传入的参数不是数组", files);
+      return;
+    }
+
+    // 清空现有文件
+    this.clearFiles();
+
+    // 遍历并创建 UploadFile 实例
+    files.forEach((fileData, index) => {
+      // 创建 UploadFile 实例
+      const uploadFile = new UploadFile(
+        {
+          fileId: fileData.fileId,
+          url: fileData.url || "",
+          fileName: fileData.fileName,
+          File: fileData.File,
+          percent: fileData.percent ?? 0,
+          status: fileData.status || "pending",
+          extension: fileData.extension || getFileExtension(fileData.fileName),
+          formatSize:
+            fileData.formatSize || formatFileSize(fileData.File?.size),
+          index: fileData.index ?? Uploader.fileIndex++,
+          // 保留其他可能的属性
+          ...(fileData as any),
+        },
+        this,
+      );
+
+      // 添加到文件列表
+      this.files.push(uploadFile);
+      this.uploadFiles.push(uploadFile);
+    });
+
+    // 更新全局统计信息
+    this.updateGlobalStats();
+
+    // 触发更新事件
+    this.triggerUpdate();
+
+    logger.info("Uploader", `setFiles: 成功回显 ${this.files.length} 个文件`);
+  }
+
+  /**
+   * 更新全局统计信息（内部方法）
+   * @private
+   */
+  private updateGlobalStats() {
+    // 重新计算总字节数
+    this.totalBytes = this.files.reduce((sum, file) => {
+      return sum + (file.File?.size || 0);
+    }, 0);
+
+    // 更新格式化后的总大小
+    this.totalFormatSize = formatFileSize(this.totalBytes);
+
+    // 计算总进度
+    if (this.files.length > 0) {
+      const totalPercent = this.files.reduce((sum, file) => {
+        return sum + (file.percent || 0);
+      }, 0);
+      this.totalPercent = Math.round(totalPercent / this.files.length);
+    } else {
+      this.totalPercent = 0;
+    }
   }
 
   // 全部取消上传
@@ -285,7 +361,7 @@ export default class Uploader<T = any> extends EventEmitter {
    * @param {OpenFileCallback} fn
    * @return {*}
    */
-  public open(fn?:OpenFileCallback): any {
+  public open(fn?: OpenFileCallback): any {
     if (this.inputHTML) {
       this.inputHTML.click();
     } else {
@@ -388,6 +464,7 @@ export default class Uploader<T = any> extends EventEmitter {
     this.uploadedBytes = 0;
     this.totalBytes = 0;
     this.totalFormatSize = "0 Bytes";
+    this.uploadedFormatSize = "0 Bytes";
     this.totalUploadBytes = 0;
     this.uploadSpeed = {
       currentSpeedFormatted: "",
@@ -419,7 +496,7 @@ export default class Uploader<T = any> extends EventEmitter {
   private init() {
     // 使用统一的重置方法
     this.resetUploaderState();
-    
+
     // 继承默认插件
     this.plugins = [...Uploader.defaultPlugins];
   }
@@ -639,7 +716,7 @@ export default class Uploader<T = any> extends EventEmitter {
         continue;
       }
       Uploader.uploadFile = uploadFileInstance;
-      
+
       // 调用选择回调
       if (this.selectCallback) {
         try {
@@ -686,8 +763,8 @@ export default class Uploader<T = any> extends EventEmitter {
       if (!shouldContinue) continue;
 
       // 添加到文件列表
-      this.files.unshift(uploadFileInstance);
-      this.uploadFiles.unshift(uploadFileInstance);
+      this.files.push(uploadFileInstance);
+      this.uploadFiles.push(uploadFileInstance);
       if (this.config?.autoUpload) {
         uploadFileInstance.start();
       }

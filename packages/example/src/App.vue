@@ -12,12 +12,13 @@ import {
   CompressImagePlugin,
   FileValidatorPlugin,
   WatermarkPlugin,
+  SmartRetryPlugin, // ✅ 新增：智能重试插件
 } from "@file-ud.js/plugins";
 
 import { ref } from "vue";
 import Uploader from "@file-ud.js/core/uploader";
-import { IFile } from "@file-ud.js/core/types";
 import { uploadMonitor } from "@file-ud.js/core/utils";
+import { IFile } from "@file-ud.js/core/types";
 
 const isChunk = ref(true);
 FileUD.startUploadLogger({
@@ -42,10 +43,22 @@ const test1 = FileUD.createUploader<{
   multiple: true,
   chunkOptions: isChunk.value
     ? {
-        retries: null,
+        // retries: null,
       }
     : null,
 });
+
+// ✅ 新增：使用智能重试插件
+// test1.use(
+//   new SmartRetryPlugin({
+//     maxRetries: 3, // 最多重试 3 次
+//     strategy: "exponential", // 指数退避策略
+//     initialDelay: 1000, // 初始延迟 1 秒
+//     maxDelay: 30000, // 最大延迟 30 秒
+//     showRetryNotification: true, // 显示重试通知
+//   }),
+// );
+
 test1.onMergeChunk = async (ch) => {
   const { data } = await mergeChunks({
     fileHash: ch.fileHash,
@@ -78,7 +91,7 @@ test1.onInitChunk = async (uploadFile) => {
     // 返回空数组，让前端重新上传所有分片
     // 后端会检测到分片已存在，直接返回成功（秒传分片）
     return {
-      uploadedChunks: [], // 告诉前端需要上传所有分片
+      uploadedChunks:data.uploadedChunks, // 告诉前端需要上传所有分片
       fileHash: data.fileHash || "",
       shouldRemove: false, // ❌ 不移除，需要继续上传
     };
@@ -120,10 +133,6 @@ test1.onInitChunk = async (uploadFile) => {
     shouldRemove: false,
   };
 };
-const test2 = FileUD.createUploader("test2", {
-  action: "/upload",
-  file: "file",
-});
 
 const files = ref<UploadFile[]>([]);
 Uploader.onError = (err) => {
@@ -157,41 +166,56 @@ getFileList({
 }).then((res) => {
   console.log("🚀 ~ submit ~ res:", res);
 });
-const submit = async () => {
-  try {
-    await test1.submit();
-    console.log("提交完成");
-    getFileList({
-      page: 1,
-      pageSize: 10,
-    }).then((res) => {
-      console.log("🚀 ~ submit ~ res:", res);
-    });
-  } catch (error) {
-    console.error("🚀 ~ submit ~ error:", error);
-  }
+
+// ✅ 新增：演示 setFiles 方法 - 文件回显功能
+const loadSavedFiles = () => {
+  // 模拟从服务端或 localStorage 获取已保存的文件列表
+  const savedFiles: IFile[] = [
+    {
+      fileId: "file_001",
+      fileName: "example-photo.jpg",
+      File: new File([], "example-photo.jpg"), // 实际使用时需要从服务器下载或用户重新选择
+      url: "https://example.com/photos/example-photo.jpg",
+      percent: 100,
+      status: "success" as const,
+      formatSize: "2.35 MB",
+      extension: ".jpg",
+    },
+    {
+      fileId: "file_002",
+      fileName: "demo-video.mp4",
+      File: new File([], "demo-video.mp4"),
+      url: "https://example.com/videos/demo-video.mp4",
+      percent: 100,
+      status: "success" as const,
+      formatSize: "15.80 MB",
+      extension: ".mp4",
+    },
+  ];
+
+  // 回显文件列表（清空现有）
+  test1.setFiles(savedFiles);
+  console.log("✅ 文件回显成功", test1.files);
 };
-window.test1 = test1;
-window.test2 = test2;
-window.FileUD = FileUD;
+window.test1 = test1
 </script>
 
 <template>
   <div>
     <button @click="test1.open()">上传文件</button>
     <button @click="test1.clearFiles()">清除文件列表</button>
-    <button @click="handlerChunk">
+    <button @click="loadSavedFiles()">🔄 回显文件（清空后回显）</button>
+    <button @click="handlerChunk()">
       {{ isChunk ? "普通上传" : "大文件上传" }}
     </button>
     <button @click="test1.pauseAll()">全部暂停</button>
     <button @click="test1.resumeAll()">全部继续</button>
     <button @click="test1.cancelAll()">全部取消</button>
     <button @click="test1.retryAll()">全部重试</button>
-    <button @click="submit()">提交文件</button>
     总的大小:{{ test1.totalBytes }} 总进度:{{ test1.totalPercent }} 总速度:{{
       test1.uploadSpeed?.averageSpeedFormatted
     }}
-    {{test1.uploadedFormatSize}}/{{ test1.totalFormatSize }}
+    {{ test1.uploadedFormatSize }}/{{ test1.totalFormatSize }}
 
     <div v-for="item in files" :key="item.fileId">
       进度{{ item.percent }} 状态{{ item.status }} 文件名{{ item.fileName }} md5
@@ -219,11 +243,5 @@ window.FileUD = FileUD;
   padding: 1.5em;
   will-change: filter;
   transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.vue:hover {
-  filter: drop-shadow(0 0 2em #42b883aa);
 }
 </style>

@@ -102,11 +102,20 @@ export function computeUploadTime(uploadTime: UploadTimeInfo) {
   };
 }
 
-export function getFileExtension(filename: string) {
-  const parts = filename && filename.split(".");
+export function getFileExtension(filename?: string) {
+  const parts = filename && filename?.split(".");
   return parts && parts.length > 1 ? parts[parts.length - 1] : "";
 }
 
+/**
+ * 判断文件是否处于活跃上传状态（统一判断逻辑）
+ * @param file 文件实例
+ * @returns 是否为活跃上传状态
+ * @private
+ */
+export function isFileActive(file: UploadFile): boolean {
+  return ["uploading", "paused", "fail", "merging"].includes(file.status!);
+}
 /**
  * 将文件大小转换为易读的格式
  * @param {number} bytes - 文件大小的字节数
@@ -198,9 +207,7 @@ export function createReactiveUploadFile(
 
       // 设置新值
       const result = Reflect.set(target, prop, value, receiver);
-    
 
-   
       // 如果值真的变化了，触发更新
       if (oldValue !== value) {
         // 触发 update 回调（使用防抖优化）

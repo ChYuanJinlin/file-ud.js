@@ -68,7 +68,7 @@ export default class UploadFile<T = any> {
   reject: ((reason?: any) => void | undefined) | undefined;
 
   /** 文件在队列中的索引 */
-  index: number;
+  index?: number;
 
   /** 是否正在上传 */
   loading: boolean;
@@ -166,7 +166,7 @@ export default class UploadFile<T = any> {
     this.extension = file.extension;
     this.formatSize = file.formatSize;
     this.abort = file.abort;
-    this.index = file.index;
+    this.index = file.index!;
     this.isRetry = file.isRetry || false;
     this.__uploader__ = file.__uploader__!;
 
@@ -185,19 +185,28 @@ export default class UploadFile<T = any> {
    * @return {*}
    */
   cancel(fn: ((next: () => void) => void) | void) {
-    if (this.proxy.status !== "uploading") {
+    if (this.proxy.status !== "uploading" && this.proxy.status !== "paused") {
       console.warn("没有需要取消的上传", this.fileName);
       return;
     }
+
     const next = () => {
-      this.abort?.();
+      // 如果是分片上传，调用 ChunkManager 的 cancelUpload 方法
+      if (this.chunkManager) {
+        this.chunkManager.cancelUpload();
+      } else {
+        // 普通上传，直接 abort
+        this.abort?.();
+      }
+
       this.__uploader__.totalUploadBytes -= this.File.size;
       this.__uploader__.emit("cancel", this.proxy);
     };
+
     fn ? fn(next) : next();
   }
   remove() {
-    this.abort?.();
+    this.chunkManager ? this.chunkManager.cancelUpload : this.abort?.();
     const up = this.__uploader__;
     up.files = up.files.filter((f) => f.fileId !== this.fileId);
     if (up.files.length === 0) {
@@ -292,7 +301,7 @@ export default class UploadFile<T = any> {
    */
   async retry() {
     const up = this.__uploader__;
-    if (this.proxy.status === "success" || this.proxy.status === "merging") {
+    if (!["cancelled", "fail", "error"].includes(this.proxy.status!)) {
       console.warn("没有需要重试的上传", this.fileName);
       return;
     }
@@ -537,7 +546,7 @@ export default class UploadFile<T = any> {
         }
       }
 
-      this.proxy.status = "uploading";
+     this.proxy.status !=='cancelled' &&  (this.proxy.status = "uploading");
 
       // 只在首次上传时累加 totalBytes，避免重试时重复累加
       // 对于分片上传，应该在 ChunkManager.initUpload() 中初始化 totalBytes
@@ -656,6 +665,7 @@ export default class UploadFile<T = any> {
     // 动态计算当前正在上传的文件总字节数和已上传字节数
     let totalUploadedBytes = 0;
     let currentTotalBytes = 0;
+    
 
     up.files.forEach((file) => {
       // 根据上传类型决定状态过滤条件

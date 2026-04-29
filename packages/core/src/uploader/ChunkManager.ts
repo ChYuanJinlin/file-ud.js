@@ -64,8 +64,10 @@ export default class ChunkManager {
   private retryCountMap: Map<number, number> = new Map(); // 每个分片的重试次数
   // 暂停/恢复控制
   private isPaused: boolean = false; // 是否处于暂停状态
+  public isCancelled: boolean = false; // ✅ 是否已取消（用于阻止新分片启动）
   private pauseResolves: Array<() => void> = []; // 改为数组，存储所有等待的 resolve
   private activeUploads: Set<Promise<void>> = new Set(); // 当前活跃的上传任务
+  private abortControllers: AbortController[] = []; // 保存所有活跃分片的 AbortController
 
   // 网速计算所需的内部状态
   private lastUpdateTime: number = 0;
@@ -94,7 +96,6 @@ export default class ChunkManager {
       ChunkOptions.retries !== undefined ? ChunkOptions.retries : 5; // 默认重试5次，允许设置为 null 禁用自动重试
     this.retryDelay = ChunkOptions.retryDelay ?? 1000; // 默认重试延迟1秒
     this.timeout = ChunkOptions.timeout ?? 30000; // 默认超时30秒
-    this.enableResume = ChunkOptions.enableResume ?? false; // 默认不启用断点续传
     this.totalChunks = Math.ceil(file.File.size / this.chunkSize);
     this.uploadFile = file;
     this.uploadedChunks = [];
@@ -201,7 +202,6 @@ export default class ChunkManager {
   > {
     const up = this.uploadFile.__uploader__;
     this.fileHash = await this.getFileHash(this.uploadFile.File);
-
     // 添加文件级别的开始上传日志（用于监控模块）
     logger.info("ChunkManager", `开始上传文件: ${this.uploadFile.fileName}`, {
       fileId: this.uploadFile.fileId,
@@ -339,7 +339,7 @@ export default class ChunkManager {
                 (initResult.uploadedChunks.length / this.totalChunks) * 100,
               ),
             });
-
+            this.completedChunks = 0;
             initResult.uploadedChunks.forEach((index: number) => {
               if (index >= 0 && index < this.totalChunks) {
                 this.uploadedChunks[index] = true;
@@ -430,6 +430,10 @@ export default class ChunkManager {
     const executeUpload = async (): Promise<void> => {
       // 使用 AbortController 实现真正的超时控制
       const abortController = new AbortController();
+
+      // ✅ 保存 AbortController 引用，以便取消时可以中止
+      this.abortControllers.push(abortController);
+
       const timeoutId = setTimeout(() => {
         abortController.abort();
       }, this.timeout);
@@ -440,9 +444,21 @@ export default class ChunkManager {
 
         // 上传成功，清除超时定时器
         clearTimeout(timeoutId);
+
+        // ✅ 从数组中移除已完成的 AbortController
+        const index = this.abortControllers.indexOf(abortController);
+        if (index > -1) {
+          this.abortControllers.splice(index, 1);
+        }
       } catch (error) {
         // 确保清除定时器
         clearTimeout(timeoutId);
+
+        // ✅ 从数组中移除已完成的 AbortController
+        const index = this.abortControllers.indexOf(abortController);
+        if (index > -1) {
+          this.abortControllers.splice(index, 1);
+        }
 
         // 添加详细的错误日志
         if (error instanceof Error && error.name === "AbortError") {
@@ -736,13 +752,7 @@ export default class ChunkManager {
       const onMerge = up.OnMergeChunkCallBack;
       const response = onMerge ? await onMerge(this) : undefined;
 
-      // 清除保存的进度（统一处理，避免重复代码）
-      if (this.enableResume) {
-        await this.clearProgress();
-      }
-
       this.uploadFile.proxy.status = "success";
-
       // 触发合并成功事件
       up.emit("merge-success", {
         file: this.uploadFile.proxy,
@@ -840,7 +850,6 @@ export default class ChunkManager {
       this.uploadFile.onScuccess(mergeResult);
     } catch (error) {
       this.uploadFile.onError(error);
-      return;
     }
 
     // 使用统一方法计算上传统计信息
@@ -863,7 +872,7 @@ export default class ChunkManager {
         },
       );
 
-      this.setFileStatusToFail();
+      // this.setFileStatusToFail();
       this.uploadFile.onError(new Error("部分分片上传失败"));
       return;
     }
@@ -905,7 +914,7 @@ export default class ChunkManager {
       },
     );
 
-    this.setFileStatusToFail();
+    // this.setFileStatusToFail();
     this.uploadFile.onError(new Error("部分分片上传失败，重试后仍未成功"));
   }
 
@@ -913,6 +922,10 @@ export default class ChunkManager {
    * 重试失败的分片
    */
   public async retryFailedChunks(): Promise<void> {
+    // ✅ 重置取消和暂停标志，允许重试
+    this.isCancelled = false;
+    this.isPaused = false;
+
     const failedChunksCopy = [...this.failedChunks];
     this.failedChunks = [];
 
@@ -984,9 +997,69 @@ export default class ChunkManager {
 
   /**
    * 取消上传
+   *
+   * 取消所有正在进行的分片上传任务，并清理相关资源。
+   * 与 pause 不同，cancel 会完全停止上传，无法恢复。
+   *
+   * @example
+   * ```typescript
+   * file.cancel();
+   * console.log(file.status); // "cancelled"
+   * ```
    */
   public cancelUpload(): void {
-    // 取消上传逻辑
+    logger.info(
+      "ChunkManager",
+      `开始取消文件 ${this.uploadFile.fileName} 的上传`,
+      {
+        fileId: this.uploadFile.fileId,
+        fileName: this.uploadFile.fileName,
+        activeControllers: this.abortControllers.length,
+      },
+    );
+
+    // ✅ 关键：设置取消标志，阻止新分片启动
+    this.isCancelled = true;
+
+    // ✅ 中止所有活跃的 HTTP 请求
+    this.abortControllers.forEach((controller) => {
+      try {
+        controller.abort();
+        logger.debug("ChunkManager", `已中止一个分片的 HTTP 请求`);
+      } catch (error) {
+        logger.warn("ChunkManager", `中止分片请求时出错:`, error);
+      }
+    });
+
+    // 清空 AbortController 数组
+    this.abortControllers = [];
+
+    // 设置为暂停状态，阻止新分片启动
+    this.isPaused = true;
+
+    // 唤醒所有等待中的分片上传任务，让它们检查取消状态
+    if (this.pauseResolves.length > 0) {
+      this.pauseResolves.forEach((resolve) => resolve());
+      this.pauseResolves = [];
+    }
+
+    // 清空活跃上传任务集合
+    this.activeUploads.clear();
+
+    // 更新文件状态为已取消
+
+    this.uploadFile.proxy.status = "cancelled";
+
+    logger.info("ChunkManager", `文件 ${this.uploadFile.fileName} 已取消上传`, {
+      fileId: this.uploadFile.fileId,
+      fileName: this.uploadFile.fileName,
+      completedChunks: this.completedChunks,
+      totalChunks: this.totalChunks,
+    });
+
+    // 触发取消事件
+    const up = this.uploadFile.__uploader__;
+    up.emit("cancel", this.uploadFile.proxy);
   }
 
   /**
@@ -1070,17 +1143,26 @@ export default class ChunkManager {
   }
 
   /**
-   * 等待直到不再暂停(用于异步流程中的暂停检查)
-   * @returns Promise,当恢复时 resolve
+   * 等待恢复（用于暂停/恢复机制）
+   * @private
    */
   private async waitForResume(): Promise<void> {
     if (!this.isPaused) {
       return;
     }
 
-    return new Promise((resolve) => {
-      this.pauseResolves.push(resolve);
+    await new Promise<void>((resolve) => {
+      this.pauseResolves.push(() => resolve());
     });
+
+    // ✅ 关键修复：唤醒后检查是否已取消
+    if (this.isCancelled) {
+      logger.info("ChunkManager", `分片上传被取消，停止执行`, {
+        fileId: this.uploadFile.fileId,
+        fileName: this.uploadFile.fileName,
+      });
+      throw new Error("Upload cancelled");
+    }
   }
 
   /**
@@ -1166,7 +1248,11 @@ export default class ChunkManager {
     // 重置速度计算状态（避免第二次上传时速度计算错误）
     this.lastUpdateTime = 0;
     this.lastUploadedBytes = 0;
-
+    
+    // ✅ 关键修复：重置取消和暂停标志，允许重新开始上传
+    this.isCancelled = false;
+    this.isPaused = false;
+    
     // 重新创建 PQueue，确保使用正确的并发配置
     this.queue = new PQueue({ concurrency: this.maxConcurrent });
 
@@ -1287,6 +1373,17 @@ export default class ChunkManager {
     }
 
     for (let chunkIndex = 0; chunkIndex < this.totalChunks; chunkIndex++) {
+      // ✅ 关键修复：检查是否已取消，如果已取消则停止入队新任务
+      if (this.isCancelled) {
+        logger.info("ChunkManager", `检测到取消标志，停止入队新分片`, {
+          fileId: this.uploadFile.fileId,
+          fileName: this.uploadFile.fileName,
+          currentChunk: chunkIndex,
+          totalChunks: this.totalChunks,
+        });
+        break; // 跳出循环，不再入队新任务
+      }
+
       // 跳过已上传的分片（断点续传场景）
       if (this.uploadedChunks[chunkIndex]) {
         continue;
@@ -1297,7 +1394,7 @@ export default class ChunkManager {
       // 在每个分片上传前检查暂停状态
       uploadPromises.push(
         this.queue.add(async () => {
-          // 在真正开始上传前检查是否暂停
+          // ✅ 在真正开始上传前检查是否暂停或取消
           await this.waitForResume();
 
           // 记录分片开始时间

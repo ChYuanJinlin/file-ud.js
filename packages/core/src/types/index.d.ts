@@ -185,8 +185,6 @@ export interface ChunkOptions {
   retryDelay?: number;
   /* 超时时间（毫秒） */
   timeout?: number;
-  /* 是否启用断点续传 */
-  enableResume?: boolean;
   /* 自定义上传ID（用于断点续传） */
   uploadId?: string;
 }
@@ -360,7 +358,7 @@ export interface IFile {
   /* 是否在重试中 */
   isRetry?: boolean;
   /* 文件上传的索引 */
-  index: number;
+  index?: number;
   /* Uploader 对象 */
   __uploader__?: Uploader;
   /* 文件上传的状态 */
