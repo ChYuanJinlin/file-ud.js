@@ -13,6 +13,16 @@ export {
 } from "./logger";
 export type { LoggerOptions, LogEntry, LogCollectorCallback } from "./logger";
 
+// ✅ 导出文件缓存工具
+export {
+  saveFileToCache,
+  restoreFileFromCache,
+  removeFileFromCache,
+  clearAllFileCache,
+  getCacheStats,
+  cleanExpiredCache,
+} from "./fileCache";
+
 // 导出上传监控工具
 export { uploadMonitor } from "./upload-monitor";
 export type { UploadStats, UploadRecord } from "./upload-monitor";
@@ -306,6 +316,7 @@ export function sleep(ms: number): Promise<void> {
 export async function calculateFileMD5(
   file: File,
   onProgress?: (percent: number) => void,
+  signal?: AbortSignal, // ✅ 新增：支持中断信号
 ): Promise<string> {
   return new Promise(async (resolve, reject) => {
     try {
@@ -320,7 +331,22 @@ export async function calculateFileMD5(
       const spark = new SparkMD5.ArrayBuffer();
       const fileReader = new FileReader();
 
+      // ✅ 监听中断信号
+      if (signal) {
+        signal.addEventListener("abort", () => {
+          fileReader.abort(); // 中止文件读取
+          reject(new Error("MD5 计算已取消"));
+        });
+      }
+
       fileReader.onload = (e) => {
+        // ✅ 每次读取前检查是否已取消
+        if (signal?.aborted) {
+          fileReader.abort();
+          reject(new Error("MD5 计算已取消"));
+          return;
+        }
+
         if (e.target?.result) {
           spark.append(e.target.result as ArrayBuffer);
           currentChunk++;
@@ -344,6 +370,12 @@ export async function calculateFileMD5(
       };
 
       function loadNext() {
+        // ✅ 加载下一个分片前检查是否已取消
+        if (signal?.aborted) {
+          reject(new Error("MD5 计算已取消"));
+          return;
+        }
+
         const start = currentChunk * chunkSize;
         const end = Math.min(start + chunkSize, file.size);
         fileReader.readAsArrayBuffer(file.slice(start, end));

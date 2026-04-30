@@ -187,6 +187,12 @@ export interface ChunkOptions {
   timeout?: number;
   /* 自定义上传ID（用于断点续传） */
   uploadId?: string;
+  
+  // ==================== 文件缓存配置 ====================
+  /* 是否启用文件缓存（将 File 对象存储到 IndexedDB，默认 false） */
+  enableFileCache?: boolean;
+  /* 缓存保留天数，超过此天数的缓存将被自动清理（默认 7 天） */
+  cacheRetentionDays?: number;
 }
 
 /* 日志配置 */
@@ -201,7 +207,7 @@ export interface LogConfig {
   /** 是否启用颜色输出（默认非生产环境启用） */
   enableColors?: boolean;
 }
-export interface FileUDConfigs {
+export interface uploaderConfigs {
   /* 是否支持多选 */
   multiple?: boolean;
   /* 接受的文件类型（支持 MIME 类型或文件后缀名） */
@@ -251,7 +257,7 @@ export interface PluginContext {
   formData?: FormData;
 
   /** 配置信息 */
-  config?: FileUDConfigs;
+  config?: uploaderConfigs;
 
   /** 插件共享数据 */
   shared: Map<string, any>;
@@ -373,6 +379,18 @@ export interface IFile {
     | "merging"
     | "hashing";
   uploadSpeed?: UploadSpeedInfo;
+
+  // ==================== 分片上传回显相关字段 ====================
+  /* 总分片数（回显分片上传进度时需要） */
+  totalChunks?: number;
+  /* 已完成分片数（回显分片上传进度时需要） */
+  completedChunks?: number;
+  /* 已上传的分片索引数组（用于断点续传回显） */
+  uploadedChunkIndexes?: number[];
+  /* 文件哈希值（用于秒传/断点续传回显） */
+  fileHash?: string;
+  /* 服务端上传ID（用于断点续传回显） */
+  uploadId?: string;
 }
 
 /* 错误回调函数类型 */
@@ -395,13 +413,15 @@ export type onInitChunkCallback = (
   file: UploadFile,
   totalChunks: number,
   fileHash: string,
-) => Promise<{
-  fileHash: string;
-  uploadedChunks?: number[] | null | undefined;
-  isInstantUpload?: boolean; // ✅ 标记是否为真正的秒传（文件已存在，无需合并）
-  url?: string;
-  shouldRemove?: boolean; // ✅ 标记是否需要移除该文件（秒传时自动移除）
-}> | undefined;
+) =>
+  | Promise<{
+      fileHash: string;
+      uploadedChunks?: number[] | null | undefined;
+      isInstantUpload?: boolean; // ✅ 标记是否为真正的秒传（文件已存在，无需合并）
+      url?: string;
+      shouldRemove?: boolean; // ✅ 标记是否需要移除该文件（秒传时自动移除）
+    }>
+  | undefined;
 
 /* 
 合并分片回调函数类型

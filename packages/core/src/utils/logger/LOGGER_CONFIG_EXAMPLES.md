@@ -3,7 +3,7 @@
 ## 📋 配置优先级
 
 ```
-环境变量 > FileUDConfigs.logConfig > initLogger() > 默认配置
+环境变量 > uploaderConfigs.logConfig > initLogger() > 默认配置
 ```
 
 ## 🎯 常见场景配置

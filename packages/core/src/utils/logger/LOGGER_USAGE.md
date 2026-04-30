@@ -41,7 +41,7 @@ logger.error('Uploader', '批量上传失败', error);
 
 ## ⚙️ 配置方式
 
-### 1. 通过 FileUDConfigs 配置（推荐）
+### 1. 通过 uploaderConfigs 配置（推荐）
 
 在创建 Uploader 实例时配置日志：
 

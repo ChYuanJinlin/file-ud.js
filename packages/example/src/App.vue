@@ -197,6 +197,75 @@ const loadSavedFiles = () => {
   test1.setFiles(savedFiles);
   console.log("✅ 文件回显成功", test1.files);
 };
+
+// ✅ 模拟从后端回显分片上传文件
+const restoreChunkUploadFiles = () => {
+  console.log("🔄 开始模拟后端回显分片上传文件...");
+  
+  // 模拟后端返回的文件数据
+  const serverFiles = [
+    {
+      fileId: "file_restore_001",
+      fileName: "large-video-restored.mp4",
+      url: "",
+      status: "uploading" as const,
+      
+      // ✅ 分片上传回显字段
+      isChunkUpload: true,
+      totalChunks: 20,
+      completedChunks: 8,
+      uploadedChunkIndexes: [0, 1, 2, 3, 4, 5, 6, 7],
+      fileHash: "restored_hash_abc123",
+      uploadId: "restored_upload_xyz789",
+    },
+    {
+      fileId: "file_restore_002",
+      fileName: "archive-restored.zip",
+      url: "https://example.com/archive-restored.zip",
+      status: "success" as const,
+      
+      // ✅ 已完成的分片上传
+      isChunkUpload: true,
+      totalChunks: 15,
+      completedChunks: 15,
+      fileHash: "restored_hash_def456",
+    },
+  ];
+  
+  // 转换为 IFile 格式
+  const filesToRestore: IFile[] = serverFiles.map((serverFile) => ({
+    fileId: serverFile.fileId,
+    fileName: serverFile.fileName,
+    url: serverFile.url || "",
+    File: new File([], serverFile.fileName), // 创建空的 File 对象
+    status: serverFile.status,
+    
+    // ✅ 分片上传回显字段
+    isChunkUpload: serverFile.isChunkUpload,
+    totalChunks: serverFile.totalChunks,
+    completedChunks: serverFile.completedChunks,
+    uploadedChunkIndexes: serverFile.uploadedChunkIndexes,
+    fileHash: serverFile.fileHash,
+    uploadId: serverFile.uploadId,
+  }));
+  
+  // 回显文件列表
+  test1.setFiles(filesToRestore);
+  
+  console.log("✅ 回显完成，共回显", filesToRestore.length, "个文件");
+  console.log("文件列表:", test1.files.map(f => ({
+    fileName: f.fileName,
+    status: f.status,
+    percent: f.percent,
+    isChunkUpload: f.isChunkUpload,
+    completedChunks: f.chunkManager?.completedChunks,
+    totalChunks: f.chunkManager?.totalChunks,
+  })));
+};
+
+// 暴露到 window 对象，方便测试
+(window as any).restoreChunkUploadFiles = restoreChunkUploadFiles;
+
 window.test1 = test1
 </script>
 
@@ -205,6 +274,7 @@ window.test1 = test1
     <button @click="test1.open()">上传文件</button>
     <button @click="test1.clearFiles()">清除文件列表</button>
     <button @click="loadSavedFiles()">🔄 回显文件（清空后回显）</button>
+    <button @click="restoreChunkUploadFiles()">📦 模拟后端回显分片上传</button>
     <button @click="handlerChunk()">
       {{ isChunk ? "普通上传" : "大文件上传" }}
     </button>

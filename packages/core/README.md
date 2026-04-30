@@ -87,7 +87,7 @@ uploader.onMergeChunk = async (chunkManager) => {
 ### 配置选项
 
 ```typescript
-interface FileUDConfigs {
+interface uploaderConfigs {
   /** 是否支持多选 */
   multiple?: boolean;
   

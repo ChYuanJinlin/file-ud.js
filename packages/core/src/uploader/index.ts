@@ -3,7 +3,7 @@ import {
   BeforeUploadCallBack,
   ErrorCallBack,
   EventName,
-  FileUDConfigs,
+  uploaderConfigs,
   IFile,
   IUploaderPlugin,
   onInitChunkCallback,
@@ -34,7 +34,7 @@ import {
 import { EventEmitter } from "../utils/event-emitter";
 import ChunkManager from "./ChunkManager";
 import UploadFile from "./UploadFile";
-const defaultConfig: FileUDConfigs = {
+const defaultConfig: uploaderConfigs = {
   multiple: false,
   accept: [],
   show: false,
@@ -74,8 +74,8 @@ export default class Uploader<T = any> extends EventEmitter {
   };
 
   public static objectUrls: any[] = [];
-  public static baseConfig: FileUDConfigs;
-  public config: FileUDConfigs | null = null;
+  public static baseConfig: uploaderConfigs;
+  public config: uploaderConfigs | null = null;
   public static instances: Uploader | null = null;
   public static uploadFile: UploadFile | null;
 
@@ -295,7 +295,7 @@ export default class Uploader<T = any> extends EventEmitter {
    * 更新全局统计信息（内部方法）
    * @private
    */
-  private updateGlobalStats() {
+  public updateGlobalStats() {
     // 重新计算总字节数
     this.totalBytes = this.files.reduce((sum, file) => {
       return sum + (file.File?.size || 0);
@@ -342,7 +342,7 @@ export default class Uploader<T = any> extends EventEmitter {
     });
   }
 
-  constructor(config?: FileUDConfigs) {
+  constructor(config?: uploaderConfigs) {
     super();
     this.inputHTML = null;
     try {
@@ -520,7 +520,7 @@ export default class Uploader<T = any> extends EventEmitter {
     }
     return input;
   }
-  create(config?: FileUDConfigs) {
+  create(config?: uploaderConfigs) {
     Uploader.baseConfig = Object.assign(defaultConfig, Uploader.baseConfig);
     this.config = { ...Uploader.baseConfig, ...config };
     this.init();
@@ -536,7 +536,7 @@ export default class Uploader<T = any> extends EventEmitter {
 
     return this;
   }
-  public updateConfig(config: Partial<FileUDConfigs>) {
+  public updateConfig(config: Partial<uploaderConfigs>) {
     this.config = mergeObjects(this.config!, config);
   }
   set onBeforeUpload(callback: BeforeUploadCallBack) {

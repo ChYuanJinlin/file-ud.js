@@ -1,4 +1,4 @@
-import { EventName, FileUDConfigs, LogConfig } from "../types";
+import { EventName, uploaderConfigs, LogConfig } from "../types";
 import Uploader from "../uploader/index";
 import { initLogger, LogLevel, mergeObjects } from "../utils";
 
@@ -18,7 +18,7 @@ export default class FileUD {
   }
   public static createUploader<T = any>(
     name: string,
-    config?: FileUDConfigs,
+    config?: uploaderConfigs,
   ): Uploader<T> {
     if (!name) {
       throw new Error("Uploader name is required");
