@@ -22,20 +22,60 @@ interface FileCacheRecord {
   lastAccessedAt: number; // 最后访问时间戳
 }
 
+// ✅ 数据库连接单例
+let dbInstance: IDBDatabase | null = null;
+let dbOpeningPromise: Promise<IDBDatabase> | null = null;
+
 /**
- * 打开或创建 IndexedDB 数据库
+ * 打开或创建 IndexedDB 数据库（单例模式）
  */
 function openDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
+  // ✅ 如果已有有效连接，直接返回
+  if (dbInstance && dbInstance.version === DB_VERSION) {
+    try {
+      // 测试连接是否仍然有效
+      dbInstance.transaction([STORE_NAME], 'readonly');
+      return Promise.resolve(dbInstance);
+    } catch (error) {
+      // 连接已失效，重置
+      logger.warn('FileCache', '数据库连接已失效，重新打开', error);
+      dbInstance = null;
+      dbOpeningPromise = null;
+    }
+  }
+
+  // ✅ 如果正在打开中，返回同一个 Promise
+  if (dbOpeningPromise) {
+    return dbOpeningPromise;
+  }
+
+  // ✅ 创建新的打开请求
+  dbOpeningPromise = new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
 
     request.onerror = () => {
       logger.error('FileCache', '打开 IndexedDB 失败', request.error);
+      dbOpeningPromise = null;
       reject(request.error);
     };
 
     request.onsuccess = () => {
-      resolve(request.result);
+      dbInstance = request.result;
+      dbOpeningPromise = null;
+      
+      // ✅ 监听连接关闭事件
+      dbInstance.onclose = () => {
+        logger.warn('FileCache', '数据库连接已关闭');
+        dbInstance = null;
+      };
+      
+      // ✅ 监听连接异常事件
+      dbInstance.onerror = (event) => {
+        logger.error('FileCache', '数据库连接错误', event);
+        dbInstance = null;
+      };
+      
+      resolve(dbInstance);
     };
 
     request.onupgradeneeded = (event) => {
@@ -54,6 +94,50 @@ function openDB(): Promise<IDBDatabase> {
       }
     };
   });
+
+  return dbOpeningPromise;
+}
+
+/**
+ * 关闭数据库连接（用于清理资源）
+ */
+export function closeDB(): void {
+  if (dbInstance) {
+    try {
+      dbInstance.close();
+      logger.debug('FileCache', '数据库连接已关闭');
+    } catch (error) {
+      logger.warn('FileCache', '关闭数据库连接时出错', error);
+    } finally {
+      dbInstance = null;
+      dbOpeningPromise = null;
+    }
+  }
+}
+
+/**
+ * 执行 IndexedDB 事务的通用包装器
+ * @param operation - 事务操作函数
+ * @returns Promise<T>
+ */
+async function executeTransaction<T>(
+  operation: (db: IDBDatabase) => Promise<T>
+): Promise<T> {
+  try {
+    const db = await openDB();
+    return await operation(db);
+  } catch (error) {
+    // ✅ 捕获 InvalidStateError，重置连接并重试一次
+    if (error instanceof DOMException && error.name === 'InvalidStateError') {
+      logger.warn('FileCache', '检测到无效状态错误，重置连接后重试', error);
+      closeDB();
+      
+      // 重试一次
+      const db = await openDB();
+      return await operation(db);
+    }
+    throw error;
+  }
 }
 
 /**
@@ -65,8 +149,6 @@ function openDB(): Promise<IDBDatabase> {
  */
 export async function saveFileToCache(fileHash: string, file: File): Promise<void> {
   try {
-    const db = await openDB();
-    
     // 将 File 转换为 ArrayBuffer
     const arrayBuffer = await file.arrayBuffer();
     
@@ -80,23 +162,30 @@ export async function saveFileToCache(fileHash: string, file: File): Promise<voi
       lastAccessedAt: Date.now(),
     };
 
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORE_NAME], 'readwrite');
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.put(record);
+    await executeTransaction(async (db) => {
+      return new Promise<void>((resolve, reject) => {
+        const transaction = db.transaction([STORE_NAME], 'readwrite');
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.put(record);
 
-      request.onsuccess = () => {
-        logger.debug('FileCache', `文件已缓存: ${file.name} (${formatFileSize(file.size)})`, {
-          fileHash,
-          fileSize: file.size,
-        });
-        resolve();
-      };
+        request.onsuccess = () => {
+          logger.debug('FileCache', `文件已缓存: ${file.name} (${formatFileSize(file.size)})`, {
+            fileHash,
+            fileSize: file.size,
+          });
+          resolve();
+        };
 
-      request.onerror = () => {
-        logger.error('FileCache', '保存文件缓存失败', request.error);
-        reject(request.error);
-      };
+        request.onerror = () => {
+          logger.error('FileCache', '保存文件缓存失败', request.error);
+          reject(request.error);
+        };
+        
+        transaction.onerror = () => {
+          logger.error('FileCache', '事务执行失败', transaction.error);
+          reject(transaction.error);
+        };
+      });
     });
   } catch (error) {
     logger.error('FileCache', '保存文件缓存异常', error);
@@ -112,41 +201,46 @@ export async function saveFileToCache(fileHash: string, file: File): Promise<voi
  */
 export async function restoreFileFromCache(fileHash: string): Promise<File | null> {
   try {
-    const db = await openDB();
+    return await executeTransaction(async (db) => {
+      return new Promise((resolve, reject) => {
+        const transaction = db.transaction([STORE_NAME], 'readonly');
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.get(fileHash);
 
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORE_NAME], 'readonly');
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.get(fileHash);
+        request.onsuccess = () => {
+          const record: FileCacheRecord | undefined = request.result;
+          
+          if (!record) {
+            logger.debug('FileCache', `未找到缓存文件: ${fileHash}`);
+            resolve(null);
+            return;
+          }
 
-      request.onsuccess = () => {
-        const record: FileCacheRecord | undefined = request.result;
+          // 更新最后访问时间
+          updateLastAccessedTime(fileHash);
+
+          // 将 ArrayBuffer 转换回 File
+          const blob = new Blob([record.data], { type: record.fileType });
+          const file = new File([blob], record.fileName, { type: record.fileType });
+
+          logger.debug('FileCache', `成功恢复缓存文件: ${record.fileName}`, {
+            fileHash,
+            fileSize: record.fileSize,
+          });
+
+          resolve(file);
+        };
+
+        request.onerror = () => {
+          logger.error('FileCache', '恢复文件缓存失败', request.error);
+          reject(request.error);
+        };
         
-        if (!record) {
-          logger.debug('FileCache', `未找到缓存文件: ${fileHash}`);
-          resolve(null);
-          return;
-        }
-
-        // 更新最后访问时间
-        updateLastAccessedTime(fileHash);
-
-        // 将 ArrayBuffer 转换回 File
-        const blob = new Blob([record.data], { type: record.fileType });
-        const file = new File([blob], record.fileName, { type: record.fileType });
-
-        logger.debug('FileCache', `成功恢复缓存文件: ${record.fileName}`, {
-          fileHash,
-          fileSize: record.fileSize,
-        });
-
-        resolve(file);
-      };
-
-      request.onerror = () => {
-        logger.error('FileCache', '恢复文件缓存失败', request.error);
-        reject(request.error);
-      };
+        transaction.onerror = () => {
+          logger.error('FileCache', '事务执行失败', transaction.error);
+          reject(transaction.error);
+        };
+      });
     });
   } catch (error) {
     logger.error('FileCache', '恢复文件缓存异常', error);
@@ -162,22 +256,27 @@ export async function restoreFileFromCache(fileHash: string): Promise<File | nul
  */
 export async function removeFileFromCache(fileHash: string): Promise<void> {
   try {
-    const db = await openDB();
+    await executeTransaction(async (db) => {
+      return new Promise<void>((resolve, reject) => {
+        const transaction = db.transaction([STORE_NAME], 'readwrite');
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.delete(fileHash);
 
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORE_NAME], 'readwrite');
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.delete(fileHash);
+        request.onsuccess = () => {
+          logger.debug('FileCache', `已删除文件缓存: ${fileHash}`);
+          resolve();
+        };
 
-      request.onsuccess = () => {
-        logger.debug('FileCache', `已删除文件缓存: ${fileHash}`);
-        resolve();
-      };
-
-      request.onerror = () => {
-        logger.error('FileCache', '删除文件缓存失败', request.error);
-        reject(request.error);
-      };
+        request.onerror = () => {
+          logger.error('FileCache', '删除文件缓存失败', request.error);
+          reject(request.error);
+        };
+        
+        transaction.onerror = () => {
+          logger.error('FileCache', '事务执行失败', transaction.error);
+          reject(transaction.error);
+        };
+      });
     });
   } catch (error) {
     logger.error('FileCache', '删除文件缓存异常', error);
@@ -192,22 +291,27 @@ export async function removeFileFromCache(fileHash: string): Promise<void> {
  */
 export async function clearAllFileCache(): Promise<void> {
   try {
-    const db = await openDB();
+    await executeTransaction(async (db) => {
+      return new Promise<void>((resolve, reject) => {
+        const transaction = db.transaction([STORE_NAME], 'readwrite');
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.clear();
 
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORE_NAME], 'readwrite');
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.clear();
+        request.onsuccess = () => {
+          logger.info('FileCache', '已清空所有文件缓存');
+          resolve();
+        };
 
-      request.onsuccess = () => {
-        logger.info('FileCache', '已清空所有文件缓存');
-        resolve();
-      };
-
-      request.onerror = () => {
-        logger.error('FileCache', '清空文件缓存失败', request.error);
-        reject(request.error);
-      };
+        request.onerror = () => {
+          logger.error('FileCache', '清空文件缓存失败', request.error);
+          reject(request.error);
+        };
+        
+        transaction.onerror = () => {
+          logger.error('FileCache', '事务执行失败', transaction.error);
+          reject(transaction.error);
+        };
+      });
     });
   } catch (error) {
     logger.error('FileCache', '清空文件缓存异常', error);
@@ -222,27 +326,32 @@ export async function clearAllFileCache(): Promise<void> {
  */
 export async function getCacheStats(): Promise<{ count: number; totalSize: number }> {
   try {
-    const db = await openDB();
+    return await executeTransaction(async (db) => {
+      return new Promise((resolve, reject) => {
+        const transaction = db.transaction([STORE_NAME], 'readonly');
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.getAll();
 
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORE_NAME], 'readonly');
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.getAll();
+        request.onsuccess = () => {
+          const records: FileCacheRecord[] = request.result || [];
+          const totalSize = records.reduce((sum, record) => sum + record.fileSize, 0);
+          
+          resolve({
+            count: records.length,
+            totalSize,
+          });
+        };
 
-      request.onsuccess = () => {
-        const records: FileCacheRecord[] = request.result || [];
-        const totalSize = records.reduce((sum, record) => sum + record.fileSize, 0);
+        request.onerror = () => {
+          logger.error('FileCache', '获取缓存统计失败', request.error);
+          reject(request.error);
+        };
         
-        resolve({
-          count: records.length,
-          totalSize,
-        });
-      };
-
-      request.onerror = () => {
-        logger.error('FileCache', '获取缓存统计失败', request.error);
-        reject(request.error);
-      };
+        transaction.onerror = () => {
+          logger.error('FileCache', '事务执行失败', transaction.error);
+          reject(transaction.error);
+        };
+      });
     });
   } catch (error) {
     logger.error('FileCache', '获取缓存统计异常', error);
@@ -258,50 +367,56 @@ export async function getCacheStats(): Promise<{ count: number; totalSize: numbe
  */
 export async function cleanExpiredCache(days: number = 7): Promise<number> {
   try {
-    const db = await openDB();
     const cutoffTime = Date.now() - days * 24 * 60 * 60 * 1000;
 
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORE_NAME], 'readwrite');
-      const store = transaction.objectStore(STORE_NAME);
-      const index = store.index('lastAccessedAt');
-      const request = index.getAll();
+    return await executeTransaction(async (db) => {
+      return new Promise((resolve, reject) => {
+        const transaction = db.transaction([STORE_NAME], 'readwrite');
+        const store = transaction.objectStore(STORE_NAME);
+        const index = store.index('lastAccessedAt');
+        const request = index.getAll();
 
-      request.onsuccess = () => {
-        const records: FileCacheRecord[] = request.result || [];
-        const expiredRecords = records.filter(
-          (record) => record.lastAccessedAt < cutoffTime
-        );
+        request.onsuccess = () => {
+          const records: FileCacheRecord[] = request.result || [];
+          const expiredRecords = records.filter(
+            (record) => record.lastAccessedAt < cutoffTime
+          );
 
-        let deletedCount = 0;
+          let deletedCount = 0;
 
-        // 删除过期记录
-        const deletePromises = expiredRecords.map((record) => {
-          return new Promise<void>((resolveDelete, rejectDelete) => {
-            const deleteRequest = store.delete(record.fileHash);
-            deleteRequest.onsuccess = () => {
-              deletedCount++;
-              resolveDelete();
-            };
-            deleteRequest.onerror = () => {
-              logger.error('FileCache', `删除过期缓存失败: ${record.fileHash}`, deleteRequest.error);
-              resolveDelete(); // 继续处理其他记录
-            };
+          // 删除过期记录
+          const deletePromises = expiredRecords.map((record) => {
+            return new Promise<void>((resolveDelete, rejectDelete) => {
+              const deleteRequest = store.delete(record.fileHash);
+              deleteRequest.onsuccess = () => {
+                deletedCount++;
+                resolveDelete();
+              };
+              deleteRequest.onerror = () => {
+                logger.error('FileCache', `删除过期缓存失败: ${record.fileHash}`, deleteRequest.error);
+                resolveDelete(); // 继续处理其他记录
+              };
+            });
           });
-        });
 
-        Promise.all(deletePromises).then(() => {
-          if (deletedCount > 0) {
-            logger.info('FileCache', `已清理 ${deletedCount} 个过期缓存`);
-          }
-          resolve(deletedCount);
-        });
-      };
+          Promise.all(deletePromises).then(() => {
+            if (deletedCount > 0) {
+              logger.info('FileCache', `已清理 ${deletedCount} 个过期缓存`);
+            }
+            resolve(deletedCount);
+          });
+        };
 
-      request.onerror = () => {
-        logger.error('FileCache', '查询过期缓存失败', request.error);
-        reject(request.error);
-      };
+        request.onerror = () => {
+          logger.error('FileCache', '查询过期缓存失败', request.error);
+          reject(request.error);
+        };
+        
+        transaction.onerror = () => {
+          logger.error('FileCache', '事务执行失败', transaction.error);
+          reject(transaction.error);
+        };
+      });
     });
   } catch (error) {
     logger.error('FileCache', '清理过期缓存异常', error);
@@ -316,34 +431,39 @@ export async function cleanExpiredCache(days: number = 7): Promise<number> {
  */
 async function updateLastAccessedTime(fileHash: string): Promise<void> {
   try {
-    const db = await openDB();
+    await executeTransaction(async (db) => {
+      return new Promise<void>((resolve, reject) => {
+        const transaction = db.transaction([STORE_NAME], 'readwrite');
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.get(fileHash);
 
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORE_NAME], 'readwrite');
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.get(fileHash);
-
-      request.onsuccess = () => {
-        const record: FileCacheRecord | undefined = request.result;
-        
-        if (record) {
-          record.lastAccessedAt = Date.now();
-          const updateRequest = store.put(record);
+        request.onsuccess = () => {
+          const record: FileCacheRecord | undefined = request.result;
           
-          updateRequest.onsuccess = () => resolve();
-          updateRequest.onerror = () => {
-            logger.warn('FileCache', '更新访问时间失败', updateRequest.error);
-            resolve(); // 不阻塞主流程
-          };
-        } else {
-          resolve();
-        }
-      };
+          if (record) {
+            record.lastAccessedAt = Date.now();
+            const updateRequest = store.put(record);
+            
+            updateRequest.onsuccess = () => resolve();
+            updateRequest.onerror = () => {
+              logger.warn('FileCache', '更新访问时间失败', updateRequest.error);
+              resolve(); // 不阻塞主流程
+            };
+          } else {
+            resolve();
+          }
+        };
 
-      request.onerror = () => {
-        logger.warn('FileCache', '查询记录失败', request.error);
-        resolve(); // 不阻塞主流程
-      };
+        request.onerror = () => {
+          logger.warn('FileCache', '查询记录失败', request.error);
+          resolve(); // 不阻塞主流程
+        };
+        
+        transaction.onerror = () => {
+          logger.warn('FileCache', '事务执行失败', transaction.error);
+          resolve(); // 不阻塞主流程
+        };
+      });
     });
   } catch (error) {
     logger.warn('FileCache', '更新访问时间异常', error);

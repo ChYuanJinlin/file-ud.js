@@ -297,8 +297,11 @@ export default class ChunkManager {
             this.uploadFile.proxy.percent = 100;
             this.uploadFile.proxy.status = "success";
 
-            // 更新全局进度和速度
+            // ✅ 关键修复：更新全局统计信息（总进度、总大小）
             const up = this.uploadFile.__uploader__;
+            up.updateGlobalStats();
+            
+            // 更新上传速度
             up.triggerUpdate();
 
             // ✅ 如果需要移除文件，则从文件列表中移除
@@ -345,8 +348,11 @@ export default class ChunkManager {
 
             this.uploadFile.proxy.percent = 100;
 
-            // 更新全局进度和速度（不依赖 lastUpdateTime）
+            // ✅ 关键修复：更新全局统计信息（总进度、总大小）
             const up = this.uploadFile.__uploader__;
+            up.updateGlobalStats();
+            
+            // 更新上传速度
             up.triggerUpdate();
 
             // ✅ 如果需要移除文件，则从文件列表中移除
@@ -393,6 +399,12 @@ export default class ChunkManager {
 
             // 更新文件进度
             this.updateProgress();
+            
+            // ✅ 关键修复：更新全局统计信息（总进度、总大小）
+            const up = this.uploadFile.__uploader__;
+            up.updateGlobalStats();
+            up.triggerUpdate();
+            
             return; // 已恢复进度，直接返回
           }
         }

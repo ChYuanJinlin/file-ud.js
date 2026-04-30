@@ -170,6 +170,7 @@ export default class UploadFile<T = any> {
     this.isRetry = file.isRetry || false;
     this.__uploader__ = file.__uploader__!;
 
+    this.proxy = createReactiveUploadFile(this, up);
     // 如果是分片上传（检查 chunkOptions 配置）,在构造时就创建 ChunkManager
     if (up.config?.chunkOptions) {
       this.chunkManager = new ChunkManager(up.config.chunkOptions, this);
@@ -179,8 +180,6 @@ export default class UploadFile<T = any> {
         this.initChunkManagerFromRestore(file);
       }
     }
-
-    this.proxy = createReactiveUploadFile(this, up);
     // 关键：在发起请求前设置拦截器，建立当前文件与 XHR 的映射
     this.setupInterceptor(this);
     return this.proxy;
@@ -189,12 +188,15 @@ export default class UploadFile<T = any> {
   /**
    * 从回显数据初始化 ChunkManager 状态
    * 用于后端接口返回的文件列表回显场景
-   * 
+   *
    * @param file - 包含分片上传信息的文件对象
    */
   private async initChunkManagerFromRestore(file: IFile): Promise<void> {
     if (!this.chunkManager) {
-      logger.warn("UploadFile", "initChunkManagerFromRestore: chunkManager 不存在");
+      logger.warn(
+        "UploadFile",
+        "initChunkManagerFromRestore: chunkManager 不存在",
+      );
       return;
     }
 
@@ -223,19 +225,29 @@ export default class UploadFile<T = any> {
 
     // 3. 初始化已上传分片数组
     if (file.totalChunks !== undefined) {
-      this.chunkManager.uploadedChunks = new Array(file.totalChunks).fill(false);
+      this.chunkManager.uploadedChunks = new Array(file.totalChunks).fill(
+        false,
+      );
     }
 
     // 4. 标记已上传的分片
     if (file.uploadedChunkIndexes && file.uploadedChunkIndexes.length > 0) {
       file.uploadedChunkIndexes.forEach((index) => {
-        if (this.chunkManager && index >= 0 && index < this.chunkManager.totalChunks) {
+        if (
+          this.chunkManager &&
+          index >= 0 &&
+          index < this.chunkManager.totalChunks
+        ) {
           this.chunkManager.uploadedChunks[index] = true;
         }
       });
     } else if (file.completedChunks !== undefined && this.chunkManager) {
       // 如果没有具体的索引数组，但有完成数量，假设前 N 个分片已完成
-      for (let i = 0; i < file.completedChunks && i < this.chunkManager.totalChunks; i++) {
+      for (
+        let i = 0;
+        i < file.completedChunks && i < this.chunkManager.totalChunks;
+        i++
+      ) {
         this.chunkManager.uploadedChunks[i] = true;
       }
     }
@@ -251,7 +263,8 @@ export default class UploadFile<T = any> {
     // 6. 计算并设置进度百分比
     if (this.chunkManager.totalChunks > 0) {
       const percent = Math.round(
-        (this.chunkManager.completedChunks / this.chunkManager.totalChunks) * 100
+        (this.chunkManager.completedChunks / this.chunkManager.totalChunks) *
+          100,
       );
       this.percent = percent;
       this.proxy.percent = percent;
@@ -275,55 +288,58 @@ export default class UploadFile<T = any> {
       up.config?.chunkOptions?.enableFileCache &&
       (!this.File || this.File.size === 0)
     ) {
-      logger.info(
-        "UploadFile",
-        `尝试从缓存恢复文件: ${this.fileName}`,
-        { fileHash: file.fileHash }
-      );
+      logger.info("UploadFile", `尝试从缓存恢复文件: ${this.fileName}`, {
+        fileHash: file.fileHash,
+      });
 
       try {
-        const cachedFile = await import('../utils/fileCache').then(m => m.restoreFileFromCache(file.fileHash!));
-        
+        const cachedFile = await import("../utils/fileCache").then((m) =>
+          m.restoreFileFromCache(file.fileHash!),
+        );
+
         if (cachedFile) {
           // 验证缓存文件的完整性
-          if (cachedFile.name === this.fileName && cachedFile.size === this.File.size) {
+          if (
+            cachedFile.name === this.fileName &&
+            cachedFile.size === this.File.size
+          ) {
             this.File = cachedFile;
             logger.info(
               "UploadFile",
               `✅ 成功从缓存恢复文件: ${this.fileName}`,
-              { fileSize: cachedFile.size }
+              { fileSize: cachedFile.size },
             );
           } else {
             logger.warn(
               "UploadFile",
-              `⚠️ 缓存文件不匹配: 期望 ${this.fileName} (${this.File.size}), 实际 ${cachedFile.name} (${cachedFile.size})`
+              `⚠️ 缓存文件不匹配: 期望 ${this.fileName} (${this.File.size}), 实际 ${cachedFile.name} (${cachedFile.size})`,
             );
           }
         } else {
           logger.debug(
             "UploadFile",
-            `未找到缓存文件，用户需要重新选择: ${this.fileName}`
+            `未找到缓存文件，用户需要重新选择: ${this.fileName}`,
           );
         }
       } catch (error) {
         logger.error(
           "UploadFile",
           `从缓存恢复文件失败: ${this.fileName}`,
-          error
+          error,
         );
       }
     }
 
-    logger.info(
-      "UploadFile",
-      `分片上传状态初始化完成: ${this.fileName}`,
-      {
-        totalChunks: this.chunkManager.totalChunks,
-        completedChunks: this.chunkManager.completedChunks,
-        percent: this.percent,
-        status: this.status,
-      }
-    );
+    logger.info("UploadFile", `分片上传状态初始化完成: ${this.fileName}`, {
+      totalChunks: this.chunkManager.totalChunks,
+      completedChunks: this.chunkManager.completedChunks,
+      percent: this.percent,
+      status: this.status,
+    });
+
+    // ✅ 关键修复：更新全局统计信息（总进度、总大小）
+    up.updateGlobalStats();
+    up.triggerUpdate();
   }
 
   /**
@@ -358,15 +374,15 @@ export default class UploadFile<T = any> {
     } else {
       this.abort?.();
     }
-    
+
     const up = this.__uploader__;
-    
+
     // 从文件列表中移除
     up.files = up.files.filter((f) => f.fileId !== this.fileId);
-    
+
     // 重新计算全局统计信息（包括总进度、已上传字节数等）
     up.updateGlobalStats();
-    
+
     up.remObjectUrls(this.url);
     up.totalBytes -= this.File.size;
     up.totalFormatSize = formatFileSize(up.totalBytes);
@@ -778,12 +794,14 @@ export default class UploadFile<T = any> {
       fileName: this.fileName,
       fileSize: this.File.size,
     });
+
+    // ✅ 关键修复：更新全局统计信息（总进度、总大小）
+    up.updateGlobalStats();
+    up.triggerUpdate();
+
     if (!up.uploadFiles.length) {
       up.emit("files-complete", up.files);
       console.log("所有文件上传完成");
-      up.totalProgress = 0;
-      up.totalPercent = 100;
-      up.totalUploadBytes = 0;
       computeUploadTime(up.uploadTime).end();
       up.uploadTime.startTime = 0;
     }

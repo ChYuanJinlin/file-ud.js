@@ -20,6 +20,7 @@ import {
 import {
   checkNetworkStatus,
   computeUploadTime,
+  createReactiveUploadFile,
   formatDuration,
   formatFileSize,
   formatSpeed,
