@@ -53,7 +53,7 @@ export default class UploadFile<T = any> {
   formatSize: string | undefined;
 
   /** 当前文件已上传的大小（格式化字符串），如 "45.23 MB" */
-  uploadedFormatSize: string = "0 Bytes";
+  uploadedFormatSize: string = "0 B";
 
   /** 表单数据对象,用于携带上传参数 */
   formData: FormData | null = null;
@@ -380,12 +380,11 @@ export default class UploadFile<T = any> {
     // 从文件列表中移除
     up.files = up.files.filter((f) => f.fileId !== this.fileId);
 
-    // 重新计算全局统计信息（包括总进度、已上传字节数等）
+    // ✅ 重新计算全局统计信息（包括总进度、总大小等）
     up.updateGlobalStats();
 
     up.remObjectUrls(this.url);
-    up.totalBytes -= this.File.size;
-    up.totalFormatSize = formatFileSize(up.totalBytes);
+    // ✅ 删除重复的手动更新，updateGlobalStats 已经处理了
     up.triggerUpdate();
     up.emit("remove", this.proxy);
   }

@@ -263,7 +263,7 @@ export interface PluginContext {
   shared: Map<string, any>;
 
   /** 当前操作状态（用于区分MD5计算、上传中等不同阶段） */
-  status?: "hashing" | "uploading" | "merging" | "success" | "error";
+  status?: IFile['status'];
 
   /** 状态描述信息（可选，用于显示给用户） */
   message?: string;

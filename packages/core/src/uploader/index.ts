@@ -53,10 +53,10 @@ export default class Uploader<T = any> extends EventEmitter {
   public uploadedBytes: number = 0;
 
   /** 全局已上传的总大小（格式化字符串），如 "125.50 MB" */
-  public uploadedFormatSize: string = "0 Bytes";
+  public uploadedFormatSize: string = "0 B";
 
   /** 全局待上传的总大小（格式化字符串），如 "256.80 MB" */
-  public totalFormatSize: string = "0 Bytes";
+  public totalFormatSize: string = "0 B";
 
   public progress: UploadProgress = {
     uploadedBytes: 0,
@@ -227,7 +227,7 @@ export default class Uploader<T = any> extends EventEmitter {
     Uploader.objectUrls = [];
     this.totalPercent = 0;
     this.totalBytes = 0;
-    this.totalFormatSize = "0 Bytes";
+    this.totalFormatSize = "0 B";
     this.triggerUpdate();
   }
 
@@ -464,8 +464,8 @@ export default class Uploader<T = any> extends EventEmitter {
     this.id = Uploader.id++;
     this.uploadedBytes = 0;
     this.totalBytes = 0;
-    this.totalFormatSize = "0 Bytes";
-    this.uploadedFormatSize = "0 Bytes";
+    this.totalFormatSize = "0 B";
+    this.uploadedFormatSize = "0 B";
     this.totalUploadBytes = 0;
     this.uploadSpeed = {
       currentSpeedFormatted: "",

@@ -133,12 +133,23 @@ export function isFileActive(file: UploadFile): boolean {
  * @returns {string} 转换后的文件大小字符串
  */
 export function formatFileSize(bytes: any, decimals = 2) {
+  // ✅ 防御性检查：处理 undefined、null、NaN 等情况
+  if (bytes === null || bytes === undefined || isNaN(Number(bytes))) {
+    return "0 B";
+  }
+
   // 转换为数字
   bytes = Number(bytes);
 
   // 检查是否为有效数字
-  if (isNaN(bytes)) return "0 Bytes";
-  if (bytes === 0) return "0 Bytes";
+  if (isNaN(bytes)) return "0 B";
+  if (bytes === 0) return "0 B";
+  
+  // ✅ 处理负数情况（理论上不应该出现，但做防御性编程）
+  if (bytes < 0) {
+    console.warn("formatFileSize: 接收到负数值", bytes);
+    return "0 B";
+  }
 
   const k = 1024;
   const sizes = ["Bytes", "KB", "MB", "GB", "TB"];

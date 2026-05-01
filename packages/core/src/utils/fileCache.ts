@@ -3,6 +3,7 @@
  * 用于持久化存储 File 对象，支持断点续传时的文件恢复
  */
 
+import { formatFileSize } from '.';
 import { logger } from './logger';
 
 const DB_NAME = 'file-ud-cache';
@@ -471,13 +472,3 @@ async function updateLastAccessedTime(fileHash: string): Promise<void> {
   }
 }
 
-/**
- * 格式化文件大小
- */
-function formatFileSize(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
-}

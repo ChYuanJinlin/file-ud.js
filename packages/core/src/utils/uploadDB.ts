@@ -32,10 +32,37 @@ const STORE_NAME = "uploadTasks"; // 存储对象名
 const VERSION = 1; // 数据库版本
 let dbInstance: IDBPDatabase<UploadTaskRecord> | null = null;
 const HASH_STORE_NAME = "fileHashes"; // Hash 缓存存储对象名
+
+/**
+ * 检查数据库连接是否有效
+ */
+function isDbValid(db: IDBPDatabase<UploadTaskRecord>): boolean {
+  try {
+    // 尝试创建一个简单的事务来测试连接
+    const tx = db.transaction(STORE_NAME, "readonly");
+    return tx.objectStore(STORE_NAME) !== null;
+  } catch (error) {
+    console.warn("数据库连接已失效:", error);
+    return false;
+  }
+}
+
 // 初始化数据库（单例模式，避免重复打开）
 export const initDB = async (): Promise<IDBPDatabase<UploadTaskRecord>> => {
-  if (dbInstance) {
+  // ✅ 如果已有有效连接，直接返回
+  if (dbInstance && isDbValid(dbInstance)) {
     return dbInstance;
+  }
+
+  // ✅ 连接失效，重置实例
+  if (dbInstance) {
+    console.warn("检测到无效的数据库连接，重新初始化...");
+    try {
+      dbInstance.close();
+    } catch (error) {
+      // 忽略关闭错误
+    }
+    dbInstance = null;
   }
 
   try {
@@ -58,24 +85,67 @@ export const initDB = async (): Promise<IDBPDatabase<UploadTaskRecord>> => {
         }
       },
     });
+    
+    // ✅ 监听连接关闭事件
+    dbInstance.addEventListener("close", () => {
+      console.warn("IndexedDB 连接已关闭");
+      dbInstance = null;
+    });
+    
     return dbInstance;
   } catch (error) {
     console.error("IndexedDB 初始化失败:", error);
+    dbInstance = null;
     throw new Error("IndexedDB 初始化失败");
   }
 };
+
+/**
+ * 执行数据库操作的通用包装器，自动处理 InvalidStateError
+ * @param operation - 数据库操作函数
+ * @returns Promise<T>
+ */
+async function executeDbOperation<T>(
+  operation: (db: IDBPDatabase<UploadTaskRecord>) => Promise<T>
+): Promise<T> {
+  try {
+    const db = await initDB();
+    return await operation(db);
+  } catch (error) {
+    // ✅ 捕获 InvalidStateError，重置连接并重试一次
+    if (error instanceof DOMException && error.name === "InvalidStateError") {
+      console.warn("检测到 InvalidStateError，重置数据库连接后重试", error);
+      
+      // 强制重置连接
+      if (dbInstance) {
+        try {
+          dbInstance.close();
+        } catch (e) {
+          // 忽略关闭错误
+        }
+      }
+      dbInstance = null;
+      
+      // 重试一次
+      const db = await initDB();
+      return await operation(db);
+    }
+    throw error;
+  }
+}
 
 // 保存上传任务（新增或更新）
 export const saveUploadTask = async (
   task: Omit<UploadTaskRecord, "updatedAt"> & Partial<UploadTaskRecord>,
 ): Promise<void> => {
   try {
-    const db = await initDB();
-    const now = Date.now();
-    await db.put(STORE_NAME, {
-      ...task,
-      updatedAt: now,
-      createdAt: task.createdAt || now,
+    await executeDbOperation(async (db) => {
+      const now = Date.now();
+      await db.put(STORE_NAME, {
+        ...task,
+        updatedAt: now,
+        createdAt: task.createdAt || now,
+      });
     });
   } catch (error) {
     console.error("保存上传任务失败:", error);
@@ -88,8 +158,9 @@ export const getUploadTask = async (
   id: string,
 ): Promise<UploadTaskRecord | null> => {
   try {
-    const db = await initDB();
-    return await db.get(STORE_NAME, id);
+    return await executeDbOperation(async (db) => {
+      return await db.get(STORE_NAME, id);
+    });
   } catch (error) {
     console.error("获取上传任务失败:", error);
     return null;
@@ -119,39 +190,43 @@ export const generateQuickFingerprint = (file: File): string => {
 };
 
 /**
- * 获取文件 Hash（从缓存中）
- * @param file 文件对象或快速指纹
- * @returns Hash 值，不存在则返回 null
+ * 获取缓存的文件 Hash
+ * @param file 文件对象或指纹字符串
+ * @returns MD5 Hash 或 null
  */
 export const getCachedHash = async (
   file: File | string,
 ): Promise<string | null> => {
   try {
-    const db = await initDB();
-    const fingerprint =
-      typeof file === "string" ? file : generateQuickFingerprint(file);
-    const record = await db.get(HASH_STORE_NAME, fingerprint);
+    return await executeDbOperation(async (db) => {
+      const fingerprint =
+        typeof file === "string" ? file : generateQuickFingerprint(file);
+      const record = await db.get(HASH_STORE_NAME, fingerprint);
 
-    if (record) {
-      return record.hash;
-    }
+      if (record) {
+        return record.hash;
+      }
 
-    return null;
+      return null;
+    });
   } catch (error) {
     console.error("获取缓存 Hash 失败:", error);
     return null;
   }
 };
+
 // 删除上传任务
 export const deleteUploadTask = async (id: string): Promise<void> => {
   try {
-    const db = await initDB();
-    await db.delete(STORE_NAME, id);
+    await executeDbOperation(async (db) => {
+      await db.delete(STORE_NAME, id);
+    });
   } catch (error) {
     console.error("删除上传任务失败:", error);
     throw error;
   }
 };
+
 /**
  * 保存文件 Hash 到缓存
  * @param file 文件对象
@@ -159,22 +234,23 @@ export const deleteUploadTask = async (id: string): Promise<void> => {
  */
 export const saveFileHash = async (file: File, hash: string): Promise<void> => {
   try {
-    const db = await initDB();
-    const fingerprint = generateQuickFingerprint(file);
-    const now = Date.now();
+    await executeDbOperation(async (db) => {
+      const fingerprint = generateQuickFingerprint(file);
+      const now = Date.now();
 
-    const record: FileHashRecord = {
-      id: fingerprint,
-      hash: hash,
-      filename: file.name,
-      size: file.size,
-      lastModified: file.lastModified,
-      createdAt: now,
-      updatedAt: now,
-    };
+      const record: FileHashRecord = {
+        id: fingerprint,
+        hash: hash,
+        filename: file.name,
+        size: file.size,
+        lastModified: file.lastModified,
+        createdAt: now,
+        updatedAt: now,
+      };
 
-    await db.put(HASH_STORE_NAME, record);
-    console.log(`💾 Hash 已缓存: ${fingerprint} -> ${hash}`);
+      await db.put(HASH_STORE_NAME, record);
+      console.log(`💾 Hash 已缓存: ${fingerprint} -> ${hash}`);
+    });
   } catch (error) {
     console.error("保存 Hash 缓存失败:", error);
     throw error;
@@ -192,26 +268,27 @@ export const updateChunkStatus = async (
   uploaded: boolean,
 ): Promise<void> => {
   try {
-    const db = await initDB();
-    const task = await db.get(STORE_NAME, taskId);
+    await executeDbOperation(async (db) => {
+      const task = await db.get(STORE_NAME, taskId);
 
-    if (!task) {
-      console.warn(`任务 ${taskId} 不存在`);
-      return;
-    }
+      if (!task) {
+        console.warn(`任务 ${taskId} 不存在`);
+        return;
+      }
 
-    // 更新对应分片的状态
-    const chunk = task.chunks.find((c: ChunkRecord) => c.index === chunkIndex);
-    if (chunk) {
-      chunk.uploaded = uploaded;
-    } else {
-      task.chunks.push({ index: chunkIndex, uploaded });
-    }
+      // 更新对应分片的状态
+      const chunk = task.chunks.find((c: ChunkRecord) => c.index === chunkIndex);
+      if (chunk) {
+        chunk.uploaded = uploaded;
+      } else {
+        task.chunks.push({ index: chunkIndex, uploaded });
+      }
 
-    // 保存更新后的任务
-    await db.put(STORE_NAME, {
-      ...task,
-      updatedAt: Date.now(),
+      // 保存更新后的任务
+      await db.put(STORE_NAME, {
+        ...task,
+        updatedAt: Date.now(),
+      });
     });
   } catch (error) {
     console.error("更新分片状态失败:", error);
@@ -227,24 +304,25 @@ export const getIncompleteTasks = async (
   maxAge?: number,
 ): Promise<UploadTaskRecord[]> => {
   try {
-    const db = await initDB();
-    const allTasks = await db.getAll(STORE_NAME);
+    return await executeDbOperation(async (db) => {
+      const allTasks = await db.getAll(STORE_NAME);
 
-    // 过滤出未完成的任务
-    const incompleteTasks = allTasks.filter((task: UploadTaskRecord) => {
-      const isCompleted = task.chunks.every(
-        (chunk: ChunkRecord) => chunk.uploaded,
-      );
-      return !isCompleted;
+      // 过滤出未完成的任务
+      const incompleteTasks = allTasks.filter((task: UploadTaskRecord) => {
+        const isCompleted = task.chunks.every(
+          (chunk: ChunkRecord) => chunk.uploaded,
+        );
+        return !isCompleted;
+      });
+
+      // 如果指定了最大年龄，过滤过期任务
+      if (maxAge !== undefined) {
+        const now = Date.now();
+        return incompleteTasks.filter((task) => now - task.updatedAt < maxAge);
+      }
+
+      return incompleteTasks;
     });
-
-    // 如果指定了最大年龄，过滤过期任务
-    if (maxAge !== undefined) {
-      const now = Date.now();
-      return incompleteTasks.filter((task) => now - task.updatedAt < maxAge);
-    }
-
-    return incompleteTasks;
   } catch (error) {
     console.error("获取未完成任务失败:", error);
     return [];
@@ -259,26 +337,27 @@ export const cleanupExpiredTasks = async (
   maxAge: number = 7 * 24 * 60 * 60 * 1000,
 ): Promise<number> => {
   try {
-    const db = await initDB();
-    const allTasks = await db.getAll(STORE_NAME);
-    const now = Date.now();
-    let deletedCount = 0;
+    return await executeDbOperation(async (db) => {
+      const allTasks = await db.getAll(STORE_NAME);
+      const now = Date.now();
+      let deletedCount = 0;
 
-    for (const task of allTasks) {
-      // 删除已完成或过期的任务
-      const isCompleted = task.chunks.every(
-        (chunk: ChunkRecord) => chunk.uploaded,
-      );
-      const isExpired = now - task.updatedAt > maxAge;
+      for (const task of allTasks) {
+        // 删除已完成或过期的任务
+        const isCompleted = task.chunks.every(
+          (chunk: ChunkRecord) => chunk.uploaded,
+        );
+        const isExpired = now - task.updatedAt > maxAge;
 
-      if (isCompleted || isExpired) {
-        await db.delete(STORE_NAME, task.id);
-        deletedCount++;
+        if (isCompleted || isExpired) {
+          await db.delete(STORE_NAME, task.id);
+          deletedCount++;
+        }
       }
-    }
 
-    console.log(`清理了 ${deletedCount} 个过期/已完成的任务`);
-    return deletedCount;
+      console.log(`清理了 ${deletedCount} 个过期/已完成的任务`);
+      return deletedCount;
+    });
   } catch (error) {
     console.error("清理过期任务失败:", error);
     return 0;
@@ -290,7 +369,27 @@ export const cleanupExpiredTasks = async (
  */
 export const closeDB = (): void => {
   if (dbInstance) {
-    dbInstance.close();
-    dbInstance = null;
+    try {
+      dbInstance.close();
+    } catch (error) {
+      console.warn("关闭数据库连接时出错:", error);
+    } finally {
+      dbInstance = null;
+    }
   }
+};
+
+/**
+ * 重置数据库连接（用于测试或异常情况）
+ */
+export const resetDB = (): void => {
+  if (dbInstance) {
+    try {
+      dbInstance.close();
+    } catch (error) {
+      console.warn("关闭数据库连接时出错:", error);
+    }
+  }
+  dbInstance = null;
+  console.log("数据库连接已重置");
 };
