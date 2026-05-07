@@ -828,8 +828,7 @@ export default class UploadFile<T = any> {
   /**
    * 计算全局上传进度（统一处理，避免重复代码）
    */
-  private calculateGlobalProgress(event:ProgressEvent): void {
-    console.log("🚀 ~ UploadFile ~ calculateGlobalProgress ~ event:", event)
+  private calculateGlobalProgress(event: ProgressEvent): void {
     const up = this.__uploader__;
 
     // 动态计算当前正在上传的文件总字节数和已上传字节数
@@ -866,7 +865,7 @@ export default class UploadFile<T = any> {
     up.totalPercent =
       currentTotalBytes > 0
         ? Math.min(
-            99,
+            100,
             Math.floor((totalUploadedBytes / currentTotalBytes) * 100),
           )
         : this.chunkManager
@@ -896,10 +895,7 @@ export default class UploadFile<T = any> {
 
     if (!this.chunkManager) {
       if (this.File.size > 0) {
-        this.proxy.percent = Math.min(
-          99,
-          Math.floor((loaded * 100) / this.File.size),
-        );
+        this.proxy.percent = Math.floor((event.loaded * 100) / event.total);
 
         this.__uploadedBytes__ = Math.floor(
           this.File.size * (this.proxy.percent / 100),
