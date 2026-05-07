@@ -1,10 +1,5 @@
 import axios, { AxiosProgressEvent, Canceler } from "axios";
-import {
-  IFile,
-  UploadProgress,
-  UploadSpeedInfo,
-  UploadTimeInfo,
-} from "../types";
+import { IFile, UploadSpeedInfo, UploadTimeInfo } from "../types";
 import Uploader from ".";
 import ChunkManager from "./ChunkManager";
 import {
@@ -665,7 +660,7 @@ export default class UploadFile<T = any> {
     this.proxy.loading = true;
     return new Promise(async (resolve, reject) => {
       const up = this.__uploader__;
-
+      up.loading = true;
       // 重置已上传字节数（避免重新上传时使用旧值）
       this.__uploadedBytes__ = 0;
 
@@ -758,6 +753,7 @@ export default class UploadFile<T = any> {
             // 普通上传：直接设置为成功并调用成功回调
             this.onScuccess(res);
             this.proxy.status = "success";
+            this.proxy.percent = 100;
           }
           resolve(res);
         })
@@ -775,6 +771,7 @@ export default class UploadFile<T = any> {
           }
 
           this.proxy.loading = false;
+          up.loading = false;
         });
     });
   }
@@ -831,15 +828,19 @@ export default class UploadFile<T = any> {
   /**
    * 计算全局上传进度（统一处理，避免重复代码）
    */
-  private calculateGlobalProgress(): void {
+  private calculateGlobalProgress(event:ProgressEvent): void {
+    console.log("🚀 ~ UploadFile ~ calculateGlobalProgress ~ event:", event)
     const up = this.__uploader__;
 
     // 动态计算当前正在上传的文件总字节数和已上传字节数
     let totalUploadedBytes = 0;
     let currentTotalBytes = 0;
-
+    let totalFilesSize = 0;
     up.files.forEach((file) => {
       // 根据上传类型决定状态过滤条件
+      if (file.File?.size > 0) {
+        totalFilesSize += file.File.size;
+      }
       const isActiveUpload = this.chunkManager
         ? ["uploading", "paused", "fail"].includes(file.status!)
         : file.status === "uploading" || file.status === "paused";
@@ -849,6 +850,7 @@ export default class UploadFile<T = any> {
 
         if (file.chunkManager) {
           // 分片上传：使用 chunkManager 的已上传字节数
+
           totalUploadedBytes += file.chunkManager.totalUploadedSize;
         } else {
           // 普通上传：使用 __uploadedBytes__
@@ -859,10 +861,12 @@ export default class UploadFile<T = any> {
 
     // 更新全局已上传字节数和总进度
     up.uploadedBytes = totalUploadedBytes;
+    up.totalBytes = totalFilesSize;
+    up.totalFormatSize = formatFileSize(totalFilesSize);
     up.totalPercent =
       currentTotalBytes > 0
         ? Math.min(
-            100,
+            99,
             Math.floor((totalUploadedBytes / currentTotalBytes) * 100),
           )
         : this.chunkManager
@@ -881,13 +885,7 @@ export default class UploadFile<T = any> {
    *
    * @param event - XHR 进度事件对象,包含 loaded 和 total 属性
    *
-   * @example
-   * ```typescript
-   * // Axios 配置中绑定
-   * axios.post(url, formData, {
-   *   onUploadProgress: this.handleProgress.bind(this)
-   * });
-   * ```
+   *
    *
    * @private
    */
@@ -897,25 +895,30 @@ export default class UploadFile<T = any> {
     const loaded = (event as any).loaded || event.loaded;
 
     if (!this.chunkManager) {
-      // 普通上传：直接计算百分比
-      if (event.total) {
-        this.proxy.percent = Math.floor((event.loaded * 100) / event.total);
-      }
+      if (this.File.size > 0) {
+        this.proxy.percent = Math.min(
+          99,
+          Math.floor((loaded * 100) / this.File.size),
+        );
 
-      // 更新当前文件的已上传字节数
-      this.__uploadedBytes__ = loaded;
+        this.__uploadedBytes__ = Math.floor(
+          this.File.size * (this.proxy.percent / 100),
+        );
+      } else {
+        this.__uploadedBytes__ = 0;
+      }
     }
 
     // 更新当前文件已上传的大小（使用 formatFileSize 格式化）
-    this.proxy.uploadedFormatSize = formatFileSize(loaded);
+    this.proxy.uploadedFormatSize = formatFileSize(this.__uploadedBytes__);
 
     // 使用统一方法计算全局进度
-    this.calculateGlobalProgress();
+    this.calculateGlobalProgress(event);
 
     // 触发进度事件,通知外部监听器
     // 计算并更新当前文件的上传速率
     // 内部包含防抖逻辑(100ms 最小间隔)
-    this.calculateSpeed(event.loaded);
+    this.calculateSpeed(this.__uploadedBytes__);
     up.emit("progress", up.totalPercent);
   }
 

@@ -1,7 +1,7 @@
 import { IFile, UploadTimeInfo } from "../types";
 import Uploader from "../uploader";
 import UploadFile from "../uploader/UploadFile";
-
+import SparkMD5 from 'spark-md5';
 // 导出日志工具
 export {
   logger,
@@ -155,8 +155,10 @@ export function formatFileSize(bytes: any, decimals = 2) {
   const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
 
+  // ✅ 关键修复：去掉 parseFloat()，保留 toFixed() 的精度
+  // parseFloat("1.90") → 1.9  ← 会去掉末尾的 0，导致精度不一致
   return (
-    parseFloat((bytes / Math.pow(k, i)).toFixed(decimals)) + " " + sizes[i]
+    (bytes / Math.pow(k, i)).toFixed(decimals) + " " + sizes[i]
   );
 }
 
@@ -331,9 +333,6 @@ export async function calculateFileMD5(
 ): Promise<string> {
   return new Promise(async (resolve, reject) => {
     try {
-      // 动态导入 spark-md5，避免循环依赖并减小初始包体积
-      const SparkMD5Module = await import("spark-md5");
-      const SparkMD5 = SparkMD5Module.default;
 
       const chunkSize = 2 * 1024 * 1024; // 2MB 分片读取
       const chunks = Math.ceil(file.size / chunkSize);

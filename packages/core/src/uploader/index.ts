@@ -12,7 +12,6 @@ import {
   PluginContext,
   SelectCallBack,
   UpdateCallBack,
-  UploadProgress,
   UploadSpeedInfo,
   UploadSuccessCallBack,
   UploadTimeInfo,
@@ -35,7 +34,7 @@ import {
 import { EventEmitter } from "../utils/event-emitter";
 import ChunkManager from "./ChunkManager";
 import UploadFile from "./UploadFile";
-const defaultConfig: uploaderConfigs = {
+export const defaultConfig: uploaderConfigs = {
   multiple: false,
   accept: [],
   show: false,
@@ -58,14 +57,6 @@ export default class Uploader<T = any> extends EventEmitter {
   /** 全局待上传的总大小（格式化字符串），如 "256.80 MB" */
   public totalFormatSize: string = "0 B";
 
-  public progress: UploadProgress = {
-    uploadedBytes: 0,
-    totalBytes: 0,
-    speed: 0,
-    remainingTime: 0,
-    startTime: 0,
-    elapsedTime: 0,
-  };
   // 全局上传速率信息(静态属性)
   public uploadSpeed: UploadSpeedInfo = {
     currentSpeed: 0,
@@ -86,6 +77,7 @@ export default class Uploader<T = any> extends EventEmitter {
   public chunkManager: ChunkManager | null = null;
   public totalProgress: number = 0;
   public lastLoadedMap = new Map();
+  public loading: boolean = false;
 
   public uploadTime: UploadTimeInfo = {
     startTime: 0,
@@ -478,14 +470,6 @@ export default class Uploader<T = any> extends EventEmitter {
       endTime: 0,
       duration: 0,
       durationFormatted: "0s",
-    };
-    this.progress = {
-      uploadedBytes: 0,
-      totalBytes: 0,
-      speed: 0,
-      remainingTime: 0,
-      startTime: 0,
-      elapsedTime: 0,
     };
     this.totalPercent = 0;
     this.totalProgress = 0;

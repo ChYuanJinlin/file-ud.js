@@ -1,7 +1,6 @@
 import { EventName, uploaderConfigs, LogConfig } from "../types";
-import Uploader from "../uploader/index";
+import Uploader, { defaultConfig } from "../uploader/index";
 import { initLogger, LogLevel, mergeObjects } from "../utils";
-
 export default class FileUD {
   private static uploaders: Map<string, Uploader> = new Map();
   public static uploader: Uploader | null = Uploader.instances;
@@ -23,8 +22,23 @@ export default class FileUD {
     if (!name) {
       throw new Error("Uploader name is required");
     }
+
+    // ✅ 如果已经存在同名的 uploader，先销毁旧实例（清理 input 元素）
+    if (FileUD.uploaders.has(name)) {
+      const oldUploader = FileUD.uploaders.get(name);
+      if (oldUploader) {
+        // 清空文件列表并重置索引
+        oldUploader.clearFiles();
+        // 移除旧的 input 元素
+        oldUploader.inputHTML?.remove();
+        // 从 Map 中删除
+        FileUD.uploaders.delete(name);
+      }
+    }
+
+    // 创建新的 uploader 实例
     const newUploader: Uploader<T> = Object.create(Uploader.prototype);
-    newUploader.config = mergeObjects(Uploader.baseConfig, config);
+    newUploader.config = mergeObjects(defaultConfig, config || {});
     newUploader.create(newUploader.config);
     newUploader.inputHTML?.setAttribute("data-uploader-name", name);
     FileUD.uploaders.set(name, newUploader);

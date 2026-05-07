@@ -187,7 +187,7 @@ export interface ChunkOptions {
   timeout?: number;
   /* 自定义上传ID（用于断点续传） */
   uploadId?: string;
-  
+
   // ==================== 文件缓存配置 ====================
   /* 是否启用文件缓存（将 File 对象存储到 IndexedDB，默认 false） */
   enableFileCache?: boolean;
@@ -207,6 +207,12 @@ export interface LogConfig {
   /** 是否启用颜色输出（默认非生产环境启用） */
   enableColors?: boolean;
 }
+export type FileConfig = {
+  data: File | Blob;
+  uploadFile: UploadFile;
+  formData: FormData;
+  chunkIndex?: number;
+};
 export interface uploaderConfigs {
   /* 是否支持多选 */
   multiple?: boolean;
@@ -232,14 +238,7 @@ export interface uploaderConfigs {
   /* 上传请求的头部信息 */
   headers?: Record<string, any>;
   /* 上传文件标识 */
-  file:
-    | string
-    | ((fileObj: {
-        data: File | Blob;
-        uploadFile: UploadFile;
-        formData: FormData;
-        chunkIndex?: number;
-      }) => void);
+  file?: string | ((FileConfig: FileConfig) => void);
   /* 分片上传配置 */
   chunkOptions?: ChunkOptions | null;
   /* 可选：传入自定义 axios 实例 */
@@ -263,7 +262,7 @@ export interface PluginContext {
   shared: Map<string, any>;
 
   /** 当前操作状态（用于区分MD5计算、上传中等不同阶段） */
-  status?: IFile['status'];
+  status?: IFile["status"];
 
   /** 状态描述信息（可选，用于显示给用户） */
   message?: string;
@@ -316,14 +315,7 @@ export interface IUploaderPlugin {
   destroy?: () => void;
 }
 export type PluginConstructor = new (options?: any) => IUploaderPlugin;
-interface UploadProgress {
-  uploadedBytes: number; // 已上传字节数
-  totalBytes: number; // 总字节数
-  speed: number; // 上传速度 (bytes/s)
-  remainingTime: number; // 预计剩余时间 (秒)
-  startTime: number; // 开始时间
-  elapsedTime: number; // 已用时间 (秒)
-}
+
 /* 文件上传状态类型 */
 export interface IFile {
   /* 文件唯一标识符 */
@@ -336,8 +328,6 @@ export interface IFile {
   File: File;
   /* 文件上传的进度百分比 */
   percent?: number;
-  // 文件上传统计进度信息
-  progress?: UploadProgress;
   /* 文件扩展名 */
   extension?: string;
   /* 
