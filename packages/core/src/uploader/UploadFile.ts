@@ -890,9 +890,6 @@ export default class UploadFile<T = any> {
    */
   private handleProgress(event: ProgressEvent): void {
     const up = this.__uploader__;
-    // 统一处理不同类型的事件对象
-    const loaded = (event as any).loaded || event.loaded;
-
     if (!this.chunkManager) {
       if (this.File.size > 0) {
         this.proxy.percent = Math.floor((event.loaded * 100) / event.total);
