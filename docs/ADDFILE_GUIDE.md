@@ -106,7 +106,7 @@ public addFile(
 | `File` | `File` | ✅ | File 对象 |
 | `url` | `string` | ❌ | 文件访问 URL |
 | `percent` | `number` | ❌ | 上传进度（0-100），默认 0 |
-| `status` | `"pending" \| "uploading" \| "success" \| "fail" \| "cancelled"` | ❌ | 文件状态，默认 "pending" |
+| `status` | `"pending" \| "UDLoading" \| "success" \| "fail" \| "cancelled"` | ❌ | 文件状态，默认 "pending" |
 | `formatSize` | `string` | ❌ | 格式化后的文件大小 |
 | `extension` | `string` | ❌ | 文件扩展名 |
 

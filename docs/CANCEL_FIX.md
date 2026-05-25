@@ -7,18 +7,18 @@
 用户反馈：点击取消后，文件仍然继续上传！
 
 ```log
-[INFO] [ChunkManager] ✅ 开始取消文件 1 - 副本 (2).mp4 的上传 {activeControllers: 0}
-[INFO] [ChunkManager] ✅ 文件 1 - 副本 (2).mp4 已取消上传 {completedChunks: 90, totalChunks: 368}
-[DEBUG] [ChunkManager] 🔍 开始上传分片 91/368  ❌ 取消后仍有新分片开始上传！
-[DEBUG] [ChunkManager] 🔍 开始上传分片 92/368  ❌
-[DEBUG] [ChunkManager] 🔍 开始上传分片 93/368  ❌
-[INFO] [ChunkManager] ✅ 分片 91/368 上传成功  ❌ 分片仍然上传成功！
+[INFO] [uploadChunkManager] ✅ 开始取消文件 1 - 副本 (2).mp4 的上传 {activeControllers: 0}
+[INFO] [uploadChunkManager] ✅ 文件 1 - 副本 (2).mp4 已取消上传 {completedChunks: 90, totalChunks: 368}
+[DEBUG] [uploadChunkManager] 🔍 开始上传分片 91/368  ❌ 取消后仍有新分片开始上传！
+[DEBUG] [uploadChunkManager] 🔍 开始上传分片 92/368  ❌
+[DEBUG] [uploadChunkManager] 🔍 开始上传分片 93/368  ❌
+[INFO] [uploadChunkManager] ✅ 分片 91/368 上传成功  ❌ 分片仍然上传成功！
 ```
 
 **问题分析**：
 - `activeControllers: 0` 说明没有活跃的 HTTP 请求需要中止
 - 但是**已经入队到 PQueue 的任务仍然会继续执行**
-- [cancelUpload](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L1016-L1077) 只是唤醒了等待中的任务，但没有阻止它们继续执行
+- [cancelUpload](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L1016-L1077) 只是唤醒了等待中的任务，但没有阻止它们继续执行
 
 ---
 
@@ -40,7 +40,7 @@ for (let chunkIndex = 0; chunkIndex < this.totalChunks; chunkIndex++) {
 
 **问题流程**：
 1. 用户点击取消
-2. [cancelUpload()](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L1016-L1077) 设置 `isPaused = true`
+2. [cancelUpload()](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L1016-L1077) 设置 `isPaused = true`
 3. 唤醒所有等待的 resolve（包括分片 91-95）
 4. **被唤醒的任务继续执行 `uploadChunkWithRetry()`**
 5. 新的 HTTP 请求被创建并发送
@@ -56,7 +56,7 @@ for (let chunkIndex = 0; chunkIndex < this.totalChunks; chunkIndex++) {
 
 ### 1. 添加 isCancelled 标志
 
-在 [ChunkManager](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L24-L1436) 类中添加取消标志：
+在 [uploadChunkManager](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L24-L1436) 类中添加取消标志：
 
 ```typescript
 private isCancelled: boolean = false; // ✅ 是否已取消（用于阻止新分片启动）
@@ -80,7 +80,7 @@ private async waitForResume(): Promise<void> {
 
   // ✅ 关键修复：唤醒后检查是否已取消
   if (this.isCancelled) {
-    logger.info("ChunkManager", `分片上传被取消，停止执行`, {
+    logger.info("uploadChunkManager", `分片上传被取消，停止执行`, {
       fileId: this.uploadFile.fileId,
       fileName: this.uploadFile.fileName,
     });
@@ -93,11 +93,11 @@ private async waitForResume(): Promise<void> {
 
 ### 3. 修改 cancelUpload 方法
 
-在开始时设置 [isCancelled](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L66-L66) 标志：
+在开始时设置 [isCancelled](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L66-L66) 标志：
 
 ```typescript
 public cancelUpload(): void {
-  logger.info("ChunkManager", `开始取消文件 ${this.uploadFile.fileName} 的上传`, {
+  logger.info("uploadChunkManager", `开始取消文件 ${this.uploadFile.fileName} 的上传`, {
     fileId: this.uploadFile.fileId,
     fileName: this.uploadFile.fileName,
     activeControllers: this.abortControllers.length,
@@ -110,9 +110,9 @@ public cancelUpload(): void {
   this.abortControllers.forEach((controller) => {
     try {
       controller.abort();
-      logger.debug("ChunkManager", `已中止一个分片的 HTTP 请求`);
+      logger.debug("uploadChunkManager", `已中止一个分片的 HTTP 请求`);
     } catch (error) {
-      logger.warn("ChunkManager", `中止分片请求时出错:`, error);
+      logger.warn("uploadChunkManager", `中止分片请求时出错:`, error);
     }
   });
 
@@ -145,7 +145,7 @@ private async uploadWithConcurrency(): Promise<void> {
   for (let chunkIndex = 0; chunkIndex < this.totalChunks; chunkIndex++) {
     // ✅ 关键修复：检查是否已取消，如果已取消则停止入队新任务
     if (this.isCancelled) {
-      logger.info("ChunkManager", `检测到取消标志，停止入队新分片`, {
+      logger.info("uploadChunkManager", `检测到取消标志，停止入队新分片`, {
         fileId: this.uploadFile.fileId,
         fileName: this.uploadFile.fileName,
         currentChunk: chunkIndex,
@@ -155,7 +155,7 @@ private async uploadWithConcurrency(): Promise<void> {
     }
 
     // 跳过已上传的分片
-    if (this.uploadedChunks[chunkIndex]) {
+    if (this.chunks[chunkIndex]) {
       continue;
     }
 
@@ -245,13 +245,13 @@ private async uploadWithConcurrency(): Promise<void> {
 
 **预期结果**：
 ```log
-[INFO] ChunkManager: 开始取消文件 xxx.mp4 的上传 {activeControllers: 5}
-[DEBUG] ChunkManager: 已中止一个分片的 HTTP 请求
-[DEBUG] ChunkManager: 已中止一个分片的 HTTP 请求
+[INFO] uploadChunkManager: 开始取消文件 xxx.mp4 的上传 {activeControllers: 5}
+[DEBUG] uploadChunkManager: 已中止一个分片的 HTTP 请求
+[DEBUG] uploadChunkManager: 已中止一个分片的 HTTP 请求
 ... (共 5 条)
-[INFO] ChunkManager: 检测到取消标志，停止入队新分片 {currentChunk: 95, totalChunks: 368}
-[INFO] ChunkManager: 分片上传被取消，停止执行
-[INFO] ChunkManager: 文件 xxx.mp4 已取消上传 {completedChunks: 90, totalChunks: 368}
+[INFO] uploadChunkManager: 检测到取消标志，停止入队新分片 {currentChunk: 95, totalChunks: 368}
+[INFO] uploadChunkManager: 分片上传被取消，停止执行
+[INFO] uploadChunkManager: 文件 xxx.mp4 已取消上传 {completedChunks: 90, totalChunks: 368}
 ```
 
 **验证点**：
@@ -269,10 +269,10 @@ private async uploadWithConcurrency(): Promise<void> {
 
 **预期结果**：
 ```log
-[INFO] ChunkManager: 开始取消文件 xxx.mp4 的上传 {activeControllers: 0}
-[INFO] ChunkManager: 检测到取消标志，停止入队新分片 {currentChunk: 91, totalChunks: 368}
-[INFO] ChunkManager: 分片上传被取消，停止执行
-[INFO] ChunkManager: 文件 xxx.mp4 已取消上传 {completedChunks: 90, totalChunks: 368}
+[INFO] uploadChunkManager: 开始取消文件 xxx.mp4 的上传 {activeControllers: 0}
+[INFO] uploadChunkManager: 检测到取消标志，停止入队新分片 {currentChunk: 91, totalChunks: 368}
+[INFO] uploadChunkManager: 分片上传被取消，停止执行
+[INFO] uploadChunkManager: 文件 xxx.mp4 已取消上传 {completedChunks: 90, totalChunks: 368}
 ```
 
 **验证点**：
@@ -290,7 +290,7 @@ file.resume(); // 尝试恢复
 ```
 
 **预期结果**：
-- ❌ 无法恢复，因为 [isCancelled](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L66-L66) 是永久性的
+- ❌ 无法恢复，因为 [isCancelled](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L66-L66) 是永久性的
 - ✅ 文件状态保持为 "cancelled"
 
 ---
@@ -326,8 +326,8 @@ for (let chunkIndex = 0; chunkIndex < this.totalChunks; chunkIndex++) {
 ### 2. 状态流转
 
 ```
-pending → uploading → cancelled ✅
-paused  → uploading → cancelled ✅
+pending → UDLoading → cancelled ✅
+paused  → UDLoading → cancelled ✅
 cancelled → resume → ❌ 无效（isCancelled 仍为 true）
 ```
 
@@ -341,7 +341,7 @@ try {
 } catch (error) {
   if (error instanceof Error && error.message === "Upload cancelled") {
     // ✅ 取消导致的错误，静默处理
-    logger.debug("ChunkManager", `分片 ${chunkIndex} 因取消而中断`);
+    logger.debug("uploadChunkManager", `分片 ${chunkIndex} 因取消而中断`);
     return;
   }
   
@@ -364,7 +364,7 @@ try {
 <script setup lang="ts">
 const handleCancel = () => {
   test1.files.forEach(file => {
-    if (file.status === "uploading") {
+    if (file.status === "UDLoading") {
       file.cancel();
     }
   });
@@ -391,16 +391,16 @@ uploader.onCancel = (file) => {
 
 ```typescript
 // 启用详细日志
-FileUD.startUploadLogger({
+FileUD.startUDLogger({
   enabled: true,
 });
 
 // 取消时会看到：
-// [INFO] ChunkManager: 开始取消文件 xxx.mp4 的上传 {activeControllers: 5}
-// [DEBUG] ChunkManager: 已中止一个分片的 HTTP 请求 (x5)
-// [INFO] ChunkManager: 检测到取消标志，停止入队新分片 {currentChunk: 95}
-// [INFO] ChunkManager: 分片上传被取消，停止执行
-// [INFO] ChunkManager: 文件 xxx.mp4 已取消上传 {completedChunks: 90}
+// [INFO] uploadChunkManager: 开始取消文件 xxx.mp4 的上传 {activeControllers: 5}
+// [DEBUG] uploadChunkManager: 已中止一个分片的 HTTP 请求 (x5)
+// [INFO] uploadChunkManager: 检测到取消标志，停止入队新分片 {currentChunk: 95}
+// [INFO] uploadChunkManager: 分片上传被取消，停止执行
+// [INFO] uploadChunkManager: 文件 xxx.mp4 已取消上传 {completedChunks: 90}
 ```
 
 ---
@@ -431,7 +431,7 @@ FileUD.startUploadLogger({
 
 ### Q2: 取消后可以重新上传吗？
 
-**可以**，但需要重新调用 [startUpload()](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L1220-L1348)：
+**可以**，但需要重新调用 [startUpload()](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L1220-L1348)：
 
 ```typescript
 file.cancel(); // 取消
@@ -440,7 +440,7 @@ file.cancel(); // 取消
 file.startUpload(); // ✅ 重新开始（会重置 isCancelled）
 ```
 
-**注意**：[startUpload()](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L1220-L1348) 会重置所有状态，包括 [isCancelled](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L66-L66)。
+**注意**：[startUpload()](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L1220-L1348) 会重置所有状态，包括 [isCancelled](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L66-L66)。
 
 ---
 
@@ -461,7 +461,7 @@ file.startUpload(); // ✅ 从第 91 个分片继续
 
 **原因**：
 1. 中断当前任务的执行链
-2. 触发 [Promise.allSettled](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L1400-L1400) 的 rejected 状态
+2. 触发 [Promise.allSettled](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L1400-L1400) 的 rejected 状态
 3. 让上层代码知道任务被取消
 
 **如果不抛出错误**：
@@ -534,10 +534,10 @@ function cancelAndCleanup(file) {
 
 ### 修复内容
 
-1. ✅ 添加 [isCancelled](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L66-L66) 标志
-2. ✅ 修改 [waitForResume()](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L1146-L1170)，唤醒后检查取消状态
-3. ✅ 修改 [cancelUpload()](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L1016-L1077)，设置取消标志
-4. ✅ 修改 [uploadWithConcurrency()](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L1368-L1436)，循环前检查取消状态
+1. ✅ 添加 [isCancelled](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L66-L66) 标志
+2. ✅ 修改 [waitForResume()](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L1146-L1170)，唤醒后检查取消状态
+3. ✅ 修改 [cancelUpload()](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L1016-L1077)，设置取消标志
+4. ✅ 修改 [uploadWithConcurrency()](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L1368-L1436)，循环前检查取消状态
 
 ### 修复效果
 
@@ -559,7 +559,7 @@ function cancelAndCleanup(file) {
 - [cancel()](file://d:\yjl\file-UD\packages\core\src\uploader\UploadFile.ts#L187-L205) - 取消单个文件上传
 - [pause()](file://d:\yjl\file-UD\packages\core\src\uploader\UploadFile.ts#L206-L216) - 暂停上传
 - [resume()](file://d:\yjl\file-UD\packages\core\src\uploader\UploadFile.ts#L217-L227) - 恢复上传
-- [startUpload()](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L1220-L1348) - 开始/重新开始上传
+- [startUpload()](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L1220-L1348) - 开始/重新开始上传
 
 ---
 

@@ -59,7 +59,7 @@ const uploader = FileUD.createUploader("my-uploader", {
 
 **关键点**：
 - ✅ 系统会自动检测 [chunkOptions](file://d:\yjl\file-UD\packages\core\src\types\index.d.ts#L247-L247) 是否存在
-- ✅ 如果存在，自动创建 [ChunkManager](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L24-L1484)
+- ✅ 如果存在，自动创建 [uploadChunkManager](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L24-L1484)
 - ❌ **不需要**在 [IFile](file://d:\yjl\file-UD\packages\core\src\types\index.d.ts#L321-L400) 中设置 `isChunkUpload: true`
 
 ---
@@ -96,7 +96,7 @@ uploader.onSelect = (file) => {
 
 ```typescript
 // 从后端获取未完成的上传任务
-const tasks = await fetch('/api/upload-tasks?status=uploading').then(r => r.json());
+const tasks = await fetch('/api/upload-tasks?status=UDLoading').then(r => r.json());
 
 // 转换为 IFile 格式
 const filesToRestore: IFile[] = tasks.map(task => ({
@@ -104,12 +104,12 @@ const filesToRestore: IFile[] = tasks.map(task => ({
   fileName: task.fileName,
   url: "",
   File: new File([], task.fileName), // ⚠️ 空 File 占位
-  status: "uploading",
+  status: "UDLoading",
   
   // ✅ 关键：提供分片进度信息
   totalChunks: task.totalChunks,
   completedChunks: task.completedChunks,
-  uploadedChunkIndexes: task.uploadedChunks,
+  chunkIndexes: task.chunks,
   fileHash: task.fileHash, // ✅ 用于从 IndexedDB 恢复文件
   uploadId: task.uploadId,
 }));
@@ -118,7 +118,7 @@ const filesToRestore: IFile[] = tasks.map(task => ({
 uploader.setFiles(filesToRestore);
 
 // ✅ 系统会自动：
-// 1. 检测到 up.config.chunkOptions 存在 → 创建 ChunkManager
+// 1. 检测到 up.config.chunkOptions 存在 → 创建 uploadChunkManager
 // 2. 检测到 file.totalChunks 存在 → 调用 initChunkManagerFromRestore()
 // 3. 检测到 enableFileCache = true → 尝试从 IndexedDB 恢复 File
 // 4. 根据 fileHash 查找并恢复 File 对象
@@ -226,7 +226,7 @@ async function cleanOldCache() {
   ↓
 检测：up.config?.chunkOptions 是否存在？
   ↓
-✅ 是 → 创建 ChunkManager
+✅ 是 → 创建 uploadChunkManager
   ↓
 检测：file.totalChunks !== undefined？
   ↓
@@ -349,7 +349,7 @@ export async function cleanExpiredCache(days: number = 7): Promise<number>
 
 **原因**：
 1. ✅ 系统已经通过 [chunkOptions](file://d:\yjl\file-UD\packages\core\src\types\index.d.ts#L247-L247) 配置判断是否为分片上传
-2. ✅ 如果配置了 [chunkOptions](file://d:\yjl\file-UD\packages\core\src\types\index.d.ts#L247-L247)，系统会自动创建 [ChunkManager](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L24-L1484)
+2. ✅ 如果配置了 [chunkOptions](file://d:\yjl\file-UD\packages\core\src\types\index.d.ts#L247-L247)，系统会自动创建 [uploadChunkManager](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L24-L1484)
 3. ❌ 在 [IFile](file://d:\yjl\file-UD\packages\core\src\types\index.d.ts#L321-L400) 中重复声明会导致配置不一致的风险
 
 **改进前**：

@@ -26,7 +26,7 @@ if (!["cancelled", "fail", "error"].includes(this.proxy.status!)) {
 }
 ```
 
-但是，当调用 [chunkManager.retryFailedChunks()](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L930-L950) 或 [chunkManager.startUpload()](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L1234-L1355) 时，**[isCancelled](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L66-L66) 和 [isPaused](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L64-L64) 标志没有被完全重置**！
+但是，当调用 [chunkManager.retryFailedChunks()](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L930-L950) 或 [chunkManager.startUpload()](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L1234-L1355) 时，**[isCancelled](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L66-L66) 和 [isPaused](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L64-L64) 标志没有被完全重置**！
 
 ### 执行流程分析
 
@@ -73,10 +73,10 @@ for (let chunkIndex = 0; chunkIndex < this.totalChunks; chunkIndex++) {
 
 ### 问题总结
 
-1. **取消时**：`isPaused = true`，并清空了 [pauseResolves](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L67-L67) 数组
-2. **重试时**：调用 [startUpload()](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L1234-L1355)，只重置了 `isCancelled = false`，但 **`isPaused` 仍然是 `true`**
-3. **分片上传时**：调用 [waitForResume()](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L1157-L1172)，发现 `isPaused === true`，于是加入 [pauseResolves](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L67-L67) 等待
-4. **死锁**：因为 [pauseResolves](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L67-L67) 已经被清空且没有人会再调用它，所以任务永远等待
+1. **取消时**：`isPaused = true`，并清空了 [pauseResolves](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L67-L67) 数组
+2. **重试时**：调用 [startUpload()](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L1234-L1355)，只重置了 `isCancelled = false`，但 **`isPaused` 仍然是 `true`**
+3. **分片上传时**：调用 [waitForResume()](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L1157-L1172)，发现 `isPaused === true`，于是加入 [pauseResolves](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L67-L67) 等待
+4. **死锁**：因为 [pauseResolves](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L67-L67) 已经被清空且没有人会再调用它，所以任务永远等待
 
 ---
 
@@ -84,7 +84,7 @@ for (let chunkIndex = 0; chunkIndex < this.totalChunks; chunkIndex++) {
 
 ### 修复内容
 
-在 [startUpload](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L1234-L1355) 和 [retryFailedChunks](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L930-L950) 方法中，**同时重置 [isCancelled](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L66-L66) 和 [isPaused](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L64-L64) 标志**：
+在 [startUpload](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L1234-L1355) 和 [retryFailedChunks](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L930-L950) 方法中，**同时重置 [isCancelled](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L66-L66) 和 [isPaused](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L64-L64) 标志**：
 
 #### 1. 修复 startUpload 方法
 
@@ -238,7 +238,7 @@ async function cancelAndRetry(file) {
   
   // 3. 重试上传
   await file.retry();
-  console.log(file.status); // "uploading" ✅
+  console.log(file.status); // "UDLoading" ✅
 }
 ```
 
@@ -265,22 +265,22 @@ uploader.files.forEach(file => {
 
 | 方法 | 重置 isCancelled | 重置 isPaused | 说明 |
 |------|-----------------|--------------|------|
-| [startUpload()](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L1234-L1355) | ✅ 是 | ✅ 是（修复后） | 重新开始整个上传 |
-| [retryFailedChunks()](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L930-L950) | ✅ 是（修复后） | ✅ 是（修复后） | 仅重试失败分片 |
-| [resume()](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L1027-L1052) | ❌ 否 | ✅ 是 | 恢复暂停的上传 |
-| [cancelUpload()](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L1016-L1063) | ✅ 设置为 true | ✅ 设置为 true | 取消上传 |
+| [startUpload()](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L1234-L1355) | ✅ 是 | ✅ 是（修复后） | 重新开始整个上传 |
+| [retryFailedChunks()](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L930-L950) | ✅ 是（修复后） | ✅ 是（修复后） | 仅重试失败分片 |
+| [resume()](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L1027-L1052) | ❌ 否 | ✅ 是 | 恢复暂停的上传 |
+| [cancelUpload()](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L1016-L1063) | ✅ 设置为 true | ✅ 设置为 true | 取消上传 |
 
 ---
 
 ### 2. 状态流转图
 
 ```
-pending → uploading → cancelled → retry → uploading ✅
+pending → UDLoading → cancelled → retry → UDLoading ✅
                       ↑                    ↓
                       └────────────────────┘
                   (isCancelled + isPaused 都重置)
 
-paused → resume → uploading ✅
+paused → resume → UDLoading ✅
        ↑          ↓
        └──────────┘
      (isPaused 重置)
@@ -290,7 +290,7 @@ paused → resume → uploading ✅
 
 ### 3. 为什么需要同时重置两个标志？
 
-**原因**：[cancelUpload](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L1016-L1063) 方法同时设置了两个标志：
+**原因**：[cancelUpload](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L1016-L1063) 方法同时设置了两个标志：
 
 ```typescript
 public cancelUpload(): void {
@@ -301,8 +301,8 @@ public cancelUpload(): void {
 ```
 
 所以在重试时，必须**同时重置这两个标志**，否则：
-- 只重置 `isCancelled`：任务会在 [waitForResume()](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L1157-L1172) 中永久等待 ❌
-- 只重置 `isPaused`：任务会被 [waitForResume()](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L1157-L1172) 中的取消检查拦截 ❌
+- 只重置 `isCancelled`：任务会在 [waitForResume()](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L1157-L1172) 中永久等待 ❌
+- 只重置 `isPaused`：任务会被 [waitForResume()](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L1157-L1172) 中的取消检查拦截 ❌
 
 ---
 
@@ -328,7 +328,7 @@ private async waitForResume(): Promise<void> {
 
 **关键点**：
 - 如果 `isPaused === false`，直接返回，不进入等待
-- 如果 `isPaused === true`，会创建一个 Promise 并加入 [pauseResolves](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L67-L67)
+- 如果 `isPaused === true`，会创建一个 Promise 并加入 [pauseResolves](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L67-L67)
 - 只有当有人调用 `pauseResolves.forEach(resolve => resolve())` 时，Promise 才会被 resolve
 - 如果在等待期间 `isCancelled` 变为 `true`，则抛出错误
 
@@ -338,7 +338,7 @@ private async waitForResume(): Promise<void> {
 
 ### Q1: 为什么不直接在 cancelUpload 中重置 isPaused？
 
-**原因**：[cancelUpload](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L1016-L1063) 的目的是**永久取消**上传，所以应该保持两个标志都为 `true`。
+**原因**：[cancelUpload](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L1016-L1063) 的目的是**永久取消**上传，所以应该保持两个标志都为 `true`。
 
 只有在用户明确想要重试时（调用 [retry()](file://d:\yjl\file-UD\packages\core\src\uploader\UploadFile.ts#L301-L385)），才应该在重试方法的入口处重置这些标志。
 
@@ -346,7 +346,7 @@ private async waitForResume(): Promise<void> {
 
 ### Q2: resume() 方法为什么只重置 isPaused？
 
-**原因**：[resume()](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L1027-L1052) 是针对**暂停**操作的恢复，不是针对**取消**操作的恢复。
+**原因**：[resume()](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L1027-L1052) 是针对**暂停**操作的恢复，不是针对**取消**操作的恢复。
 
 - **暂停**：临时停止，可以恢复 → 只重置 `isPaused`
 - **取消**：永久停止，需要重试才能恢复 → 需要在 [retry()](file://d:\yjl\file-UD\packages\core\src\uploader\UploadFile.ts#L301-L385) 中重置两个标志
@@ -392,9 +392,9 @@ file.retry(); // ✅ 从第 91 个分片继续
 
 ### Q5: 为什么之前只修复了 isCancelled，没有修复 isPaused？
 
-**原因**：之前的分析不够全面，只关注了 [isCancelled](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L66-L66) 标志，忽略了 [isPaused](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L64-L64) 标志的影响。
+**原因**：之前的分析不够全面，只关注了 [isCancelled](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L66-L66) 标志，忽略了 [isPaused](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L64-L64) 标志的影响。
 
-实际上，[cancelUpload](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L1016-L1063) 同时设置了两个标志，所以重试时必须同时重置它们。这是一个**典型的遗漏问题**，需要通过完整的流程分析才能发现。
+实际上，[cancelUpload](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L1016-L1063) 同时设置了两个标志，所以重试时必须同时重置它们。这是一个**典型的遗漏问题**，需要通过完整的流程分析才能发现。
 
 ---
 
@@ -472,8 +472,8 @@ uploader.onSuccess = (file) => {
 
 ### 修复内容
 
-1. ✅ 在 [startUpload()](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L1234-L1355) 方法中同时重置 [isCancelled](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L66-L66) 和 [isPaused](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L64-L64)
-2. ✅ 在 [retryFailedChunks()](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L930-L950) 方法中同时重置 [isCancelled](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L66-L66) 和 [isPaused](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L64-L64)
+1. ✅ 在 [startUpload()](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L1234-L1355) 方法中同时重置 [isCancelled](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L66-L66) 和 [isPaused](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L64-L64)
+2. ✅ 在 [retryFailedChunks()](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L930-L950) 方法中同时重置 [isCancelled](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L66-L66) 和 [isPaused](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L64-L64)
 3. ✅ 确保取消后可以正常重试
 
 ### 修复效果
@@ -497,7 +497,7 @@ uploader.onSuccess = (file) => {
 - [retry()](file://d:\yjl\file-UD\packages\core\src\uploader\UploadFile.ts#L301-L385) - 重试失败的上传
 - [pause()](file://d:\yjl\file-UD\packages\core\src\uploader\UploadFile.ts#L206-L216) - 暂停上传
 - [resume()](file://d:\yjl\file-UD\packages\core\src\uploader\UploadFile.ts#L217-L227) - 恢复上传
-- [startUpload()](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L1234-L1355) - 开始/重新开始上传
+- [startUpload()](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L1234-L1355) - 开始/重新开始上传
 
 ---
 

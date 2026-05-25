@@ -5,102 +5,26 @@ import PQueue from "p-queue";
 import {
   calculateFileMD5,
   formatSpeed,
-  formatDuration,
   formatFileSize,
-  sleep,
   logger,
-  checkNetworkStatus,
-  computeUploadTime,
+  computeTransferTime,
 } from "../utils";
-import {
-  saveUploadTask,
-  updateChunkStatus,
-  getUploadTask,
-  deleteUploadTask,
-  getCachedHash,
-  saveFileHash,
-} from "../utils/uploadDB";
+import { getCachedHash, saveFileHash } from "../utils/uploadDB";
+import ChunkManager from "../chunkManager";
 
-export default class ChunkManager {
-  chunkSize: number = 0;
-  maxConcurrent: number = 5;
-  public uploadedChunkIndex: number = 0;
-  retries: number | null = 0;
-  retryDelay: number = 1000; // 重试延迟，默认1秒
-  timeout: number = 30000; // 超时时间，默认30秒
-  chunk: Blob | null = null; // 当前分片数据
-  public totalChunks: number = 0;
-  public uploadedChunks: boolean[] = [];
-  public uploadEndTime = 0;
-  public completedChunks = 0;
-  public totalUploadTime = 0;
-  public response: any = null;
-  public queue: PQueue | null = null; // 改为可选，在 startUpload 中初始化
-  public uploadStartTime = performance.now();
-  uploadErrorFileCallBack: (() => void)[] = [];
-  public uploadStatsInfos: {
-    totalTime: number;
-    fileSize: number;
-    completedChunks: number | undefined;
-    averageSpeed: number;
-  } = {
-    totalTime: 0,
-    fileSize: 0,
-    completedChunks: undefined,
-    averageSpeed: 0,
-  };
+export default class UploadChunkManager extends ChunkManager {
   uploadFile: UploadFile;
-  totalUploadedSize: number = 0;
-  config: ChunkOptions; // 保存配置
 
-  // 新增：用于标记已经累加过 completedChunks 的分片（防重复累加）
-  private countedChunks: Set<number> = new Set();
-
-  // 新增属性
-  public fileHash: string = ""; // 文件MD5哈希
-  public uploadId: string = ""; // 服务端返回的上传ID
-  private failedChunks: number[] = []; // 失败的分片索引
-  private retryCountMap: Map<number, number> = new Map(); // 每个分片的重试次数
-  // 暂停/恢复控制
-  private isPaused: boolean = false; // 是否处于暂停状态
-  public isCancelled: boolean = false; // ✅ 是否已取消（用于阻止新分片启动）
-  private pauseResolves: Array<() => void> = []; // 改为数组，存储所有等待的 resolve
-  private activeUploads: Set<Promise<void>> = new Set(); // 当前活跃的上传任务
-  private abortControllers: AbortController[] = []; // 保存所有活跃分片的 AbortController
-
-  // 网速计算所需的内部状态
-  private lastUpdateTime: number = 0;
-  private lastUploadedBytes: number = 0;
-
-  // 分片上传耗时统计
-  public chunkUploadStats: {
-    averageTime: number;
-    maxTime: number;
-    minTime: number;
-  } | null = null;
-
-  /**
-   * 是否真正秒传（文件已存在，无需合并）
-   */
-  private isInstantUpload = false;
-
+  uploadErrorFileCallBack: (() => void)[] = [];
   /**
    * 初始化上传任务
    */
   constructor(ChunkOptions: ChunkOptions, file: UploadFile) {
-    this.config = ChunkOptions; // 保存配置
-    this.chunkSize = ChunkOptions.chunkSize ?? 1024 * 1024 * 5; // 默认5MB
-    this.maxConcurrent = ChunkOptions.maxConcurrent ?? 5; // 默认同时上传5个分片
-    this.retries =
-      ChunkOptions.retries !== undefined ? ChunkOptions.retries : 5; // 默认重试5次，允许设置为 null 禁用自动重试
-    this.retryDelay = ChunkOptions.retryDelay ?? 1000; // 默认重试延迟1秒
-    this.timeout = ChunkOptions.timeout ?? 30000; // 默认超时30秒
-    this.totalChunks = Math.ceil(file.File.size / this.chunkSize);
-    this.uploadFile = file;
-    this.uploadedChunks = [];
-    this.completedChunks = 0; // 显式初始化 completedChunks
+    super(ChunkOptions, file);
 
-    logger.debug("ChunkManager", "创建新的 ChunkManager 实例", {
+    this.uploadFile = file;
+
+    logger.debug("uploadChunkManager", "创建新的 uploadChunkManager 实例", {
       fileId: file.fileId,
       fileName: file.fileName,
       totalChunks: this.totalChunks,
@@ -116,7 +40,7 @@ export default class ChunkManager {
     if (!this.fileHash) {
       // ✅ 创建 AbortController，用于在文件被删除时中断 MD5 计算
       const hashAbortController = new AbortController();
-      
+
       // ✅ 将 controller 保存到实例中，以便 cancelUpload 可以调用 abort()
       (this as any).__hashAbortController__ = hashAbortController;
 
@@ -131,7 +55,7 @@ export default class ChunkManager {
           config: up.config,
         };
         this.uploadFile.proxy.hashLoading = true;
-        
+
         // 调用工具函数计算 MD5，并传入进度回调和中断信号
         this.fileHash = await calculateFileMD5(
           this.uploadFile.File,
@@ -147,7 +71,7 @@ export default class ChunkManager {
             this.uploadFile.proxy.status = "hashing";
             context.message = `正在计算文件指纹: ${percent}%`;
             logger.debug(
-              "ChunkManager",
+              "uploadChunkManager",
               `computeFileHash 被调用: ${context.message}`,
             );
             // 通过 runHook 调用插件的 onProgress 钩子
@@ -165,14 +89,18 @@ export default class ChunkManager {
       } catch (error) {
         // ✅ 如果是取消导致的错误，不记录为错误日志，直接重新抛出
         if (error instanceof Error && error.message.includes("取消")) {
-          logger.info("ChunkManager", "MD5 计算已取消", {
+          logger.info("uploadChunkManager", "MD5 计算已取消", {
             fileId: this.uploadFile.fileId,
             fileName: this.uploadFile.fileName,
           });
           throw error; // ✅ 重新抛出，让上层知道被取消了
         }
-        
-        logger.error("ChunkManager", "计算文件哈希失败，使用备用标识", error);
+
+        logger.error(
+          "uploadChunkManager",
+          "计算文件哈希失败，使用备用标识",
+          error,
+        );
         // 如果计算失败，使用时间戳作为备用标识
         this.fileHash = `fallback_${Date.now()}_${Math.random()
           .toString(36)
@@ -191,7 +119,7 @@ export default class ChunkManager {
     const quickFingerprint = `${file.name}_${file.lastModified}_${file.size}`;
 
     // 添加调试日志：记录每次调用 getFileHash 的文件名
-    logger.debug("ChunkManager", `getFileHash 被调用: ${file.name}`, {
+    logger.debug("uploadChunkManager", `getFileHash 被调用: ${file.name}`, {
       fileName: file.name,
       fileSize: file.size,
       lastModified: file.lastModified,
@@ -202,7 +130,7 @@ export default class ChunkManager {
     // 2. 从 IndexedDB 中查找缓存
     const cached = await getCachedHash(quickFingerprint);
     if (cached) {
-      logger.info("ChunkManager", `Hash 缓存命中:: ${file.name}`, {
+      logger.info("uploadChunkManager", `Hash 缓存命中:: ${file.name}`, {
         fileName: file.name,
         fileId: this.uploadFile.fileId,
       });
@@ -211,7 +139,10 @@ export default class ChunkManager {
     }
 
     // 3. 未命中，实际计算 Hash
-    logger.info("ChunkManager", `Hash 缓存未命中，开始计算: ${file.name}`);
+    logger.info(
+      "uploadChunkManager",
+      `Hash 缓存未命中，开始计算: ${file.name}`,
+    );
     const hash = await this.computeFileHash(); // 计算文件哈希
 
     // 4. 存入缓存
@@ -224,13 +155,13 @@ export default class ChunkManager {
         const { saveFileToCache } = await import("../utils/fileCache");
         await saveFileToCache(hash, file);
         logger.debug(
-          "ChunkManager",
+          "uploadChunkManager",
           `✅ 文件已缓存到 IndexedDB: ${file.name}`,
           { fileHash: hash, fileSize: file.size },
         );
       } catch (error) {
         logger.warn(
-          "ChunkManager",
+          "uploadChunkManager",
           `⚠️ 文件缓存失败（不影响上传）: ${file.name}`,
           error,
         );
@@ -248,22 +179,30 @@ export default class ChunkManager {
     const up = this.uploadFile.__uploader__;
     this.fileHash = await this.getFileHash(this.uploadFile.File);
     // 添加文件级别的开始上传日志（用于监控模块）
-    logger.info("ChunkManager", `开始上传文件: ${this.uploadFile.fileName}`, {
-      fileId: this.uploadFile.fileId,
-      fileName: this.uploadFile.fileName,
-      fileSize: this.uploadFile.File.size,
-      totalChunks: this.totalChunks,
-      chunkSize: this.chunkSize,
-    });
+    logger.info(
+      "uploadChunkManager",
+      `开始上传文件: ${this.uploadFile.fileName}`,
+      {
+        fileId: this.uploadFile.fileId,
+        fileName: this.uploadFile.fileName,
+        fileSize: this.uploadFile.File.size,
+        totalChunks: this.totalChunks,
+        chunkSize: this.chunkSize,
+      },
+    );
 
     // 秒传检查：如果配置了 onInitChunkCallback，优先调用服务端接口检查文件是否存在
     if (up.onInitChunkCallback) {
       try {
-        logger.debug("ChunkManager", "调用 onInitChunk 回调检查秒传/断点续传", {
-          fileId: this.uploadFile.fileId,
-          fileName: this.uploadFile.fileName,
-          fileHash: this.fileHash,
-        });
+        logger.debug(
+          "uploadChunkManager",
+          "调用 onInitChunk 回调检查秒传/断点续传",
+          {
+            fileId: this.uploadFile.fileId,
+            fileName: this.uploadFile.fileName,
+            fileHash: this.fileHash,
+          },
+        );
 
         const initResult = await up.onInitChunkCallback(
           this.uploadFile,
@@ -271,16 +210,15 @@ export default class ChunkManager {
           this.fileHash,
         );
 
-        // 保存服务端返回的 uploadId
         if (initResult?.fileHash) {
-          logger.info("ChunkManager", "初始化成功", {
+          logger.info("uploadChunkManager", "初始化成功", {
             fileHash: this.fileHash,
             fileId: this.uploadFile.fileId,
           });
 
           // ✅ 检查是否为真正的秒传（后端明确标记）
           if (initResult.isInstantUpload === true) {
-            logger.info("ChunkManager", "⚡ 检测到秒传标记，文件已存在", {
+            logger.info("uploadChunkManager", "⚡ 检测到秒传标记，文件已存在", {
               fileHash: this.fileHash,
               fileName: this.uploadFile.fileName,
               shouldRemove: initResult.shouldRemove,
@@ -289,24 +227,24 @@ export default class ChunkManager {
             // 标记为真正的秒传
             this.isInstantUpload = true;
             this.completedChunks = this.totalChunks;
-            this.totalUploadedSize = this.uploadFile.File.size;
+            this.totalChunkSize = this.uploadFile.File.size;
             this.countedChunks = new Set(
               Array.from({ length: this.totalChunks }, (_, i) => i),
             );
-            this.uploadedChunks = new Array(this.totalChunks).fill(true);
+            this.chunks = new Array(this.totalChunks).fill(true);
             this.uploadFile.proxy.percent = 100;
             this.uploadFile.proxy.status = "success";
 
             // ✅ 关键修复：更新全局统计信息（总进度、总大小）
             const up = this.uploadFile.__uploader__;
             up.updateGlobalStats();
-            
+
             // 更新上传速度
             up.triggerUpdate();
 
             // ✅ 如果需要移除文件，则从文件列表中移除
             if (initResult.shouldRemove === true) {
-              logger.info("ChunkManager", "🗑️ 秒传成功，自动移除文件", {
+              logger.info("uploadChunkManager", "🗑️ 秒传成功，自动移除文件", {
                 fileName: this.uploadFile.fileName,
               });
 
@@ -325,39 +263,43 @@ export default class ChunkManager {
 
           // 秒传判断：如果服务端返回的已上传分片数量等于总分片数，说明文件已存在
           if (
-            initResult.uploadedChunks &&
-            Array.isArray(initResult.uploadedChunks) &&
-            (initResult.uploadedChunks?.length === this.totalChunks ||
-              initResult.uploadedChunks === undefined ||
-              initResult.uploadedChunks === null)
+            initResult.chunks &&
+            Array.isArray(initResult.chunks) &&
+            (initResult.chunks?.length === this.totalChunks ||
+              initResult.chunks === undefined ||
+              initResult.chunks === null)
           ) {
-            logger.info("ChunkManager", "✅ 秒传成功！文件已存在于服务端", {
-              fileHash: this.fileHash,
-              fileName: this.uploadFile.fileName,
-              uploadedChunksCount: initResult.uploadedChunks?.length,
-              totalChunks: this.totalChunks,
-              shouldRemove: initResult.shouldRemove,
-            });
+            logger.info(
+              "uploadChunkManager",
+              "✅ 秒传成功！文件已存在于服务端",
+              {
+                fileHash: this.fileHash,
+                fileName: this.uploadFile.fileName,
+                uploadedChunksCount: initResult.chunks?.length,
+                totalChunks: this.totalChunks,
+                shouldRemove: initResult.shouldRemove,
+              },
+            );
 
             this.completedChunks = this.totalChunks;
-            this.totalUploadedSize = this.uploadFile.File.size;
+            this.totalChunkSize = this.uploadFile.File.size;
             this.countedChunks = new Set(
               Array.from({ length: this.totalChunks }, (_, i) => i),
             ); // 标记所有分片为已累加
-            this.uploadedChunks = new Array(this.totalChunks).fill(true);
+            this.chunks = new Array(this.totalChunks).fill(true);
 
             this.uploadFile.proxy.percent = 100;
 
             // ✅ 关键修复：更新全局统计信息（总进度、总大小）
             const up = this.uploadFile.__uploader__;
             up.updateGlobalStats();
-            
+
             // 更新上传速度
             up.triggerUpdate();
 
             // ✅ 如果需要移除文件，则从文件列表中移除
             if (initResult.shouldRemove === true) {
-              logger.info("ChunkManager", "🗑️ 秒传成功，自动移除文件", {
+              logger.info("uploadChunkManager", "🗑️ 秒传成功，自动移除文件", {
                 fileName: this.uploadFile.fileName,
               });
 
@@ -376,40 +318,40 @@ export default class ChunkManager {
 
           // 断点续传：如果服务端返回部分已上传分片
           if (
-            initResult.uploadedChunks &&
-            Array.isArray(initResult.uploadedChunks) &&
-            initResult.uploadedChunks?.length > 0
+            initResult.chunks &&
+            Array.isArray(initResult.chunks) &&
+            initResult.chunks?.length > 0
           ) {
-            logger.info("ChunkManager", "恢复已上传分片（断点续传）", {
-              uploadedChunksCount: initResult.uploadedChunks.length,
+            logger.info("uploadChunkManager", "恢复已上传分片（断点续传）", {
+              uploadedChunksCount: initResult.chunks.length,
               totalChunks: this.totalChunks,
               percent: Math.round(
-                (initResult.uploadedChunks.length / this.totalChunks) * 100,
+                (initResult.chunks.length / this.totalChunks) * 100,
               ),
             });
             this.completedChunks = 0;
-            initResult.uploadedChunks.forEach((index: number) => {
+            initResult.chunks.forEach((index: number) => {
               if (index >= 0 && index < this.totalChunks) {
-                this.uploadedChunks[index] = true;
+                this.chunks[index] = true;
                 this.completedChunks++;
                 this.countedChunks.add(index);
-                this.totalUploadedSize += this.chunkSize;
+                this.totalChunkSize += this.chunkSize;
               }
             });
 
             // 更新文件进度
             this.updateProgress();
-            
+
             // ✅ 关键修复：更新全局统计信息（总进度、总大小）
             const up = this.uploadFile.__uploader__;
             up.updateGlobalStats();
             up.triggerUpdate();
-            
+
             return; // 已恢复进度，直接返回
           }
         }
       } catch (error) {
-        logger.warn("ChunkManager", "初始化失败", error);
+        logger.warn("uploadChunkManager", "初始化失败", error);
         this.uploadFile.proxy.status = "error";
         // 降级到本地 IndexedDB 存储
         return Promise.reject(error);
@@ -461,7 +403,7 @@ export default class ChunkManager {
         // 添加详细的错误日志
         if (error instanceof Error && error.name === "AbortError") {
           logger.error(
-            "ChunkManager",
+            "uploadChunkManager",
             `分片 ${chunkIndex + 1} 被取消（可能是超时或手动取消）`,
             {
               fileId: this.uploadFile.fileId,
@@ -489,7 +431,7 @@ export default class ChunkManager {
         this.failedChunks.push(chunkIndex);
 
         logger.error(
-          "ChunkManager",
+          "uploadChunkManager",
           `文件 ${this.uploadFile.fileName} 的分片 ${chunkIndex + 1}/${
             this.totalChunks
           } 上传失败（自动重试已禁用，请手动重试）`,
@@ -510,7 +452,7 @@ export default class ChunkManager {
       try {
         if (retryCount > 0) {
           logger.warn(
-            "ChunkManager",
+            "uploadChunkManager",
             `文件 ${this.uploadFile.fileName} 的分片 ${chunkIndex + 1}/${
               this.totalChunks
             } 第 ${retryCount} 次重试`,
@@ -530,7 +472,7 @@ export default class ChunkManager {
 
         if (retryCount > 0) {
           logger.info(
-            "ChunkManager",
+            "uploadChunkManager",
             `文件 ${this.uploadFile.fileName} 的分片 ${chunkIndex + 1}/${
               this.totalChunks
             } 重试成功（共重试 ${retryCount} 次）`,
@@ -552,7 +494,7 @@ export default class ChunkManager {
           this.failedChunks.push(chunkIndex);
 
           logger.error(
-            "ChunkManager",
+            "uploadChunkManager",
             `文件 ${this.uploadFile.fileName} 的分片 ${chunkIndex + 1}/${
               this.totalChunks
             } 最终失败（已重试 ${maxRetries} 次）`,
@@ -571,7 +513,7 @@ export default class ChunkManager {
         // 指数退避重试延迟
         const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 10000);
         logger.debug(
-          "ChunkManager",
+          "uploadChunkManager",
           `分片 ${chunkIndex} 将在 ${delay}ms 后重试`,
         );
         await new Promise((resolve) => setTimeout(resolve, delay));
@@ -604,7 +546,7 @@ export default class ChunkManager {
     const chunkSizeValue = chunk.size;
 
     logger.debug(
-      "ChunkManager",
+      "uploadChunkManager",
       `开始上传分片 ${chunkIndex + 1}/${this.totalChunks}`,
       {
         fileId: this.uploadFile.fileId,
@@ -630,11 +572,11 @@ export default class ChunkManager {
           this.response = res; // 暂存最新的响应数据，供外部访问
 
           // 关键只有当该分片未被标记为已上传时，才进行累加
-          if (!this.uploadedChunks[chunkIndex]) {
-            this.uploadedChunks[chunkIndex] = true;
+          if (!this.chunks[chunkIndex]) {
+            this.chunks[chunkIndex] = true;
 
             // 先累加字节数
-            this.totalUploadedSize += chunkSizeValue;
+            this.totalChunkSize += chunkSizeValue;
 
             // 再累加完成分片计数
             this.completedChunks++;
@@ -656,7 +598,7 @@ export default class ChunkManager {
             });
 
             logger.info(
-              "ChunkManager",
+              "uploadChunkManager",
               `分片 ${chunkIndex + 1}/${this.totalChunks} 上传成功`,
               {
                 fileId: this.uploadFile.fileId,
@@ -669,7 +611,7 @@ export default class ChunkManager {
             );
           } else {
             logger.debug(
-              "ChunkManager",
+              "uploadChunkManager",
               `分片 ${chunkIndex + 1}/${this.totalChunks} 已上传，跳过累加`,
               {
                 completedChunks: this.completedChunks,
@@ -691,12 +633,12 @@ export default class ChunkManager {
       return Promise.resolve();
     } catch (error) {
       // 分片失败时，不要回退 completedChunks！
-      // 只标记 uploadedChunks 为 false，等待重试成功后再累加
+      // 只标记 chunks 为 false，等待重试成功后再累加
       // 这样进度只会增加不会减少，避免进度回退导致用户体验差
-      this.uploadedChunks[chunkIndex] = false;
+      this.chunks[chunkIndex] = false;
 
       logger.error(
-        "ChunkManager",
+        "uploadChunkManager",
         `分片 ${chunkIndex + 1}/${this.totalChunks} 上传失败`,
         {
           fileId: this.uploadFile.fileId,
@@ -749,13 +691,13 @@ export default class ChunkManager {
           const { removeFileFromCache } = await import("../utils/fileCache");
           await removeFileFromCache(this.fileHash);
           logger.debug(
-            "ChunkManager",
+            "uploadChunkManager",
             `✅ 上传成功，已清理文件缓存: ${this.uploadFile.fileName}`,
             { fileHash: this.fileHash },
           );
         } catch (error) {
           logger.warn(
-            "ChunkManager",
+            "uploadChunkManager",
             `⚠️ 清理文件缓存失败（不影响上传）: ${this.uploadFile.fileName}`,
             error,
           );
@@ -786,12 +728,12 @@ export default class ChunkManager {
    * 计算上传统计信息（统一处理，避免重复代码）
    */
   private calculateUploadStats(): void {
-    this.uploadStatsInfos = {
-      totalTime: this.totalUploadTime,
+    this.chunkStatsInfos = {
+      totalTime: this.totalChunkTime,
       fileSize: this.uploadFile.File.size,
       completedChunks: this.completedChunks,
       averageSpeed:
-        this.uploadFile.File.size / (this.totalUploadTime / 1000) / 1024, // KB/s
+        this.uploadFile.File.size / (this.totalChunkTime / 1000) / 1024, // KB/s
     };
   }
 
@@ -800,21 +742,21 @@ export default class ChunkManager {
    */
   private async checkStatistics() {
     // 计算总耗时
-    this.uploadEndTime = performance.now();
-    this.totalUploadTime = this.uploadEndTime - this.uploadStartTime;
+    this.chunkEndTime = performance.now();
+    this.totalChunkTime = this.chunkEndTime - this.chunkStartTime;
 
     // 基于 completedChunks 判断是否所有分片都完成了
-    // uploadedChunks 可能会因为重试、断点续传等场景导致状态不一致
+    // chunks 可能会因为重试、断点续传等场景导致状态不一致
     // completedChunks 是可靠的计数器，只要累加了就说明分片确实上传成功了
     const allSuccess = this.completedChunks === this.totalChunks;
 
-    logger.debug("ChunkManager", `检查统计信息`, {
+    logger.debug("uploadChunkManager", `检查统计信息`, {
       fileId: this.uploadFile.fileId,
       fileName: this.uploadFile.fileName,
       completedChunks: this.completedChunks,
       totalChunks: this.totalChunks,
       allSuccess,
-      uploadedChunksTrue: this.uploadedChunks.filter((u) => u).length,
+      uploadedChunksTrue: this.chunks.filter((u) => u).length,
       failedChunks: this.failedChunks.length,
     });
     if (allSuccess) {
@@ -825,7 +767,7 @@ export default class ChunkManager {
       await this.handleFailedChunks();
     } else {
       // 没有失败分片，但也没有全部完成（可能是被取消了）
-      logger.warn("ChunkManager", `上传未完成`, {
+      logger.warn("uploadChunkManager", `上传未完成`, {
         fileId: this.uploadFile.fileId,
         fileName: this.uploadFile.fileName,
         completedChunks: this.completedChunks,
@@ -841,11 +783,11 @@ export default class ChunkManager {
     // 计算并更新全局上传速度
     this.calculateAndUpdateSpeed(this.uploadFile.File.size);
 
-    // 更新单个文件的 uploadSpeed（分片上传完成时）
-    const totalTime = (performance.now() - this.uploadStartTime) / 1000;
+    // 更新单个文件的 speed（分片上传完成时）
+    const totalTime = (performance.now() - this.chunkStartTime) / 1000;
     const averageSpeed =
       totalTime > 0 ? this.uploadFile.File.size / totalTime : 0;
-    this.uploadFile.proxy.uploadSpeed = {
+    this.uploadFile.proxy.speed = {
       currentSpeed: 0, // 上传已完成，瞬时速度为 0
       averageSpeed,
       currentSpeedFormatted: "0 B/s",
@@ -872,7 +814,7 @@ export default class ChunkManager {
     // 如果 retries 为 null，禁用自动重试，直接报错
     if (this.retries === null) {
       logger.warn(
-        "ChunkManager",
+        "uploadChunkManager",
         `发现 ${this.failedChunks.length} 个失败分片，自动重试已禁用，请手动重试`,
         {
           fileId: this.uploadFile.fileId,
@@ -888,7 +830,7 @@ export default class ChunkManager {
 
     // 正常重试逻辑（retries >= 0）
     logger.warn(
-      "ChunkManager",
+      "uploadChunkManager",
       `发现 ${this.failedChunks.length} 个失败分片，开始自动重试`,
       {
         fileId: this.uploadFile.fileId,
@@ -914,7 +856,7 @@ export default class ChunkManager {
    */
   private handleRetryFailure(): void {
     logger.error(
-      "ChunkManager",
+      "uploadChunkManager",
       `重试后仍有 ${this.failedChunks.length} 个分片失败，设置文件状态为失败`,
       {
         fileId: this.uploadFile.fileId,
@@ -967,7 +909,7 @@ export default class ChunkManager {
    */
   public cancelUpload(): void {
     logger.info(
-      "ChunkManager",
+      "uploadChunkManager",
       `开始取消文件 ${this.uploadFile.fileName} 的上传`,
       {
         fileId: this.uploadFile.fileId,
@@ -984,9 +926,9 @@ export default class ChunkManager {
     if (hashController) {
       try {
         hashController.abort();
-        logger.debug("ChunkManager", `已中止 MD5 计算`);
+        logger.debug("uploadChunkManager", `已中止 MD5 计算`);
       } catch (error) {
-        logger.warn("ChunkManager", `中止 MD5 计算时出错:`, error);
+        logger.warn("uploadChunkManager", `中止 MD5 计算时出错:`, error);
       }
     }
 
@@ -994,9 +936,9 @@ export default class ChunkManager {
     this.abortControllers.forEach((controller) => {
       try {
         controller.abort();
-        logger.debug("ChunkManager", `已中止一个分片的 HTTP 请求`);
+        logger.debug("uploadChunkManager", `已中止一个分片的 HTTP 请求`);
       } catch (error) {
-        logger.warn("ChunkManager", `中止分片请求时出错:`, error);
+        logger.warn("uploadChunkManager", `中止分片请求时出错:`, error);
       }
     });
 
@@ -1018,12 +960,16 @@ export default class ChunkManager {
     // 更新文件状态为已取消
     this.uploadFile.proxy.status = "cancelled";
 
-    logger.info("ChunkManager", `文件 ${this.uploadFile.fileName} 已取消上传`, {
-      fileId: this.uploadFile.fileId,
-      fileName: this.uploadFile.fileName,
-      completedChunks: this.completedChunks,
-      totalChunks: this.totalChunks,
-    });
+    logger.info(
+      "uploadChunkManager",
+      `文件 ${this.uploadFile.fileName} 已取消上传`,
+      {
+        fileId: this.uploadFile.fileId,
+        fileName: this.uploadFile.fileName,
+        completedChunks: this.completedChunks,
+        totalChunks: this.totalChunks,
+      },
+    );
 
     // 触发取消事件
     const up = this.uploadFile.__uploader__;
@@ -1049,12 +995,16 @@ export default class ChunkManager {
 
     this.isPaused = true;
     this.uploadFile.proxy.status = "paused";
-    logger.info("ChunkManager", `文件 ${this.uploadFile.fileName} 已暂停`, {
-      fileId: this.uploadFile.fileId,
-      fileName: this.uploadFile.fileName,
-      completedChunks: this.completedChunks,
-      totalChunks: this.totalChunks,
-    });
+    logger.info(
+      "uploadChunkManager",
+      `文件 ${this.uploadFile.fileName} 已暂停`,
+      {
+        fileId: this.uploadFile.fileId,
+        fileName: this.uploadFile.fileName,
+        completedChunks: this.completedChunks,
+        totalChunks: this.totalChunks,
+      },
+    );
   }
 
   /**
@@ -1065,7 +1015,7 @@ export default class ChunkManager {
    * @example
    * ```typescript
    * file.resume();
-   * console.log(file.status); // "uploading"
+   * console.log(file.status); // "UDLoading"
    * ```
    */
   public async resume(): Promise<void> {
@@ -1074,18 +1024,22 @@ export default class ChunkManager {
     }
 
     this.isPaused = false;
-    this.uploadFile.proxy.status = "uploading";
+    this.uploadFile.proxy.status = "UDLoading";
 
     // 触发恢复事件
     const up = this.uploadFile.__uploader__;
     up.emit("resume", this.uploadFile.proxy);
 
-    logger.info("ChunkManager", `文件 ${this.uploadFile.fileName} 已恢复`, {
-      fileId: this.uploadFile.fileId,
-      fileName: this.uploadFile.fileName,
-      completedChunks: this.completedChunks,
-      totalChunks: this.totalChunks,
-    });
+    logger.info(
+      "uploadChunkManager",
+      `文件 ${this.uploadFile.fileName} 已恢复`,
+      {
+        fileId: this.uploadFile.fileId,
+        fileName: this.uploadFile.fileName,
+        completedChunks: this.completedChunks,
+        totalChunks: this.totalChunks,
+      },
+    );
 
     // 唤醒所有等待中的分片上传任务
     if (this.pauseResolves.length > 0) {
@@ -1125,7 +1079,7 @@ export default class ChunkManager {
 
     // ✅ 关键修复：唤醒后检查是否已取消
     if (this.isCancelled) {
-      logger.info("ChunkManager", `分片上传被取消，停止执行`, {
+      logger.info("uploadChunkManager", `分片上传被取消，停止执行`, {
         fileId: this.uploadFile.fileId,
         fileName: this.uploadFile.fileName,
       });
@@ -1163,7 +1117,7 @@ export default class ChunkManager {
     this.uploadFile.proxy.percent = percent;
 
     // 计算并更新全局上传速度
-    this.calculateAndUpdateSpeed(this.totalUploadedSize);
+    this.calculateAndUpdateSpeed(this.totalChunkSize);
   }
 
   /**
@@ -1176,7 +1130,7 @@ export default class ChunkManager {
     // 首次调用或重新上传时，初始化基准值
     if (this.lastUpdateTime === 0 || this.lastUpdateTime > now) {
       this.lastUpdateTime = now;
-      this.lastUploadedBytes = currentUploadedBytes;
+      this.lastChunkBytes = currentUploadedBytes;
       return;
     }
 
@@ -1188,13 +1142,13 @@ export default class ChunkManager {
       return;
     }
 
-    // 不再直接更新全局 uploadSpeed，而是触发 Uploader 的更新
+    // 不再直接更新全局 speed，而是触发 Uploader 的更新
     // 由 Uploader.calculateGlobalUploadSpeed() 统一聚合所有文件的速度
     this.uploadFile.__uploader__.triggerUpdate();
 
     // 更新基准值
     this.lastUpdateTime = now;
-    this.lastUploadedBytes = currentUploadedBytes;
+    this.lastChunkBytes = currentUploadedBytes;
   }
 
   public async startUpload() {
@@ -1208,14 +1162,14 @@ export default class ChunkManager {
     });
 
     // 重置所有状态（避免重新上传时使用旧值）
-    this.totalUploadedSize = 0;
-    this.uploadFile.__uploadedBytes__ = 0;
-    this.uploadStartTime = performance.now(); // 重置开始时间
+    this.totalChunkSize = 0;
+    this.uploadFile.__transferBytes__ = 0;
+    this.chunkStartTime = performance.now(); // 重置开始时间
     this.countedChunks.clear(); // 重置已计数分片集合
 
     // 重置速度计算状态（避免第二次上传时速度计算错误）
     this.lastUpdateTime = 0;
-    this.lastUploadedBytes = 0;
+    this.lastChunkBytes = 0;
 
     // ✅ 关键修复：重置取消和暂停标志，允许重新开始上传
     this.isCancelled = false;
@@ -1226,7 +1180,7 @@ export default class ChunkManager {
 
     // 初始化总字节数（只在首次上传时）
     if (!this.uploadFile.__hasCountedTotalBytes__) {
-      up.totalUploadBytes += this.uploadFile.File.size;
+      up.totalTransferredBytes += this.uploadFile.File.size;
       up.totalBytes += this.uploadFile.File.size;
       up.totalFormatSize = formatFileSize(up.totalBytes);
       this.uploadFile.__hasCountedTotalBytes__ = true;
@@ -1242,16 +1196,20 @@ export default class ChunkManager {
       if (this.completedChunks === this.totalChunks) {
         if (this.isInstantUpload) {
           // 真正的秒传：文件已存在，无需合并，直接成功
-          logger.info("ChunkManager", "⚡ 秒传成功，文件已存在，跳过合并", {
-            fileId: this.uploadFile.fileId,
-            fileName: this.uploadFile.fileName,
-            fileHash: this.fileHash,
-          });
+          logger.info(
+            "uploadChunkManager",
+            "⚡ 秒传成功，文件已存在，跳过合并",
+            {
+              fileId: this.uploadFile.fileId,
+              fileName: this.uploadFile.fileName,
+              fileHash: this.fileHash,
+            },
+          );
 
           // 记录开始和结束时间（秒传耗时几乎为0）
-          this.uploadStartTime = performance.now();
-          this.uploadEndTime = performance.now();
-          this.totalUploadTime = 0;
+          this.chunkStartTime = performance.now();
+          this.chunkEndTime = performance.now();
+          this.totalChunkTime = 0;
 
           // 计算上传统计信息
           this.calculateUploadStats();
@@ -1266,7 +1224,7 @@ export default class ChunkManager {
           return;
         } else {
           // 断点续传：所有分片已上传但未合并，需要执行合并
-          logger.info("ChunkManager", "所有分片已上传，执行合并", {
+          logger.info("uploadChunkManager", "所有分片已上传，执行合并", {
             fileId: this.uploadFile.fileId,
             fileName: this.uploadFile.fileName,
             completedChunks: this.completedChunks,
@@ -1274,16 +1232,16 @@ export default class ChunkManager {
           });
 
           // 记录开始时间（如果是断点续传，需要重新计算）
-          if (!this.uploadStartTime) {
-            this.uploadStartTime = performance.now();
+          if (!this.chunkStartTime) {
+            this.chunkStartTime = performance.now();
           }
 
           try {
             const mergeResult = await this.mergeChunks();
 
             // 记录总耗时
-            this.uploadEndTime = performance.now();
-            this.totalUploadTime = this.uploadEndTime - this.uploadStartTime;
+            this.chunkEndTime = performance.now();
+            this.totalChunkTime = this.chunkEndTime - this.chunkStartTime;
 
             // 使用统一方法计算上传统计信息
             this.calculateUploadStats();
@@ -1291,27 +1249,27 @@ export default class ChunkManager {
             // 触发成功回调
             this.uploadFile.onScuccess(mergeResult);
 
-            logger.info("ChunkManager", "文件上传完成（断点续传）", {
-              totalTime: this.totalUploadTime,
+            logger.info("uploadChunkManager", "文件上传完成（断点续传）", {
+              totalTime: this.totalChunkTime,
               completedChunks: this.completedChunks,
               totalChunks: this.totalChunks,
             });
           } catch (error) {
             // 合并失败，触发错误回调
-            this.uploadEndTime = performance.now();
-            this.totalUploadTime = this.uploadEndTime - this.uploadStartTime;
+            this.chunkEndTime = performance.now();
+            this.totalChunkTime = this.chunkEndTime - this.chunkStartTime;
             this.uploadFile.onError(error);
           }
 
           return;
         }
       }
-      computeUploadTime(this.uploadFile.proxy.uploadTime).start();
+      computeTransferTime(this.uploadFile.proxy.uploadTime).start();
       // 使用信号量控制并发
       await this.uploadWithConcurrency();
 
-      computeUploadTime(this.uploadFile.proxy.uploadTime).end();
-      
+      computeTransferTime(this.uploadFile.proxy.uploadTime).end();
+
       // ✅ 关键修复：上传完成后检查统计信息并触发合并
       await this.checkStatistics();
     } catch (error) {
@@ -1320,8 +1278,8 @@ export default class ChunkManager {
       await this.checkStatistics();
 
       // 记录耗时
-      this.uploadEndTime = performance.now();
-      this.totalUploadTime = this.uploadEndTime - this.uploadStartTime;
+      this.chunkEndTime = performance.now();
+      this.totalChunkTime = this.chunkEndTime - this.chunkStartTime;
 
       // 如果 checkStatistics 没有处理错误（比如还有失败分片），则抛出错误
       if (this.failedChunks.length > 0) {
@@ -1346,7 +1304,7 @@ export default class ChunkManager {
     for (let chunkIndex = 0; chunkIndex < this.totalChunks; chunkIndex++) {
       // ✅ 关键修复：检查是否已取消，如果已取消则停止入队新任务
       if (this.isCancelled) {
-        logger.info("ChunkManager", `检测到取消标志，停止入队新分片`, {
+        logger.info("uploadChunkManager", `检测到取消标志，停止入队新分片`, {
           fileId: this.uploadFile.fileId,
           fileName: this.uploadFile.fileName,
           currentChunk: chunkIndex,
@@ -1356,11 +1314,11 @@ export default class ChunkManager {
       }
 
       // 跳过已上传的分片（断点续传场景）
-      if (this.uploadedChunks[chunkIndex]) {
+      if (this.chunks[chunkIndex]) {
         continue;
       }
 
-      this.uploadedChunkIndex = chunkIndex + 1;
+      this.chunkIndex = chunkIndex + 1;
 
       // 在每个分片上传前检查暂停状态
       uploadPromises.push(
@@ -1391,7 +1349,7 @@ export default class ChunkManager {
     await Promise.allSettled(uploadPromises);
 
     // 计算分片上传统计信息
-    this.chunkUploadStats = {
+    this.chunkStats = {
       averageTime:
         chunkDurations.filter((d) => d > 0).reduce((a, b) => a + b, 0) /
           chunkDurations.filter((d) => d > 0).length || 0,

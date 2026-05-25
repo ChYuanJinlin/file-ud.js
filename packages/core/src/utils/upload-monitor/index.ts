@@ -40,7 +40,7 @@ export interface UploadRecord {
   /** 分片总数（如果是分片上传） */
   totalChunks?: number;
   /** 成功分片数 */
-  uploadedChunks?: number;
+  chunks?: number;
   /** 失败分片数 */
   failedChunks?: number;
   /** ✅ 各模块的错误次数统计 */
@@ -132,7 +132,7 @@ class UploadMonitor {
       });
     }
     
-    // ✅ 追踪上传开始（支持 ChunkManager 分片上传 和 UploadFile 普通上传）
+    // ✅ 追踪上传开始（支持 uploadChunkManager 分片上传 和 UploadFile 普通上传）
     if (entry.message.includes('开始上传文件') && !entry.message.includes('分片')) {
       const fileId = this.extractFileId(entry);
       console.log('[Monitor Debug] 匹配到开始上传:', { fileId, hasFileId: !!fileId });
@@ -194,16 +194,16 @@ class UploadMonitor {
     if (entry.level === LogLevel.ERROR) {
       const fileId = this.extractFileId(entry);
       
-      // ChunkManager 级别的错误（分片上传）
-      if (entry.module === 'ChunkManager') {
+      // uploadChunkManager 级别的错误（分片上传）
+      if (entry.module === 'uploadChunkManager') {
         if (fileId && this.activeUploads.has(fileId)) {
           const record = this.activeUploads.get(fileId)!;
           
-          // ✅ 记录 ChunkManager 模块的错误
+          // ✅ 记录 uploadChunkManager 模块的错误
           if (!record.errorModules) {
             record.errorModules = new Map<string, number>();
           }
-          record.errorModules.set('ChunkManager', (record.errorModules.get('ChunkManager') || 0) + 1);
+          record.errorModules.set('uploadChunkManager', (record.errorModules.get('uploadChunkManager') || 0) + 1);
           
           // 统计分片失败
           if (entry.message.includes('分片') && entry.message.includes('失败')) {
@@ -269,14 +269,14 @@ class UploadMonitor {
     }
     
     // 追踪分片信息
-    if (entry.module === 'ChunkManager' && entry.message.includes('分片切割完成')) {
+    if (entry.module === 'uploadChunkManager' && entry.message.includes('分片切割完成')) {
       const fileId = this.extractFileId(entry);
       if (fileId && this.activeUploads.has(fileId)) {
         const record = this.activeUploads.get(fileId)!;
         const totalChunks = this.extractTotalChunks(entry);
         if (totalChunks) {
           record.totalChunks = totalChunks;
-          record.uploadedChunks = 0;
+          record.chunks = 0;
           record.failedChunks = 0;
         }
       }
@@ -289,7 +289,7 @@ class UploadMonitor {
   private finalizeRecord(record: UploadRecord) {
     // 计算分片统计
     if (record.totalChunks) {
-      record.uploadedChunks = record.totalChunks - (record.failedChunks || 0);
+      record.chunks = record.totalChunks - (record.failedChunks || 0);
     }
     
     // ✅ 去重：检查 records 中是否已存在相同的 fileId
@@ -477,7 +477,7 @@ class UploadMonitor {
     
     if (chunkRecords.length > 0) {
       const totalChunks = chunkRecords.reduce((sum, r) => sum + (r.totalChunks || 0), 0);
-      const successfulChunks = chunkRecords.reduce((sum, r) => sum + (r.uploadedChunks || 0), 0);
+      const successfulChunks = chunkRecords.reduce((sum, r) => sum + (r.chunks || 0), 0);
       const failedChunks = chunkRecords.reduce((sum, r) => sum + (r.failedChunks || 0), 0);
       
       chunkUploadStats = {

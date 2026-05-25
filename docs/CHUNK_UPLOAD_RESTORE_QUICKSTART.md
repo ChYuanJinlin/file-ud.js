@@ -14,11 +14,11 @@
 {
   "fileId": "file_abc123",
   "fileName": "large-video.mp4",
-  "status": "uploading",
+  "status": "UDLoading",
   "isChunkUpload": true,
   "totalChunks": 20,
   "completedChunks": 8,
-  "uploadedChunkIndexes": [0, 1, 2, 3, 4, 5, 6, 7],
+  "chunkIndexes": [0, 1, 2, 3, 4, 5, 6, 7],
   "fileHash": "a1b2c3d4...",
   "uploadId": "upload_xyz"
 }
@@ -40,7 +40,7 @@ const filesToRestore: IFile[] = serverFiles.map((serverFile) => ({
   isChunkUpload: serverFile.isChunkUpload,
   totalChunks: serverFile.totalChunks,
   completedChunks: serverFile.completedChunks,
-  uploadedChunkIndexes: serverFile.uploadedChunkIndexes,
+  chunkIndexes: serverFile.chunkIndexes,
   fileHash: serverFile.fileHash,
   uploadId: serverFile.uploadId,
 }));
@@ -53,7 +53,7 @@ uploader.setFiles(filesToRestore);
 ```
 
 **完成！** 🎉 系统会自动：
-- ✅ 初始化 ChunkManager 状态
+- ✅ 初始化 uploadChunkManager 状态
 - ✅ 计算并显示进度百分比
 - ✅ 标记已上传的分片
 - ✅ 支持断点续传（点击重试即可继续）
@@ -91,7 +91,7 @@ async function loadFiles() {
     isChunkUpload: file.isChunkUpload,
     totalChunks: file.totalChunks,
     completedChunks: file.completedChunks,
-    uploadedChunkIndexes: file.uploadedChunkIndexes,
+    chunkIndexes: file.chunkIndexes,
     fileHash: file.fileHash,
     uploadId: file.uploadId,
   }));
@@ -134,7 +134,7 @@ uploader.onUpdate = (files) => {
    ✅ 回显完成，共回显 2 个文件
    
    文件列表:
-   - large-video-restored.mp4: uploading, 40% (8/20 分片)
+   - large-video-restored.mp4: UDLoading, 40% (8/20 分片)
    - archive-restored.zip: success, 100% (15/15 分片)
    ```
 
@@ -153,13 +153,13 @@ setFiles(files)
   ↓
 检测 file.isChunkUpload === true
   ↓
-创建 ChunkManager
+创建 uploadChunkManager
   ↓
 调用 initChunkManagerFromRestore()
   ↓
 1. 设置 totalChunks
 2. 设置 completedChunks
-3. 初始化 uploadedChunks 数组
+3. 初始化 chunks 数组
 4. 标记已上传的分片
 5. 计算 percent = (completedChunks / totalChunks) * 100
 6. 如果全部完成，设置 status = "success"
@@ -183,7 +183,7 @@ File: null // 会导致类型错误
 
 ---
 
-### Q2: 如果没有 uploadedChunkIndexes 怎么办？
+### Q2: 如果没有 chunkIndexes 怎么办？
 
 ```typescript
 // ✅ 可以只提供 completedChunks
@@ -191,7 +191,7 @@ File: null // 会导致类型错误
   isChunkUpload: true,
   totalChunks: 20,
   completedChunks: 8,
-  // uploadedChunkIndexes 可选
+  // chunkIndexes 可选
 }
 
 // 系统会假设前 8 个分片已完成

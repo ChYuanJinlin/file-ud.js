@@ -1,8 +1,8 @@
 import { FileUDError } from "../fileUD/errors";
 import Uploader from "../uploader";
-import ChunkManager from "../uploader/ChunkManager";
+import ChunkManager from "../uploader/UploadChunkManager";
 import UploadFile from "../uploader/UploadFile";
-
+import TransferFile from "../transfer/TransferFile";
 /**
  * 文件上传接受类型定义
  * 支持常见的 MIME 类型、通配符和文件后缀名
@@ -360,7 +360,7 @@ export interface IFile {
   /* 文件上传的状态 */
   status?:
     | "pending"
-    | "uploading"
+    | "UDLoading"
     | "paused"
     | "success"
     | "fail"
@@ -368,7 +368,7 @@ export interface IFile {
     | "cancelled"
     | "merging"
     | "hashing";
-  uploadSpeed?: UploadSpeedInfo;
+  speed?: speedInfo;
 
   // ==================== 分片上传回显相关字段 ====================
   /* 总分片数（回显分片上传进度时需要） */
@@ -376,7 +376,7 @@ export interface IFile {
   /* 已完成分片数（回显分片上传进度时需要） */
   completedChunks?: number;
   /* 已上传的分片索引数组（用于断点续传回显） */
-  uploadedChunkIndexes?: number[];
+  chunkIndexes?: number[];
   /* 文件哈希值（用于秒传/断点续传回显） */
   fileHash?: string;
   /* 服务端上传ID（用于断点续传回显） */
@@ -395,7 +395,7 @@ export type BeforeUploadCallBack = (
 export type UploadSuccessCallBack<T> = (response: T, file: UploadFile) => void;
 
 /* 更新回调函数类型 */
-export type UpdateCallBack = (file: UploadFile[]) => void;
+export type UpdateCallBack = (file: TransferFile[]) => void;
 /* 
 初始化回调函数类型
 */
@@ -406,7 +406,7 @@ export type onInitChunkCallback = (
 ) =>
   | Promise<{
       fileHash: string;
-      uploadedChunks?: number[] | null | undefined;
+      chunks?: number[] | null | undefined;
       isInstantUpload?: boolean; // ✅ 标记是否为真正的秒传（文件已存在，无需合并）
       url?: string;
       shouldRemove?: boolean; // ✅ 标记是否需要移除该文件（秒传时自动移除）
@@ -500,7 +500,7 @@ export type EventCallback<T extends EventName> = UploaderEvents[T];
  * 上传速率统计信息接口
  * 用于描述单个文件或全局的上传速度指标
  */
-export interface UploadSpeedInfo {
+export interface speedInfo {
   /** 当前瞬时速度 (bytes/s) - 基于最近两个采样点计算 */
   currentSpeed: number;
 
@@ -518,7 +518,7 @@ export interface UploadSpeedInfo {
  * 上传时间统计信息接口
  * 记录文件上传的生命周期时间节点
  */
-export interface UploadTimeInfo {
+export interface TimeInfo {
   /** 上传开始时间戳 (毫秒) */
   startTime: number;
 

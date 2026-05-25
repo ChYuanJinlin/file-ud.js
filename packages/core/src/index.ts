@@ -1,6 +1,8 @@
 export { default as FileUD } from "./fileUD";
 export { default as UploadFile } from "./uploader/UploadFile";
+export { default as TransferFile } from "./transfer/TransferFile";
+export { default as Transfer } from "./transfer/Transfer";
 export type { ErrorOptions, ErrorContext } from "./fileUD/errors";
 export { FileUDError, ErrorCode, Errors } from "./fileUD/errors";
 export { default as Uploader } from "./uploader";
-export type * from './types/index'
+export type * from "./types/index";

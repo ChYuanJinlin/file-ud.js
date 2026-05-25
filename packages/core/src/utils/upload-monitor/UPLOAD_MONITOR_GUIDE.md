@@ -139,7 +139,7 @@ interface UploadRecord {
   error?: string;              // 失败原因
   retryCount: number;          // 重试次数
   totalChunks?: number;        // 分片总数
-  uploadedChunks?: number;     // 成功分片数
+  chunks?: number;     // 成功分片数
   failedChunks?: number;       // 失败分片数
 }
 ```
@@ -632,7 +632,7 @@ setTimeout(() => {
 
 ### **Q: 分片统计数据为空？**
 
-A: 确保使用的是分片上传（配置了 `chunkOptions`），并且 ChunkManager 正确输出了相关日志。
+A: 确保使用的是分片上传（配置了 `chunkOptions`），并且 uploadChunkManager 正确输出了相关日志。
 
 ---
 

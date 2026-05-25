@@ -5,7 +5,7 @@ export default class FileUD {
   private static uploaders: Map<string, Uploader> = new Map();
   public static uploader: Uploader | null = Uploader.instances;
 
-  public static startUploadLogger(logConfig?: LogConfig) {
+  public static startUDLogger(logConfig?: LogConfig) {
     // 初始化日志配置
 
     initLogger({

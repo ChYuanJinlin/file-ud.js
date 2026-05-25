@@ -7,10 +7,10 @@
  * ```typescript
  * import { logger } from './utils/logger';
  * 
- * logger.info('ChunkManager', '开始上传分片');
- * logger.debug('ChunkManager', '分片详情', { index: 0, size: 1024 });
- * logger.warn('ChunkManager', '更新状态失败:', error);
- * logger.error('ChunkManager', '上传失败', error);
+ * logger.info('uploadChunkManager', '开始上传分片');
+ * logger.debug('uploadChunkManager', '分片详情', { index: 0, size: 1024 });
+ * logger.warn('uploadChunkManager', '更新状态失败:', error);
+ * logger.error('uploadChunkManager', '上传失败', error);
  * ```
  */
 

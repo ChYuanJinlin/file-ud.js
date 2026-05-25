@@ -1,7 +1,8 @@
-import { IFile, UploadTimeInfo } from "../types";
+import TransferFile from "../transfer/TransferFile";
+import { IFile, TimeInfo } from "../types";
 import Uploader from "../uploader";
 import UploadFile from "../uploader/UploadFile";
-import SparkMD5 from 'spark-md5';
+import SparkMD5 from "spark-md5";
 // 导出日志工具
 export {
   logger,
@@ -89,25 +90,25 @@ export function handleFile(file: File): Promise<string> {
   });
 }
 
-export function computeUploadTime(uploadTime: UploadTimeInfo) {
+export function computeTransferTime(transferTime: TimeInfo) {
   return {
     start() {
       // 记录全局上传开始时间
       const now = Date.now();
       // ✅ 直接修改对象属性，而不是重新赋值引用
-      uploadTime.startTime = now;
-      uploadTime.endTime = 0;
-      uploadTime.duration = 0;
-      uploadTime.durationFormatted = "0s";
+      transferTime.startTime = now;
+      transferTime.endTime = 0;
+      transferTime.duration = 0;
+      transferTime.durationFormatted = "0s";
     },
     end() {
       // 记录上传结束时间并计算持续时间
       const endTime = Date.now();
-      const duration = endTime - uploadTime.startTime;
+      const duration = endTime - transferTime.startTime;
       // ✅ 直接修改对象属性，而不是重新赋值引用
-      uploadTime.endTime = endTime;
-      uploadTime.duration = duration;
-      uploadTime.durationFormatted = formatDuration(duration);
+      transferTime.endTime = endTime;
+      transferTime.duration = duration;
+      transferTime.durationFormatted = formatDuration(duration);
     },
   };
 }
@@ -123,8 +124,8 @@ export function getFileExtension(filename?: string) {
  * @returns 是否为活跃上传状态
  * @private
  */
-export function isFileActive(file: UploadFile): boolean {
-  return ["uploading", "paused", "fail", "merging"].includes(file.status!);
+export function isFileActive(file: TransferFile): boolean {
+  return ["UDLoading", "paused", "fail", "merging"].includes(file.status!);
 }
 /**
  * 将文件大小转换为易读的格式
@@ -144,7 +145,7 @@ export function formatFileSize(bytes: any, decimals = 2) {
   // 检查是否为有效数字
   if (isNaN(bytes)) return "0 B";
   if (bytes === 0) return "0 B";
-  
+
   // ✅ 处理负数情况（理论上不应该出现，但做防御性编程）
   if (bytes < 0) {
     console.warn("formatFileSize: 接收到负数值", bytes);
@@ -157,9 +158,7 @@ export function formatFileSize(bytes: any, decimals = 2) {
 
   // ✅ 关键修复：去掉 parseFloat()，保留 toFixed() 的精度
   // parseFloat("1.90") → 1.9  ← 会去掉末尾的 0，导致精度不一致
-  return (
-    (bytes / Math.pow(k, i)).toFixed(decimals) + " " + sizes[i]
-  );
+  return (bytes / Math.pow(k, i)).toFixed(decimals) + " " + sizes[i];
 }
 
 export const validator = {
@@ -333,7 +332,6 @@ export async function calculateFileMD5(
 ): Promise<string> {
   return new Promise(async (resolve, reject) => {
     try {
-
       const chunkSize = 2 * 1024 * 1024; // 2MB 分片读取
       const chunks = Math.ceil(file.size / chunkSize);
       let currentChunk = 0;

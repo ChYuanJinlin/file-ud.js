@@ -26,7 +26,7 @@ unsubscribe();
 interface LogEntry {
   timestamp: number;      // 时间戳 (Date.now())
   level: LogLevel;        // 日志级别 (0-3)
-  module: string;         // 模块名称 (如 'ChunkManager')
+  module: string;         // 模块名称 (如 'uploadChunkManager')
   message: string;        // 消息内容
   args?: any[];           // 额外参数
   stack?: string;         // 错误堆栈（如果是 Error 对象）
@@ -185,8 +185,8 @@ import { addLogCollector, LogLevel } from '@core/utils';
 // 仅在开发环境启用
 if (process.env.NODE_ENV === 'development') {
   addLogCollector((entry) => {
-    // 仅关注 ChunkManager 模块
-    if (entry.module === 'ChunkManager') {
+    // 仅关注 uploadChunkManager 模块
+    if (entry.module === 'uploadChunkManager') {
       console.group(`🔍 [${LogLevel[entry.level]}] ${entry.module}`);
       console.log('Message:', entry.message);
       if (entry.args?.length) {
@@ -280,7 +280,7 @@ import { addLogCollector, LogLevel } from '@core/utils';
 
 addLogCollector((entry) => {
   // 仅收集特定模块的日志
-  const targetModules = ['ChunkManager', 'UploadFile'];
+  const targetModules = ['uploadChunkManager', 'UploadFile'];
   if (!targetModules.includes(entry.module)) return;
   
   // 仅收集 WARN 和 ERROR

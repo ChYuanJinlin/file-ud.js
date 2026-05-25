@@ -278,7 +278,7 @@ videoUploader.onInitChunk = async (uploadFile) => {
   });
   
   return {
-    uploadedChunks: data.uploadedChunks || [],
+    chunks: data.chunks || [],
     fileHash: data.fileHash
   };
 };
@@ -341,7 +341,7 @@ watermarkedUploader.use([
 
 ```typescript
 // 启用详细日志
-FileUD.startUploadLogger({
+FileUD.startUDLogger({
   enabled: true,
   level: 0  // DEBUG 级别
 });

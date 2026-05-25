@@ -45,7 +45,7 @@ async function loadSavedFiles() {
   const files = await response.json();
   
   // 转换为 UploadFile 格式
-  const uploadFiles = files.map(file => ({
+  const activeFiles = files.map(file => ({
     fileId: file.id,
     fileName: file.name,
     File: new File([], file.name), // 注意：这里只是占位
@@ -56,7 +56,7 @@ async function loadSavedFiles() {
     extension: getFileExtension(file.name)
   }));
   
-  uploader.setFiles(uploadFiles);
+  uploader.setFiles(activeFiles);
 }
 ```
 
@@ -74,23 +74,23 @@ function saveFilesToStorage() {
     formatSize: file.formatSize
   }));
   
-  localStorage.setItem('uploadFiles', JSON.stringify(filesData));
+  localStorage.setItem('activeFiles', JSON.stringify(filesData));
 }
 
 // 恢复文件列表
 function restoreFilesFromStorage() {
-  const saved = localStorage.getItem('uploadFiles');
+  const saved = localStorage.getItem('activeFiles');
   if (!saved) return;
   
   const filesData = JSON.parse(saved);
   
   // 注意：需要重新创建 File 对象
-  const uploadFiles = filesData.map(data => ({
+  const activeFiles = filesData.map(data => ({
     ...data,
     File: new File([], data.fileName) // 占位文件
   }));
   
-  uploader.setFiles(uploadFiles);
+  uploader.setFiles(activeFiles);
 }
 ```
 
@@ -119,7 +119,7 @@ public setFiles(files: Partial<UploadFile>[]): void
 | `File` | `File` | ✅ | File 对象（可以是占位） |
 | `url` | `string` | ❌ | 文件访问 URL |
 | `percent` | `number` | ❌ | 上传进度（0-100），默认 0 |
-| `status` | `"pending" \| "uploading" \| "success" \| "fail" \| "cancelled"` | ❌ | 文件状态，默认 "pending" |
+| `status` | `"pending" \| "UDLoading" \| "success" \| "fail" \| "cancelled"` | ❌ | 文件状态，默认 "pending" |
 | `formatSize` | `string` | ❌ | 格式化后的文件大小，如 "2.35 MB" |
 | `extension` | `string` | ❌ | 文件扩展名，如 ".jpg" |
 | `index` | `number` | ❌ | 文件索引，自动生成 |
@@ -202,7 +202,7 @@ function saveUploadProgress() {
     chunkManager: file.chunkManager ? {
       fileHash: file.chunkManager.fileHash,
       totalChunks: file.chunkManager.totalChunks,
-      uploadedChunks: file.chunkManager.uploadedChunks
+      chunks: file.chunkManager.chunks
     } : null
   }));
   
@@ -368,7 +368,7 @@ uploader.setFiles([{
 **方案2**：根据状态判断
 ```typescript
 // 回显的文件通常 status 为 "success"
-// 新上传的文件 status 为 "pending" 或 "uploading"
+// 新上传的文件 status 为 "pending" 或 "UDLoading"
 ```
 
 ---

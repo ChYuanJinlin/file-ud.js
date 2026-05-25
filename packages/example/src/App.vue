@@ -19,7 +19,7 @@ import {
   Loading,
   Warning,
 } from "@element-plus/icons-vue";
-import { FileUD, UploadFile } from "@file-ud.js/core";
+import { FileUD, TransferFile, UploadFile } from "@file-ud.js/core";
 import {
   uploadFile,
   upload,
@@ -35,7 +35,7 @@ import { uploadMonitor } from "@file-ud.js/core/utils";
 // ==================== 初始化上传器 ====================
 const isChunk = ref(true);
 
-FileUD.startUploadLogger({
+FileUD.startUDLogger({
   enabled: true,
 });
 
@@ -44,13 +44,14 @@ const test1 = FileUD.createUploader<{
 }>("test1", {
   action: "/api/upload-chunk",
   file({ formData, uploadFile, chunkIndex, data }) {
+
     formData.append("file", data);
-    formData.append("fileHash", uploadFile.chunkManager?.fileHash!);
+    formData.append("fileHash", uploadFile.uploadChunkManager?.fileHash!);
     formData.append("fileName", uploadFile.File.name);
     formData.append("chunkIndex", chunkIndex?.toString()!);
     formData.append(
       "totalChunks",
-      uploadFile.chunkManager?.totalChunks.toString()!,
+      uploadFile.uploadChunkManager?.totalChunks.toString()!,
     );
   },
   multiple: true,
@@ -68,8 +69,9 @@ test1.onMergeChunk = async (ch) => {
 };
 
 test1.onInitChunk = async (uploadFile) => {
+
   const { data } = await checkFile({
-    fileHash: uploadFile.chunkManager?.fileHash!,
+    fileHash: uploadFile.uploadChunkManager?.fileHash!,
     fileName: uploadFile.fileName,
   });
 
@@ -87,7 +89,7 @@ test1.onInitChunk = async (uploadFile) => {
   if (data.canReuseChunks === true) {
     console.log("🔄 分片可复用，但需要重新上传以创建新文件");
     return {
-      uploadedChunks: data.uploadedChunks,
+      chunks: data.chunks,
       fileHash: data.fileHash || "",
       shouldRemove: false,
     };
@@ -95,12 +97,12 @@ test1.onInitChunk = async (uploadFile) => {
 
   // ✅ 情况3：普通断点续传或新文件
   if (!data.exists) {
-    if (data.uploadedChunks && data.uploadedChunks.length > 0) {
+    if (data.chunks && data.chunks.length > 0) {
       console.log(
-        `🔄 断点续传: ${data.uploadedChunks.length}/${data.totalChunks} 分片已上传`,
+        `🔄 断点续传: ${data.chunks.length}/${data.totalChunks} 分片已上传`,
       );
       return {
-        uploadedChunks: data.uploadedChunks,
+        chunks: data.chunks,
         fileHash: data.fileHash || "",
         shouldRemove: false,
       };
@@ -108,14 +110,14 @@ test1.onInitChunk = async (uploadFile) => {
 
     console.log("📝 新文件，创建上传任务");
     await createUploadTask({
-      fileHash: uploadFile.chunkManager?.fileHash,
+      fileHash: uploadFile.uploadChunkManager?.fileHash,
       fileName: uploadFile.fileName,
-      totalChunks: uploadFile.chunkManager?.totalChunks!,
+      totalChunks: uploadFile.uploadChunkManager?.totalChunks!,
       fileSize: uploadFile.File.size,
     });
 
     return {
-      uploadedChunks: [],
+      chunks: [],
       fileHash: "",
       shouldRemove: false,
     };
@@ -128,15 +130,15 @@ test1.onInitChunk = async (uploadFile) => {
 };
 
 // ==================== 响应式数据 ====================
-const files = ref<UploadFile[]>([]);
+const files = ref<TransferFile[]>([]);
 
 // ✅ 创建响应式的全局统计信息
 const globalStats = ref({
   totalPercent: 0,
   totalBytes: 0,
   totalFormatSize: "0 B",
-  uploadedFormatSize: "0 B",
-  uploadSpeed: { averageSpeedFormatted: "0 B/s" },
+  transferredFormatSize: "0 B",
+  speed: { averageSpeedFormatted: "0 B/s" },
 });
 
 // ✅ 监听 test1 的属性变化并更新响应式数据
@@ -145,8 +147,8 @@ const updateGlobalStats = () => {
     totalPercent: test1.totalPercent,
     totalBytes: test1.totalBytes,
     totalFormatSize: test1.totalFormatSize,
-    uploadedFormatSize: test1.uploadedFormatSize,
-    uploadSpeed: test1.uploadSpeed || { averageSpeedFormatted: "0 B/s" },
+    transferredFormatSize: test1.transferredFormatSize,
+    speed: test1.speed || { averageSpeedFormatted: "0 B/s" },
   };
 };
 
@@ -156,6 +158,7 @@ Uploader.onError = (err) => {
 };
 
 test1.on("files-complete", (fileList) => {
+  console.log("🚀 ~ fileList:", fileList);
   ElMessage.success("所有文件上传完成！");
 });
 
@@ -171,7 +174,7 @@ test1.onUpdate = (fileList) => {
 
 // ==================== 计算属性 ====================
 const uploadingCount = computed(
-  () => files.value.filter((f) => f.status === "uploading").length,
+  () => files.value.filter((f) => f.status === "UDLoading").length,
 );
 
 const pausedCount = computed(
@@ -238,7 +241,7 @@ const getStatusType = (
     case "cancelled":
       return "info";
     default:
-      return undefined; // pending 和 uploading 使用默认样式
+      return undefined; // pending 和 UDLoading 使用默认样式
   }
 };
 
@@ -246,7 +249,7 @@ const getStatusType = (
 const getStatusText = (status: string) => {
   const statusMap: Record<string, string> = {
     pending: "等待中",
-    uploading: "上传中",
+    UDLoading: "上传中",
     paused: "已暂停",
     success: "已完成",
     error: "上传错误",
@@ -325,9 +328,9 @@ const printReport = () => {
       <button @click="test1.cancelAll()">全部取消</button>
       <button @click="test1.retryAll()">全部重试</button>
       总的大小:{{ test1.totalBytes }} 总进度:{{ test1.totalPercent }} 总速度:{{
-        test1.uploadSpeed?.averageSpeedFormatted
+        test1.speed?.averageSpeedFormatted
       }}
-      {{ test1.uploadedFormatSize }}/{{ test1.totalFormatSize }}
+      {{ test1.transferredFormatSize }}/{{ test1.totalFormatSize }}
 
       <div v-for="item in files" :key="item.fileId">
         进度{{ item.percent }} 状态{{ item.status }} 文件名{{
@@ -434,7 +437,7 @@ const printReport = () => {
       <div class="progress-header">
         <span class="progress-title">全局上传进度</span>
         <span class="progress-text">
-          {{ globalStats.uploadedFormatSize }} /
+          {{ globalStats.transferredFormatSize }} /
           {{ globalStats.totalFormatSize }}
         </span>
       </div>
@@ -444,9 +447,7 @@ const printReport = () => {
         :format="((percent: number) => `${percent}%`) as any"
       />
       <div class="progress-info">
-        <span
-          >平均速度: {{ globalStats.uploadSpeed.averageSpeedFormatted }}</span
-        >
+        <span>平均速度: {{ globalStats.speed.averageSpeedFormatted }}</span>
       </div>
     </el-card>
 
@@ -545,7 +546,7 @@ const printReport = () => {
           <template #default="{ row }">
             <div class="action-cell">
               <el-button
-                v-if="row.status === 'uploading'"
+                v-if="row.status === 'UDLoading'"
                 size="small"
                 :icon="VideoPause"
                 @click="row.pause()"

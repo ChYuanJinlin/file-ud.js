@@ -1,4 +1,5 @@
 import { Errors } from "..";
+import Transfer from "../transfer/Transfer";
 import {
   BeforeUploadCallBack,
   ErrorCallBack,
@@ -9,30 +10,21 @@ import {
   onInitChunkCallback,
   OnMergeChunkCallBack,
   OpenFileCallback,
-  PluginContext,
   SelectCallBack,
   UpdateCallBack,
-  UploadSpeedInfo,
   UploadSuccessCallBack,
-  UploadTimeInfo,
 } from "../types";
 import {
   checkNetworkStatus,
-  computeUploadTime,
-  createReactiveUploadFile,
-  formatDuration,
   formatFileSize,
-  formatSpeed,
   generateFileId,
   getFileExtension,
   handleFile,
-  isFileActive,
   logger,
   mergeObjects,
   validator,
 } from "../utils";
-import { EventEmitter } from "../utils/event-emitter";
-import ChunkManager from "./ChunkManager";
+
 import UploadFile from "./UploadFile";
 export const defaultConfig: uploaderConfigs = {
   multiple: false,
@@ -44,27 +36,8 @@ export const defaultConfig: uploaderConfigs = {
   file: "file",
 };
 
-export default class Uploader<T = any> extends EventEmitter {
+export default class Uploader<T = any> extends Transfer<UploadFile> {
   public inputHTML: HTMLInputElement | null;
-  public files: UploadFile[] = [];
-  public uploadFiles: UploadFile[] = [];
-  public totalBytes: number = 0;
-  public uploadedBytes: number = 0;
-
-  /** 全局已上传的总大小（格式化字符串），如 "125.50 MB" */
-  public uploadedFormatSize: string = "0 B";
-
-  /** 全局待上传的总大小（格式化字符串），如 "256.80 MB" */
-  public totalFormatSize: string = "0 B";
-
-  // 全局上传速率信息(静态属性)
-  public uploadSpeed: UploadSpeedInfo = {
-    currentSpeed: 0,
-    averageSpeed: 0,
-    currentSpeedFormatted: "0 B/s",
-    averageSpeedFormatted: "0 B/s",
-  };
-
   public static objectUrls: any[] = [];
   public static baseConfig: uploaderConfigs;
   public config: uploaderConfigs | null = null;
@@ -74,17 +47,9 @@ export default class Uploader<T = any> extends EventEmitter {
   // 标记是否已安装全局拦截器
   public static isInterceptorInstalled = false;
   public totalPercent: number = 0;
-  public chunkManager: ChunkManager | null = null;
-  public totalProgress: number = 0;
-  public lastLoadedMap = new Map();
-  public loading: boolean = false;
 
-  public uploadTime: UploadTimeInfo = {
-    startTime: 0,
-    endTime: 0,
-    duration: 0,
-    durationFormatted: "0s",
-  };
+  public lastLoadedMap = new Map();
+
   public static fileIndex = 0;
   // 添加拦截器相关属性
   public static originalXHR?: typeof XMLHttpRequest | null;
@@ -96,116 +61,12 @@ export default class Uploader<T = any> extends EventEmitter {
   public static onError: ErrorCallBack;
   // 静态默认插件
   private static defaultPlugins: IUploaderPlugin[] = [];
-  public openCallBack: OpenFileCallback = () => null;
-  public beforeUploadCallback: BeforeUploadCallBack | null | undefined = null;
-  public updateCallback: UpdateCallBack | null | undefined = null;
-  public uploadSuccessCallback: UploadSuccessCallBack<T> = () => null;
-  public selectCallback: SelectCallBack | null | undefined = null;
-  public onInitChunkCallback: onInitChunkCallback | null = null;
-  public OnMergeChunkCallBack: OnMergeChunkCallBack | null = null;
-  // 用于防抖的定时器
-  private __updateTimer__: ReturnType<typeof setTimeout> | null = null;
-  public totalUploadBytes: number = 0;
+  private openCallBack: OpenFileCallback = () => null;
+  private beforeUploadCallback: BeforeUploadCallBack | null | undefined = null;
 
-  /**
-   * 触发更新回调（带防抖）
-   * @private
-   */
-  public triggerUpdate(): void {
-    // 清除之前的定时器
-    if (this.__updateTimer__) {
-      clearTimeout(this.__updateTimer__);
-    }
+  private uploadSuccessCallback: UploadSuccessCallBack<T> = () => null;
+  private selectCallback: SelectCallBack | null | undefined = null;
 
-    // 设置新的定时器，延迟执行更新回调
-    this.__updateTimer__ = setTimeout(() => {
-      // 计算并更新全局上传速率
-      this.uploadSpeed = this.calculateGlobalUploadSpeed();
-
-      this.updateCallback?.([...this.files]);
-    }, 100); // 100ms 防抖延迟
-  }
-
-  /**
-   * 获取文件的已上传字节数（统一获取逻辑）
-   * @param file 文件实例
-   * @returns 已上传字节数
-   * @private
-   */
-  private getFileUploadedBytes(file: UploadFile): number {
-    return file.chunkManager
-      ? file.chunkManager.totalUploadedSize
-      : file.__uploadedBytes__ || 0;
-  }
-
-  /**
-   * 计算全局上传速率(所有文件的聚合)
-   * @returns 全局速率对象
-   * @private
-   */
-  private calculateGlobalUploadSpeed(): {
-    currentSpeed: number;
-    averageSpeed: number;
-    currentSpeedFormatted: string;
-    averageSpeedFormatted: string;
-  } {
-    let totalCurrentSpeed = 0;
-    let totalUploadedBytes = 0;
-    let totalFileSize = 0;
-    let uploadingFileCount = 0;
-
-    // 遍历所有正在上传的文件，累加速率和字节数
-    this.files.forEach((file) => {
-      if (isFileActive(file)) {
-        uploadingFileCount++;
-
-        // 累加文件大小（用于计算平均速度）
-        totalFileSize += file.File.size;
-
-        // 使用统一方法获取已上传字节数
-        totalUploadedBytes += this.getFileUploadedBytes(file);
-
-        // 如果文件有速度信息，累加瞬时速度
-        if (file.uploadSpeed) {
-          totalCurrentSpeed += file.uploadSpeed.currentSpeed;
-        }
-      } else if (file.status === "success") {
-        // 已完成文件也计入总大小（用于计算整体平均速度）
-        totalFileSize += file.File.size;
-        totalUploadedBytes += file.File.size;
-      }
-    });
-
-    // 计算全局平均速度：总已上传字节 / 总耗时
-    let globalAverageSpeed = 0;
-    if (totalUploadedBytes > 0 && uploadingFileCount > 0) {
-      // 找到最早开始上传的文件的时间
-      let earliestStartTime = Date.now();
-      this.files.forEach((file) => {
-        if (isFileActive(file) && file.uploadTime.startTime > 0) {
-          earliestStartTime = Math.min(
-            earliestStartTime,
-            file.uploadTime.startTime,
-          );
-        }
-      });
-
-      const totalTime = (Date.now() - earliestStartTime) / 1000;
-      if (totalTime > 0) {
-        globalAverageSpeed = totalUploadedBytes / totalTime;
-      }
-    }
-
-    // 更新全局已上传大小（使用 formatFileSize 格式化）
-    this.uploadedFormatSize = formatFileSize(totalUploadedBytes);
-
-    return {
-      currentSpeed: totalCurrentSpeed,
-      averageSpeed: globalAverageSpeed,
-      currentSpeedFormatted: formatSpeed(totalCurrentSpeed),
-      averageSpeedFormatted: formatSpeed(globalAverageSpeed),
-    };
-  }
   /* 
   清空文件
 */
@@ -272,7 +133,7 @@ export default class Uploader<T = any> extends EventEmitter {
 
       // 添加到文件列表
       this.files.push(uploadFile);
-      this.uploadFiles.push(uploadFile);
+      this.activeFiles.push(uploadFile);
     });
 
     // 更新全局统计信息
@@ -306,33 +167,6 @@ export default class Uploader<T = any> extends EventEmitter {
     } else {
       this.totalPercent = 0;
     }
-  }
-
-  // 全部取消上传
-  public cancelAll() {
-    this.files.forEach((file) => {
-      file.cancel();
-    });
-  }
-
-  // 全部暂停
-  public pauseAll() {
-    this.files.forEach((file) => {
-      file.pause();
-    });
-  }
-  // 全部继续
-  public resumeAll() {
-    this.files.forEach((file) => {
-      file.resume();
-    });
-  }
-
-  // 全部重试
-  public retryAll() {
-    this.files.forEach((file) => {
-      file.retry();
-    });
   }
 
   constructor(config?: uploaderConfigs) {
@@ -454,26 +288,25 @@ export default class Uploader<T = any> extends EventEmitter {
   private resetUploaderState(): void {
     this.lastLoadedMap = new Map();
     this.id = Uploader.id++;
-    this.uploadedBytes = 0;
+    this.transferredBytes = 0;
     this.totalBytes = 0;
     this.totalFormatSize = "0 B";
-    this.uploadedFormatSize = "0 B";
-    this.totalUploadBytes = 0;
-    this.uploadSpeed = {
+    this.transferredFormatSize = "0 B";
+    this.totalTransferredBytes = 0;
+    this.speed = {
       currentSpeedFormatted: "",
       averageSpeedFormatted: "",
       currentSpeed: 0,
       averageSpeed: 0,
     };
-    this.uploadTime = {
+    this.transferTime = {
       startTime: 0,
       endTime: 0,
       duration: 0,
       durationFormatted: "0s",
     };
     this.totalPercent = 0;
-    this.totalProgress = 0;
-    this.uploadFiles = [];
+    this.activeFiles = [];
     this.events = new Map<EventName, Set<Function>>();
     this.files = [];
   }
@@ -555,6 +388,33 @@ export default class Uploader<T = any> extends EventEmitter {
     );
   }
 
+  // 全部取消上传
+  public cancelAll() {
+    this.files.forEach((file) => {
+      file.cancel();
+    });
+  }
+
+  // 全部暂停
+  public pauseAll() {
+    this.files.forEach((file) => {
+      file.pause();
+    });
+  }
+  // 全部继续
+  public resumeAll() {
+    this.files.forEach((file) => {
+      file.resume();
+    });
+  }
+
+  // 全部重试
+  public retryAll() {
+    this.files.forEach((file) => {
+      file.retry();
+    });
+  }
+
   /**
    * @description: 手动提交上传所有文件（当 autoUpload 为 false 时）
    * @return {Promise<void>}
@@ -565,13 +425,13 @@ export default class Uploader<T = any> extends EventEmitter {
       const networkCheck = checkNetworkStatus();
       if (!networkCheck.online) {
         const error = new Error(networkCheck.error || "网络连接异常");
-        logger.error("ChunkManager", `网络检查失败: ${error.message}`);
+        logger.error("uploadChunkManager", `网络检查失败: ${error.message}`);
         this.cancelAll();
         throw error;
       }
     } catch (error) {
       this.cancelAll();
-      logger.error("ChunkManager", "网络检查异常", error);
+      logger.error("uploadChunkManager", "网络检查异常", error);
     }
     // 检查是否有待上传的文件
     if (this.files.length === 0) {
@@ -581,7 +441,7 @@ export default class Uploader<T = any> extends EventEmitter {
 
     // 如果是第一次调用 submit，触发批量开始事件并记录开始时间
     const isFirstBatch =
-      this.uploadFiles.filter((f) => f.status === "uploading").length === 0;
+      this.activeFiles.filter((f) => f.status === "UDLoading").length === 0;
     if (isFirstBatch) {
       this.emit("files-start", this.files);
 
@@ -589,7 +449,7 @@ export default class Uploader<T = any> extends EventEmitter {
       const uploadPromises = this.files.map(async (file) => {
         try {
           // 如果文件已经是成功或上传中状态，跳过
-          if (file.status === "success" || file.status === "uploading") {
+          if (file.status === "success" || file.status === "UDLoading") {
             return Promise.resolve();
           }
 
@@ -749,7 +609,7 @@ export default class Uploader<T = any> extends EventEmitter {
 
       // 添加到文件列表
       this.files.push(uploadFileInstance);
-      this.uploadFiles.push(uploadFileInstance);
+      this.activeFiles.push(uploadFileInstance);
       if (this.config?.autoUpload) {
         uploadFileInstance.start();
       }

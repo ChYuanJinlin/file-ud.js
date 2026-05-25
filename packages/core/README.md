@@ -63,7 +63,7 @@ uploader.onInitChunk = async (uploadFile) => {
   });
   
   return {
-    uploadedChunks: data.uploadedChunks || [],
+    chunks: data.chunks || [],
     fileHash: data.fileHash
   };
 };
@@ -307,7 +307,7 @@ uploader.onUpdate = (updatedFiles) => {
     <div>进度: {{ file.percent }}%</div>
     <div>大小: {{ file.formatSize }}</div>
     <div>已上传: {{ file.uploadedSize }}</div>
-    <div>速度: {{ file.uploadSpeed?.currentSpeedFormatted }}</div>
+    <div>速度: {{ file.speed?.currentSpeedFormatted }}</div>
   </div>
 </template>
 ```
@@ -324,7 +324,7 @@ packages/core/
 │   ├── uploader/          # 上传核心逻辑
 │   │   ├── index.ts       # Uploader 类
 │   │   ├── UploadFile.ts  # 文件实例类
-│   │   └── ChunkManager.ts # 分片管理器
+│   │   └── uploadChunkManager.ts # 分片管理器
 │   ├── types/             # TypeScript 类型定义
 │   ├── utils/             # 工具函数
 │   └── fileUD/            # FileUD 入口

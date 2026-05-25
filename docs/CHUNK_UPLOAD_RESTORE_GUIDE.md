@@ -6,7 +6,7 @@
 
 **核心难点**：
 - **普通上传**：只需要设置 `percent` 和 `status`
-- **分片上传**：还需要初始化 `ChunkManager` 的状态（`completedChunks`、`totalChunks`、`uploadedChunks` 等）
+- **分片上传**：还需要初始化 `uploadChunkManager` 的状态（`completedChunks`、`totalChunks`、`chunks` 等）
 
 ---
 
@@ -28,7 +28,7 @@ export interface IFile {
   /* 已完成分片数（回显分片上传进度时需要） */
   completedChunks?: number;
   /* 已上传的分片索引数组（用于断点续传回显） */
-  uploadedChunkIndexes?: number[];
+  chunkIndexes?: number[];
   /* 文件哈希值（用于秒传/断点续传回显） */
   fileHash?: string;
   /* 服务端上传ID（用于断点续传回显） */
@@ -38,7 +38,7 @@ export interface IFile {
 
 ---
 
-### 2. 自动初始化 ChunkManager
+### 2. 自动初始化 uploadChunkManager
 
 在 [UploadFile](file://d:\yjl\file-UD\packages\core\src\uploader\UploadFile.ts#L156-L278) 构造函数中，检测到 `isChunkUpload` 为 `true` 时，会自动调用 `initChunkManagerFromRestore()` 方法初始化分片状态。
 
@@ -56,11 +56,11 @@ export interface IFile {
   "fileName": "large-video.mp4",
   "url": "https://example.com/files/large-video.mp4",
   "fileSize": 104857600,
-  "status": "uploading",
+  "status": "UDLoading",
   "isChunkUpload": true,
   "totalChunks": 20,
   "completedChunks": 8,
-  "uploadedChunkIndexes": [0, 1, 2, 3, 4, 5, 6, 7],
+  "chunkIndexes": [0, 1, 2, 3, 4, 5, 6, 7],
   "fileHash": "a1b2c3d4e5f6...",
   "uploadId": "upload_xyz789"
 }
@@ -97,7 +97,7 @@ async function loadFilesFromServer() {
     isChunkUpload: serverFile.isChunkUpload,
     totalChunks: serverFile.totalChunks,
     completedChunks: serverFile.completedChunks,
-    uploadedChunkIndexes: serverFile.uploadedChunkIndexes,
+    chunkIndexes: serverFile.chunkIndexes,
     fileHash: serverFile.fileHash,
     uploadId: serverFile.uploadId,
   }));
@@ -109,7 +109,7 @@ async function loadFilesFromServer() {
 // 5. 监听进度更新
 uploader.onUpdate = (files) => {
   files.forEach(file => {
-    if (file.status === "uploading") {
+    if (file.status === "UDLoading") {
       console.log(`${file.fileName}: ${file.percent}% (${file.chunkManager?.completedChunks}/${file.chunkManager?.totalChunks} 分片)`);
     }
   });
@@ -126,7 +126,7 @@ uploader.onUpdate = (files) => {
 {
   "fileId": "file_abc123",
   "fileName": "large-video.mp4",
-  "status": "uploading",
+  "status": "UDLoading",
   "isChunkUpload": true,
   "totalChunks": 20,
   "completedChunks": 8
@@ -147,7 +147,7 @@ const filesToRestore: IFile[] = serverFiles.map((serverFile: any) => ({
   isChunkUpload: true,
   totalChunks: serverFile.totalChunks,
   completedChunks: serverFile.completedChunks,
-  // uploadedChunkIndexes 可选，不提供时会假设前 N 个分片已完成
+  // chunkIndexes 可选，不提供时会假设前 N 个分片已完成
 }));
 
 uploader.setFiles(filesToRestore);
@@ -216,11 +216,11 @@ const filesToRestore: IFile[] = [
     fileName: "video.mp4",
     url: "",
     File: new File([], "video.mp4"),
-    status: "uploading",
+    status: "UDLoading",
     isChunkUpload: true,
     totalChunks: 50,
     completedChunks: 25,
-    uploadedChunkIndexes: [0, 1, 2, ..., 24],
+    chunkIndexes: [0, 1, 2, ..., 24],
   },
   
   // 分片上传文件（已完成）
@@ -252,7 +252,7 @@ uploader.setFiles(filesToRestore);
   ↓
 检测：up.config?.chunkOptions || file.isChunkUpload
   ↓
-如果为 true，创建 ChunkManager
+如果为 true，创建 uploadChunkManager
   ↓
 检测：file.isChunkUpload && file.totalChunks !== undefined
   ↓
@@ -260,7 +260,7 @@ uploader.setFiles(filesToRestore);
   ↓
 1. 设置 totalChunks ✅
 2. 设置 completedChunks ✅
-3. 初始化 uploadedChunks 数组 ✅
+3. 初始化 chunks 数组 ✅
 4. 标记已上传的分片 ✅
 5. 设置 fileHash 和 uploadId ✅
 6. 计算并设置 percent ✅
@@ -297,13 +297,13 @@ interface ServerFileResponse {
   fileName: string;
   url: string;
   fileSize: number;
-  status: "pending" | "uploading" | "success" | "fail" | "cancelled";
+  status: "pending" | "UDLoading" | "success" | "fail" | "cancelled";
   
   // 分片上传信息（仅当 isChunkUpload = true 时需要）
   isChunkUpload: boolean;
   totalChunks?: number;           // 总分片数
   completedChunks?: number;       // 已完成分片数
-  uploadedChunkIndexes?: number[]; // 已上传的分片索引数组
+  chunkIndexes?: number[]; // 已上传的分片索引数组
   fileHash?: string;              // 文件哈希值
   uploadId?: string;              // 服务端上传ID
   
@@ -346,7 +346,7 @@ app.get('/api/files/:fileId/chunk-progress', async (req, res) => {
       isChunkUpload: true,
       totalChunks: file.totalChunks,
       completedChunks: chunks.length,
-      uploadedChunkIndexes: chunks.map(c => c.index),
+      chunkIndexes: chunks.map(c => c.index),
       fileHash: file.fileHash,
       uploadId: file.uploadId,
     });
@@ -379,12 +379,12 @@ File: new File([], serverFile.fileName)
 
 **原因**：
 - 回显的文件不需要再次上传（除非用户点击重试）
-- `ChunkManager` 在初始化时只需要文件名和大小
+- `uploadChunkManager` 在初始化时只需要文件名和大小
 - 如果用户点击重试，需要重新选择文件或从服务器下载
 
 ---
 
-### Q2: 如果没有 uploadedChunkIndexes 怎么办？
+### Q2: 如果没有 chunkIndexes 怎么办？
 
 **解决方案**：可以只提供 `completedChunks`，系统会假设前 N 个分片已完成：
 
@@ -393,10 +393,10 @@ File: new File([], serverFile.fileName)
   isChunkUpload: true,
   totalChunks: 20,
   completedChunks: 8,
-  // uploadedChunkIndexes 不提供
+  // chunkIndexes 不提供
 }
 
-// 系统会自动标记 uploadedChunks[0] ~ uploadedChunks[7] 为 true
+// 系统会自动标记 chunks[0] ~ chunks[7] 为 true
 ```
 
 ---
@@ -407,7 +407,7 @@ File: new File([], serverFile.fileName)
 
 ```vue
 <template>
-  <button @click="file.retry()" v-if="file.status === 'uploading'">
+  <button @click="file.retry()" v-if="file.status === 'UDLoading'">
     继续上传
   </button>
 </template>
@@ -415,7 +415,7 @@ File: new File([], serverFile.fileName)
 
 **工作原理**：
 1. 调用 `file.retry()`
-2. [ChunkManager](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L24-L1442) 会检查 `uploadedChunks` 数组
+2. [uploadChunkManager](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L24-L1442) 会检查 `chunks` 数组
 3. 跳过已上传的分片，只上传未完成的分片
 4. 实现断点续传
 
@@ -466,7 +466,7 @@ async function deleteFile(file) {
   isChunkUpload: true,
   totalChunks: 20,
   completedChunks: 8,
-  uploadedChunkIndexes: [0, 1, 2, 3, 4, 5, 6, 7],
+  chunkIndexes: [0, 1, 2, 3, 4, 5, 6, 7],
   fileHash: "a1b2c3d4...",
   uploadId: "upload_xyz"
 }
@@ -539,7 +539,7 @@ uploader.onUpdate = (files) => {
 ### 核心要点
 
 1. ✅ **扩展 IFile 接口**：添加 `isChunkUpload`、`totalChunks`、`completedChunks` 等字段
-2. ✅ **自动初始化**：在 [UploadFile](file://d:\yjl\file-UD\packages\core\src\uploader\UploadFile.ts#L156-L278) 构造函数中检测并初始化 [ChunkManager](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts#L24-L1442)
+2. ✅ **自动初始化**：在 [UploadFile](file://d:\yjl\file-UD\packages\core\src\uploader\UploadFile.ts#L156-L278) 构造函数中检测并初始化 [uploadChunkManager](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L24-L1442)
 3. ✅ **进度计算**：基于 `completedChunks / totalChunks` 计算百分比
 4. ✅ **断点续传**：回显后可以继续上传，自动跳过已完成的分片
 
@@ -570,5 +570,5 @@ uploader.onUpdate = (files) => {
 ## 📚 参考资料
 
 - [SETFILES_GUIDE.md](file://d:\yjl\file-UD\docs\SETFILES_GUIDE.md) - setFiles 使用指南
-- [ChunkManager.ts](file://d:\yjl\file-UD\packages\core\src\uploader\ChunkManager.ts) - 分片管理器源码
+- [uploadChunkManager.ts](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts) - 分片管理器源码
 - [UploadFile.ts](file://d:\yjl\file-UD\packages\core\src\uploader\UploadFile.ts) - 上传文件类源码

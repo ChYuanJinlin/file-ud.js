@@ -75,7 +75,7 @@ app.post("/check-file", (req, res) => {
           fileSize: fileInfo.fileSize,
           url: fileInfo.url,
         },
-        uploadedChunks: totalChunks ? Array.from({ length: totalChunks }, (_, i) => i) : [],
+        chunks: totalChunks ? Array.from({ length: totalChunks }, (_, i) => i) : [],
         totalChunks: totalChunks || 0,
       }
     });
@@ -89,7 +89,7 @@ app.post("/check-file", (req, res) => {
   if (fs.existsSync(taskRecordPath)) {
     try {
       const taskInfo = JSON.parse(fs.readFileSync(taskRecordPath, "utf-8"));
-      existingChunks = taskInfo.uploadedChunks || [];
+      existingChunks = taskInfo.chunks || [];
       hasTask = true;
       console.log(`🔄 发现未完成上传: ${taskInfo.fileName}，已上传 ${existingChunks.length}/${taskInfo.totalChunks} 分片`);
     } catch (error) {
@@ -126,7 +126,7 @@ app.post("/check-file", (req, res) => {
         isInstantUpload: false,
         canReuseChunks: true,         // 前端需要这个字段
         fileHash: fileHash,
-        uploadedChunks: existingChunks,
+        chunks: existingChunks,
         totalChunks: totalChunks || 0,
       }
     });
@@ -152,7 +152,7 @@ app.post("/check-file", (req, res) => {
       isInstantUpload: false,
       canReuseChunks: false,
       fileHash: fileHash,
-      uploadedChunks: [],
+      chunks: [],
       totalChunks: totalChunks || 0,
     }
   });
@@ -178,7 +178,7 @@ app.get("/get-uploaded-chunks", (req, res) => {
       success: true,
       data: {
         fileHash,
-        uploadedChunks: [],
+        chunks: [],
         totalChunks: 0,
       },
     });
@@ -186,7 +186,7 @@ app.get("/get-uploaded-chunks", (req, res) => {
 
   try {
     const taskInfo = JSON.parse(fs.readFileSync(taskFile, "utf-8"));
-    console.log(`📂 断点续传: ${taskInfo.fileName} (已上传: ${taskInfo.uploadedChunks.length}/${taskInfo.totalChunks})`);
+    console.log(`📂 断点续传: ${taskInfo.fileName} (已上传: ${taskInfo.chunks.length}/${taskInfo.totalChunks})`);
 
     res.json({
       success: true,
@@ -194,7 +194,7 @@ app.get("/get-uploaded-chunks", (req, res) => {
         fileHash,
         fileName: taskInfo.fileName,
         totalChunks: taskInfo.totalChunks,
-        uploadedChunks: taskInfo.uploadedChunks,
+        chunks: taskInfo.chunks,
         chunkSize: taskInfo.chunkSize,
         fileSize: taskInfo.fileSize,
       },
@@ -238,7 +238,7 @@ app.post("/create-upload-task", (req, res) => {
         fileName: fileInfo.fileName,
         fileSize: fileInfo.fileSize,
         totalChunks,
-        uploadedChunks: Array.from({ length: totalChunks }, (_, i) => i),
+        chunks: Array.from({ length: totalChunks }, (_, i) => i),
       },
     });
   }
@@ -261,7 +261,7 @@ app.post("/create-upload-task", (req, res) => {
     fileSize: parseInt(fileSize),
     totalChunks: parseInt(totalChunks),
     chunkSize: chunkSize || 5 * 1024 * 1024,
-    uploadedChunks: [],
+    chunks: [],
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
@@ -304,9 +304,9 @@ app.post("/upload-chunk", upload.single("file"), (req, res) => {
         try {
           const taskInfo = JSON.parse(fs.readFileSync(taskFile, "utf-8"));
           const chunkIdx = parseInt(chunkIndex);
-          if (!taskInfo.uploadedChunks.includes(chunkIdx)) {
-            taskInfo.uploadedChunks.push(chunkIdx);
-            taskInfo.uploadedChunks.sort((a, b) => a - b);
+          if (!taskInfo.chunks.includes(chunkIdx)) {
+            taskInfo.chunks.push(chunkIdx);
+            taskInfo.chunks.sort((a, b) => a - b);
             taskInfo.updatedAt = Date.now();
             fs.writeFileSync(taskFile, JSON.stringify(taskInfo, null, 2));
           }
@@ -339,13 +339,13 @@ app.post("/upload-chunk", upload.single("file"), (req, res) => {
           const taskInfo = JSON.parse(fs.readFileSync(taskFile, "utf-8"));
           
           const chunkIdx = parseInt(chunkIndex);
-          if (!taskInfo.uploadedChunks.includes(chunkIdx)) {
-            taskInfo.uploadedChunks.push(chunkIdx);
-            taskInfo.uploadedChunks.sort((a, b) => a - b);
+          if (!taskInfo.chunks.includes(chunkIdx)) {
+            taskInfo.chunks.push(chunkIdx);
+            taskInfo.chunks.sort((a, b) => a - b);
             taskInfo.updatedAt = Date.now();
             fs.writeFileSync(taskFile, JSON.stringify(taskInfo, null, 2));
             
-            console.log(`   ✅ 分片 ${chunkIndex} 已保存，进度: ${taskInfo.uploadedChunks.length}/${taskInfo.totalChunks}`);
+            console.log(`   ✅ 分片 ${chunkIndex} 已保存，进度: ${taskInfo.chunks.length}/${taskInfo.totalChunks}`);
           }
         } catch (error) {
           console.error("更新任务记录失败:", error);
@@ -357,7 +357,7 @@ app.post("/upload-chunk", upload.single("file"), (req, res) => {
           fileName: fileName || "unknown",
           totalChunks: parseInt(totalChunks),
           chunkSize: req.file.size,
-          uploadedChunks: [parseInt(chunkIndex)],
+          chunks: [parseInt(chunkIndex)],
           createdAt: Date.now(),
           updatedAt: Date.now(),
         };
