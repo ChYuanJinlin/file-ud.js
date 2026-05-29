@@ -39,7 +39,7 @@ uploader.use(new SmartRetryPlugin({
 - ✅ **可选启用**：用户可以选择性使用新功能
 
 ### 2. 插件化架构
-- ✅ 实现 `IUploaderPlugin` 接口
+- ✅ 实现 `IUDPlugin` 接口
 - ✅ 利用现有事件钩子（`onError`, `onSuccess`）
 - ✅ 独立的配置和状态管理
 
@@ -69,28 +69,28 @@ uploader.use(new SmartRetryPlugin({
 
 ### 1. 网络状态监控插件
 ```typescript
-class NetworkMonitorPlugin implements IUploaderPlugin {
+class NetworkMonitorPlugin implements IUDPlugin {
   // 监听网络变化，自动暂停/恢复上传
 }
 ```
 
 ### 2. 上传数据统计插件
 ```typescript
-class AnalyticsPlugin implements IUploaderPlugin {
+class AnalyticsPlugin implements IUDPlugin {
   // 收集上传成功率、耗时等数据
 }
 ```
 
 ### 3. 拖拽上传增强插件
 ```typescript
-class DragDropPlugin implements IUploaderPlugin {
+class DragDropPlugin implements IUDPlugin {
   // 增强拖拽上传体验
 }
 ```
 
 ### 4. 离线队列插件
 ```typescript
-class OfflineQueuePlugin implements IUploaderPlugin {
+class OfflineQueuePlugin implements IUDPlugin {
   // 无网络时暂存文件，恢复后自动上传
 }
 ```
@@ -126,20 +126,20 @@ class OfflineQueuePlugin implements IUploaderPlugin {
 
 **提交新插件的步骤**:
 1. 在 `packages/plugins/src/` 下创建插件目录
-2. 实现 `IUploaderPlugin` 接口
+2. 实现 `IUDPlugin` 接口
 3. 编写详细的使用文档（README.md）
 4. 在 `packages/plugins/src/index.ts` 中导出
 5. 在示例应用中添加使用演示
 
 **插件模板**:
 ```typescript
-import { IUploaderPlugin, PluginContext, UploadFile } from "@file-ud.js/core";
+import { IUDPlugin, PluginContext, UploadFile } from "@file-ud.js/core";
 
 export interface MyPluginConfig {
   // 配置选项
 }
 
-export class MyPlugin implements IUploaderPlugin {
+export class MyPlugin implements IUDPlugin {
   name = "MyPlugin";
   version = "1.0.0";
   desc = "插件描述";

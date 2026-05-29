@@ -45,7 +45,7 @@ export default class UploadChunkManager extends ChunkManager {
       (this as any).__hashAbortController__ = hashAbortController;
 
       try {
-        const up = this.uploadFile.__uploader__;
+        const up = this.uploadFile.up;
 
         // 获取插件上下文
         const context = (this.uploadFile as any).__pluginContext || {
@@ -149,7 +149,7 @@ export default class UploadChunkManager extends ChunkManager {
     await saveFileHash(file, hash);
 
     // ✅ 5. 如果启用了文件缓存，将 File 对象保存到 IndexedDB
-    const up = this.uploadFile.__uploader__;
+    const up = this.uploadFile.up;
     if (up.config?.chunkOptions?.enableFileCache) {
       try {
         const { saveFileToCache } = await import("../utils/fileCache");
@@ -176,7 +176,7 @@ export default class UploadChunkManager extends ChunkManager {
   private async initUpload(): Promise<
     ReturnType<onInitChunkCallback> | undefined
   > {
-    const up = this.uploadFile.__uploader__;
+    const up = this.uploadFile.transfer;
     this.fileHash = await this.getFileHash(this.uploadFile.File);
     // 添加文件级别的开始上传日志（用于监控模块）
     logger.info(
@@ -236,7 +236,7 @@ export default class UploadChunkManager extends ChunkManager {
             this.uploadFile.proxy.status = "success";
 
             // ✅ 关键修复：更新全局统计信息（总进度、总大小）
-            const up = this.uploadFile.__uploader__;
+            const up = this.uploadFile.transfer;
             up.updateGlobalStats();
 
             // 更新上传速度
@@ -291,7 +291,7 @@ export default class UploadChunkManager extends ChunkManager {
             this.uploadFile.proxy.percent = 100;
 
             // ✅ 关键修复：更新全局统计信息（总进度、总大小）
-            const up = this.uploadFile.__uploader__;
+            const up = this.uploadFile.transfer;
             up.updateGlobalStats();
 
             // 更新上传速度
@@ -343,7 +343,7 @@ export default class UploadChunkManager extends ChunkManager {
             this.updateProgress();
 
             // ✅ 关键修复：更新全局统计信息（总进度、总大小）
-            const up = this.uploadFile.__uploader__;
+            const up = this.uploadFile.transfer;
             up.updateGlobalStats();
             up.triggerUpdate();
 
@@ -588,7 +588,7 @@ export default class UploadChunkManager extends ChunkManager {
             this.updateProgress();
 
             // 触发分片上传成功事件
-            const up = this.uploadFile.__uploader__;
+            const up = this.uploadFile.transfer;
             up.emit("chunk-success", {
               chunkIndex,
               totalChunks: this.totalChunks,
@@ -652,7 +652,7 @@ export default class UploadChunkManager extends ChunkManager {
       );
 
       // 触发分片上传失败事件
-      const up = this.uploadFile.__uploader__;
+      const up = this.uploadFile.transfer;
       up.emit("chunk-error", {
         chunkIndex,
         totalChunks: this.totalChunks,
@@ -668,7 +668,7 @@ export default class UploadChunkManager extends ChunkManager {
    * 合并所有分片
    */
   private async mergeChunks(): Promise<any> {
-    const up = this.uploadFile.__uploader__;
+    const up = this.uploadFile.transfer;
     this.uploadFile.proxy.status = "merging";
 
     // 触发合并开始事件
@@ -972,7 +972,7 @@ export default class UploadChunkManager extends ChunkManager {
     );
 
     // 触发取消事件
-    const up = this.uploadFile.__uploader__;
+    const up = this.uploadFile.transfer;
     up.emit("cancel", this.uploadFile.proxy);
   }
 
@@ -1027,7 +1027,7 @@ export default class UploadChunkManager extends ChunkManager {
     this.uploadFile.proxy.status = "UDLoading";
 
     // 触发恢复事件
-    const up = this.uploadFile.__uploader__;
+    const up = this.uploadFile.transfer;
     up.emit("resume", this.uploadFile.proxy);
 
     logger.info(
@@ -1144,7 +1144,7 @@ export default class UploadChunkManager extends ChunkManager {
 
     // 不再直接更新全局 speed，而是触发 Uploader 的更新
     // 由 Uploader.calculateGlobalUploadSpeed() 统一聚合所有文件的速度
-    this.uploadFile.__uploader__.triggerUpdate();
+    this.uploadFile.transfer.triggerUpdate();
 
     // 更新基准值
     this.lastUpdateTime = now;
@@ -1152,7 +1152,7 @@ export default class UploadChunkManager extends ChunkManager {
   }
 
   public async startUpload() {
-    const up = this.uploadFile.__uploader__;
+    const up = this.uploadFile.transfer;
 
     // 触发分片上传开始事件
     up.emit("chunk-upload-start", {
@@ -1249,7 +1249,7 @@ export default class UploadChunkManager extends ChunkManager {
             // 触发成功回调
             this.uploadFile.onScuccess(mergeResult);
 
-            logger.info("uploadChunkManager", "文件上传完成（断点续传）", {
+            logger.info("uploadChunkManager", "文件传输完成（断点续传）", {
               totalTime: this.totalChunkTime,
               completedChunks: this.completedChunks,
               totalChunks: this.totalChunks,

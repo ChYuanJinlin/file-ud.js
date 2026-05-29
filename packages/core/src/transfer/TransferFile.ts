@@ -1,7 +1,13 @@
 import ChunkManager from "../chunkManager";
+import Downloader from "../downloader";
+import DownloadFile from "../downloader/DownloadFile";
 import { IFile, speedInfo, TimeInfo } from "../types";
+import Uploader from "../uploader";
+import UploadFile from "../uploader/UploadFile";
+import { computeTransferTime, generateFileId, logger } from "../utils";
+import Transfer from "./Transfer";
 
-export default class TransferFile<T = any> {
+export default class TransferFile<T, D = any> {
   /**
    * 上传速率统计信息
    * 包含瞬时速度、平均速度及其格式化字符串
@@ -42,11 +48,12 @@ export default class TransferFile<T = any> {
 
   /** 上传进度百分比 (0-100) */
   percent: number | undefined;
-
+  /** 所属的 Uploader 实例 */
+  public transfer: Transfer;
   /** 是否正在上传 */
   loading: boolean;
 
-  /** 文件上传状态 */
+  /** 文件传输状态 */
   status: IFile["status"];
   isCancel: boolean = false;
   /** 文件扩展名 */
@@ -82,11 +89,14 @@ export default class TransferFile<T = any> {
   /** 当前文件已上传的字节数（用于普通上传计算总进度） */
   public __transferBytes__: number = 0;
 
-  constructor(file: IFile) {
-    this.fileId = file.fileId;
+  constructor(file: IFile, ud: Uploader<T> | Downloader<T>) {
+    this.fileId = generateFileId();
     this.url = file.url;
+
+    this.transfer = ud as unknown as Transfer;
+
     this.fileName = file.fileName;
-    this.File = file.File;
+    this.File = file.File!;
     this.percent = file.percent;
     this.status = file.status;
     this.loading = false;
@@ -96,5 +106,116 @@ export default class TransferFile<T = any> {
     this.abort = file.abort;
     this.index = file.index!;
     this.isRetry = file.isRetry || false;
+  }
+
+  /**
+   * 开始上传
+   *
+   * 统一的上传入口，自动根据配置选择分片上传或普通上传：
+   * - **分片上传**: 调用 uploadChunkManager.startUpload()
+   * - **普通上传**: 调用 upload() 方法
+   *
+   * @example
+   * ```typescript
+   * // 手动上传模式
+   * const file = uploader.addFile(fileObject);
+   *
+   * // 用户点击按钮时
+   * button.onclick = () => {
+   *   file.start();
+   * };
+   * ```
+   *
+   * @remarks
+   * - 如果文件已经在上传中，会忽略此次调用
+   * - 如果文件已上传成功，会抛出警告
+   * - 这是异步操作，建议在 UI 上显示加载状态
+   */
+  public async start(
+    UDChunkManager:
+      | DownloadFile["downloadChunkManager"]
+      | UploadFile["uploadChunkManager"],
+  ): Promise<T> {
+    return new Promise(async (resolve, reject) => {
+      this.resolve = resolve;
+      this.reject = reject;
+      let type = UDChunkManager instanceof DownloadFile ? "下载" : "上传";
+      try {
+        if (UDChunkManager) {
+          // 分片上传
+          logger.info("UploadFile", `开始分片${type}: ${this.fileName}`, {
+            fileId: this.fileId,
+            fileName: this.fileName,
+          });
+          await UDChunkManager.startUpload();
+        } else {
+          // 普通上传
+          logger.info("UploadFile", `开始普通${type}: ${this.fileName}`, {
+            fileId: this.fileId,
+            fileName: this.fileName,
+          });
+          const res =
+            (await type) === "上传"
+              ? (this as unknown as UploadFile).upload()
+              : Promise.resolve();
+          resolve(res);
+        }
+      } catch (error) {
+        logger.error("UploadFile", `文件 ${this.fileName} ${type}失败`, error);
+        this.onError(error);
+        this.reject(error);
+        throw error;
+      }
+    });
+  }
+
+  public onScuccess(res: D) {
+    this.transfer["runHook"]("onSuccess", res, this, this.transfer);
+    this.transfer.successCallback?.(res, this.proxy);
+    this.transfer.activeFiles.splice(
+      this.transfer.activeFiles.indexOf(this),
+      1,
+    );
+    (this.transfer as unknown as Uploader<T>)?.remObjectUrls(this.url);
+
+    // 添加 fileId 到日志参数中，供监控模块提取
+    logger.info("UploadFile", `文件传输成功: ${this.fileName}`, {
+      fileId: this.fileId,
+      fileName: this.fileName,
+      fileSize: this.File.size,
+    });
+
+    // ✅ 关键修复：更新全局统计信息（总进度、总大小）
+    this.transfer.updateGlobalStats();
+    this.transfer.triggerUpdate();
+
+    if (!this.transfer.activeFiles.length) {
+      this.transfer.emit("files-complete", this.transfer.files);
+      console.log("所有文件传输完成");
+      computeTransferTime(this.transfer.transferTime).end();
+      this.transfer.transferTime.startTime = 0;
+    }
+  }
+
+  public onError(err: any) {
+    const up = this.transfer;
+    if (this.isCancel) {
+      logger.warn("UploadFile", `文件传输被取消: ${this.fileName}`, {
+        fileId: this.fileId,
+        fileName: this.fileName,
+        fileSize: this.File.size,
+      });
+      return;
+    }
+    // 添加 fileId 到错误日志中，供监控模块提取
+    logger.error("UploadFile", `文件传输失败: ${this.fileName}`, {
+      fileId: this.fileId,
+      fileName: this.fileName,
+      fileSize: this.File.size,
+      error: err.message || err,
+    });
+
+    this.up["runHook"]("onError", err, this, this.context);
+    up.emit("error", new FileUDError(ErrorCode.UPLOAD_FAILED, err).toJSON());
   }
 }

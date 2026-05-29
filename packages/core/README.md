@@ -1,6 +1,6 @@
 # @file-ud.js/core
 
-强大的文件上传库，支持分片上传、断点续传、秒传等功能。
+强大的文件传输库，支持分片上传、断点续传、秒传等功能。
 
 ## ✨ 核心特性
 
@@ -277,7 +277,7 @@ uploader.on('files-start', (files) => {
 
 // 上传完成
 uploader.on('files-complete', (files) => {
-  console.log('所有文件上传完成');
+  console.log('所有文件传输完成');
 });
 
 // 分片上传事件

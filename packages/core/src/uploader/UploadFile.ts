@@ -14,17 +14,15 @@ import { ErrorCode, FileUDError } from "../fileUD/errors";
 import TransferFile from "../transfer/TransferFile";
 
 /**
- * 文件上传实例类
+ * 文件传输实例类
  * 负责单个文件的上传逻辑、状态管理、速率计算和生命周期控制
  *
  * @template T - 上传成功后的响应数据类型
  */
-export default class UploadFile<T = any> extends TransferFile<UploadFile<T>> {
+export default class UploadFile<T = any> extends TransferFile<UploadFile, T> {
   [x: string]: any;
 
-  /** 所属的 Uploader 实例 */
-  public __uploader__: Uploader;
-
+  public up: Uploader<T>;
   /**
    * 分片管理器实例
    * 每个文件拥有独立的 uploadChunkManager,实现并发控制、断点续传和失败隔离
@@ -60,16 +58,15 @@ export default class UploadFile<T = any> extends TransferFile<UploadFile<T>> {
   /** 上传开始的时间戳 (毫秒) */
   public uploadStartTime: number = 0;
 
-  constructor(file: IFile, up: Uploader<T>) {
-    super(file);
-
-    this.__uploader__ = file.__uploader__!;
+  constructor(file: IFile, up: Uploader) {
+    super(file, up);
+    this.up = up;
 
     this.proxy = createReactiveUploadFile(this, up);
     // 如果是分片上传（检查 chunkOptions 配置）,在构造时就创建 uploadChunkManager
-    if (up.config?.chunkOptions) {
+    if (this.up.config?.chunkOptions) {
       this.uploadChunkManager = new UploadChunkManager(
-        up.config.chunkOptions,
+        this.up.config.chunkOptions,
         this,
       );
 
@@ -152,9 +149,6 @@ export default class UploadFile<T = any> extends TransferFile<UploadFile<T>> {
     if (file.fileHash) {
       this.uploadChunkManager.fileHash = file.fileHash;
     }
-    if (file.uploadId) {
-      this.uploadChunkManager.uploadId = file.uploadId;
-    }
 
     // 6. 计算并设置进度百分比
     if (this.uploadChunkManager.totalChunks > 0) {
@@ -180,10 +174,10 @@ export default class UploadFile<T = any> extends TransferFile<UploadFile<T>> {
     }
 
     // ✅ 8. 尝试从 IndexedDB 恢复 File 对象（如果启用了文件缓存）
-    const up = this.__uploader__;
+    const up = this.transfer;
     if (
       file.fileHash &&
-      up.config?.chunkOptions?.enableFileCache &&
+      this.this.up.config?.chunkOptions?.enableFileCache &&
       (!this.File || this.File.size === 0)
     ) {
       logger.info("UploadFile", `尝试从缓存恢复文件: ${this.fileName}`, {
@@ -259,8 +253,8 @@ export default class UploadFile<T = any> extends TransferFile<UploadFile<T>> {
         this.abort?.();
       }
 
-      this.__uploader__.totalTransferredBytes -= this.File.size;
-      this.__uploader__.emit("cancel", this.proxy);
+      this.transfer.totalTransferredBytes -= this.File.size;
+      this.transfer.emit("cancel", this.proxy);
     };
 
     fn ? fn(next) : next();
@@ -273,7 +267,7 @@ export default class UploadFile<T = any> extends TransferFile<UploadFile<T>> {
       this.abort?.();
     }
 
-    const up = this.__uploader__;
+    const up = this.transfer;
 
     // 从文件列表中移除
     up.files = up.files.filter((f) => f.fileId !== this.fileId);
@@ -281,63 +275,10 @@ export default class UploadFile<T = any> extends TransferFile<UploadFile<T>> {
     // ✅ 重新计算全局统计信息（包括总进度、总大小等）
     up.updateGlobalStats();
 
-    up.remObjectUrls(this.url);
+    this.up.remObjectUrls(this.url);
     // ✅ 删除重复的手动更新，updateGlobalStats 已经处理了
     up.triggerUpdate();
     up.emit("remove", this.proxy);
-  }
-
-  /**
-   * 开始上传
-   *
-   * 统一的上传入口，自动根据配置选择分片上传或普通上传：
-   * - **分片上传**: 调用 uploadChunkManager.startUpload()
-   * - **普通上传**: 调用 upload() 方法
-   *
-   * @example
-   * ```typescript
-   * // 手动上传模式
-   * const file = uploader.addFile(fileObject);
-   *
-   * // 用户点击按钮时
-   * button.onclick = () => {
-   *   file.start();
-   * };
-   * ```
-   *
-   * @remarks
-   * - 如果文件已经在上传中，会忽略此次调用
-   * - 如果文件已上传成功，会抛出警告
-   * - 这是异步操作，建议在 UI 上显示加载状态
-   */
-  async start(): Promise<T> {
-    return new Promise(async (resolve, reject) => {
-      this.resolve = resolve;
-      this.reject = reject;
-      try {
-        if (this.uploadChunkManager) {
-          // 分片上传
-          logger.info("UploadFile", `开始分片上传: ${this.fileName}`, {
-            fileId: this.fileId,
-            fileName: this.fileName,
-          });
-          await this.uploadChunkManager.startUpload();
-        } else {
-          // 普通上传
-          logger.info("UploadFile", `开始普通上传: ${this.fileName}`, {
-            fileId: this.fileId,
-            fileName: this.fileName,
-          });
-          const res = await this.upload();
-          resolve(res);
-        }
-      } catch (error) {
-        logger.error("UploadFile", `文件 ${this.fileName} 上传失败`, error);
-        this.onError(error);
-        this.reject(error);
-        throw error;
-      }
-    });
   }
 
   /**
@@ -368,13 +309,13 @@ export default class UploadFile<T = any> extends TransferFile<UploadFile<T>> {
    * - 重试失败后会再次触发 error 事件
    */
   async retry() {
-    const up = this.__uploader__;
     if (!["cancelled", "fail", "error"].includes(this.proxy.status!)) {
       console.warn("没有需要重试的上传", this.fileName);
       return;
     }
     // 根据当前状态决定重试策略
-    const isChunkUpload = up.config?.chunkOptions && this.uploadChunkManager;
+    const isChunkUpload =
+      this.up.config?.chunkOptions && this.uploadChunkManager;
     if (isChunkUpload && this.uploadChunkManager) {
       // 分片上传的重试逻辑
       const hasFailedChunks =
@@ -452,7 +393,7 @@ export default class UploadFile<T = any> extends TransferFile<UploadFile<T>> {
       });
     }
     this.proxy.isRetry = false;
-    this.__uploader__.emit("retry", this.proxy);
+    this.transfer.emit("retry", this.proxy);
   }
 
   /**
@@ -493,7 +434,7 @@ export default class UploadFile<T = any> extends TransferFile<UploadFile<T>> {
     } else {
       console.warn("该模式不支持暂停", this.fileName);
     }
-    this.__uploader__.emit("pause", this.proxy);
+    this.transfer.emit("pause", this.proxy);
   }
 
   /**
@@ -532,20 +473,19 @@ export default class UploadFile<T = any> extends TransferFile<UploadFile<T>> {
     } else {
       console.warn("该模式不支持恢复", this.fileName);
     }
-    this.__uploader__.emit("resume", this.proxy);
+    this.transfer.emit("resume", this.proxy);
   }
 
   setFile(file: File | Blob, formData: FormData, index?: number) {
-    const up = this.__uploader__;
-    if (typeof up.config?.file === "function") {
-      up.config?.file({
+    if (typeof this.up.config?.file === "function") {
+      this.up.config?.file({
         data: file,
         formData,
         uploadFile: this,
         chunkIndex: index,
       });
     } else {
-      formData.append(up.config?.file!, file);
+      formData.append(this.up.config?.file!, file);
     }
   }
 
@@ -564,12 +504,12 @@ export default class UploadFile<T = any> extends TransferFile<UploadFile<T>> {
   ): Promise<T> {
     this.proxy.loading = true;
     return new Promise(async (resolve, reject) => {
-      const up = this.__uploader__;
+      const up = this.transfer;
       up.loading = true;
       // 重置已上传字节数（避免重新上传时使用旧值）
       this.__transferBytes__ = 0;
 
-      if (!up.config?.action) {
+      if (!this.up.config?.action) {
         console.warn("请设置上传地址");
         return;
       }
@@ -594,8 +534,8 @@ export default class UploadFile<T = any> extends TransferFile<UploadFile<T>> {
       // 获取插件上下文
       this.context = (this as any).__pluginContext || {
         uploader: up,
-        shared: up["pluginSharedData"],
-        config: up.config,
+        shared: this.up["pluginSharedData"],
+        config: this.up.config,
       };
       if (!up.transferTime.startTime) {
         computeTransferTime(up.transferTime).start();
@@ -605,9 +545,9 @@ export default class UploadFile<T = any> extends TransferFile<UploadFile<T>> {
         this.setFile(this.File, this.formData);
       }
 
-      if (up.beforeUploadCallback) {
+      if (this.up.beforeTransferCallback) {
         try {
-          const result = await up.beforeUploadCallback(this);
+          const result = await this.up.beforeTransferCallback(this);
           if (!result) {
             return;
           }
@@ -621,7 +561,7 @@ export default class UploadFile<T = any> extends TransferFile<UploadFile<T>> {
       // 只在首次上传时累加 totalBytes，避免重试时重复累加
       // 对于分片上传，应该在 uploadChunkManager.initUpload() 中初始化 totalBytes
       // 对于普通上传，在这里初始化
-      if (!this.uploadChunkManager && up.config?.autoUpload) {
+      if (!this.uploadChunkManager && this.up.config?.autoUpload) {
         // 普通上传：只在首次上传时累加
         if (up.totalBytes === 0 || !this.__hasCountedTotalBytes__) {
           up.totalTransferredBytes += this.File.size;
@@ -637,15 +577,16 @@ export default class UploadFile<T = any> extends TransferFile<UploadFile<T>> {
       // 对于普通上传，使用 this.formData
       const requestData = chunkFormData || this.formData || new FormData();
 
-      if (typeof up.config?.action === "string") {
+      if (typeof this.up.config?.action === "string") {
         // 直接使用用户配置的 action URL
-        promise = (up.config.axiosInstance || axios).post<T>(
-          up.config.action,
+        const axiosPromise = (this.up.config.axiosInstance || axios).post<T>(
+          this.up.config.action,
           requestData,
           { signal },
         );
+        promise = axiosPromise.then((response) => response.data);
       } else {
-        promise = up.config?.action(requestData, this);
+        promise = this.up.config?.action(requestData, this);
       }
 
       promise
@@ -681,66 +622,17 @@ export default class UploadFile<T = any> extends TransferFile<UploadFile<T>> {
     });
   }
 
-  public onScuccess(res: T) {
-    const up = this.__uploader__;
-
-    up["runHook"]("onSuccess", res, this, this.context);
-    up.uploadSuccessCallback?.(res, this.proxy);
-    up.activeFiles.splice(up.activeFiles.indexOf(this), 1);
-    up.remObjectUrls(this.url);
-
-    // 添加 fileId 到日志参数中，供监控模块提取
-    logger.info("UploadFile", `文件上传成功: ${this.fileName}`, {
-      fileId: this.fileId,
-      fileName: this.fileName,
-      fileSize: this.File.size,
-    });
-
-    // ✅ 关键修复：更新全局统计信息（总进度、总大小）
-    up.updateGlobalStats();
-    up.triggerUpdate();
-
-    if (!up.activeFiles.length) {
-      up.emit("files-complete", up.files);
-      console.log("所有文件上传完成");
-      computeTransferTime(up.transferTime).end();
-      up.transferTime.startTime = 0;
-    }
-  }
-
-  public onError(err: any) {
-    const up = this.__uploader__;
-    if (this.isCancel) {
-      logger.warn("UploadFile", `文件上传被取消: ${this.fileName}`, {
-        fileId: this.fileId,
-        fileName: this.fileName,
-        fileSize: this.File.size,
-      });
-      return;
-    }
-    // 添加 fileId 到错误日志中，供监控模块提取
-    logger.error("UploadFile", `文件上传失败: ${this.fileName}`, {
-      fileId: this.fileId,
-      fileName: this.fileName,
-      fileSize: this.File.size,
-      error: err.message || err,
-    });
-
-    up["runHook"]("onError", err, this, this.context);
-    up.emit("error", new FileUDError(ErrorCode.UPLOAD_FAILED, err).toJSON());
-  }
-
   /**
    * 计算全局上传进度（统一处理，避免重复代码）
    */
   private calculateGlobalProgress(event: ProgressEvent): void {
-    const up = this.__uploader__;
+    const up = this.transfer;
 
     // 动态计算当前正在上传的文件总字节数和已上传字节数
     let totalUploadedBytes = 0;
     let currentTotalBytes = 0;
     let totalFilesSize = 0;
-    up.files.forEach((file) => {
+    this.up.files.forEach((file) => {
       // 根据上传类型决定状态过滤条件
       if (file.File?.size > 0) {
         totalFilesSize += file.File.size;
@@ -794,14 +686,10 @@ export default class UploadFile<T = any> extends TransferFile<UploadFile<T>> {
    * @private
    */
   private handleProgress(event: ProgressEvent): void {
-    const up = this.__uploader__;
-<<<<<<< Updated upstream
-    if (!this.chunkManager) {
-=======
+    const up = this.transfer;
     // 统一处理不同类型的事件对象
 
     if (!this.uploadChunkManager) {
->>>>>>> Stashed changes
       if (this.File.size > 0) {
         this.proxy.percent = Math.floor((event.loaded * 100) / event.total);
 
@@ -976,18 +864,18 @@ export default class UploadFile<T = any> extends TransferFile<UploadFile<T>> {
           }
 
           // 添加上传器的全局 headers
-          if (currentFileInstance?.__uploader__?.config?.headers) {
-            Object.entries(
-              currentFileInstance.__uploader__.config.headers,
-            ).forEach(([key, value]) => {
-              const headerExists = Object.keys(requestHeaders).some(
-                (existingKey) =>
-                  existingKey.toLowerCase() === key.toLowerCase(),
-              );
-              if (!headerExists) {
-                xhr.setRequestHeader(key, value as string);
-              }
-            });
+          if (currentFileInstance?.up?.config?.headers) {
+            Object.entries(currentFileInstance.up.config.headers).forEach(
+              ([key, value]) => {
+                const headerExists = Object.keys(requestHeaders).some(
+                  (existingKey) =>
+                    existingKey.toLowerCase() === key.toLowerCase(),
+                );
+                if (!headerExists) {
+                  xhr.setRequestHeader(key, value as string);
+                }
+              },
+            );
           }
 
           // 绑定进度回调到当前文件实例

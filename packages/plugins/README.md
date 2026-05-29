@@ -2,7 +2,7 @@
 
 ## 📖 概述
 
-file-ud.js 提供了强大的插件系统，允许你通过非侵入式的方式扩展上传功能。所有插件都实现 `IUploaderPlugin` 接口，可以在不修改核心代码的情况下添加新功能。
+file-ud.js 提供了强大的插件系统，允许你通过非侵入式的方式扩展上传功能。所有插件都实现 `IUDPlugin` 接口，可以在不修改核心代码的情况下添加新功能。
 
 ---
 
@@ -14,8 +14,8 @@ file-ud.js 提供了强大的插件系统，允许你通过非侵入式的方式
 - ✅ **可选启用**：用户可以选择性使用插件
 
 ### 2. 插件化架构
-- 实现 `IUploaderPlugin` 接口
-- 利用事件钩子（`onFileSelect`, `beforeUpload`, `onProgress` 等）
+- 实现 `IUDPlugin` 接口
+- 利用事件钩子（`onFileSelect`, `beforeTransfer`, `onProgress` 等）
 - 独立的配置和状态管理
 
 ### 3. 优先级机制
@@ -209,10 +209,10 @@ SmartRetryPlugin (失败时重试)
 
 ### 1. 插件接口
 
-所有插件必须实现 `IUploaderPlugin` 接口：
+所有插件必须实现 `IUDPlugin` 接口：
 
 ```typescript
-interface IUploaderPlugin {
+interface IUDPlugin {
   /** 插件名称 */
   name: string;
   
@@ -238,7 +238,7 @@ interface IUploaderPlugin {
   ) => Promise<UploadFile | void | false> | UploadFile | void;
   
   /** 上传前触发 */
-  beforeUpload?: (
+  beforeTransfer?: (
     file: UploadFile,
     context: PluginContext,
   ) => Promise<boolean | void> | boolean | void;
@@ -326,7 +326,7 @@ export class LoggerPlugin extends BasePlugin {
     return file;
   }
   
-  beforeUpload(file: UploadFile, context: PluginContext) {
+  beforeTransfer(file: UploadFile, context: PluginContext) {
     console.log(`⬆️ 开始上传: ${file.fileName}`);
     return true;
   }
@@ -361,7 +361,7 @@ uploader.use(new LoggerPlugin());
    ↓
 3. onFileSelect()    - 用户选择文件时调用
    ↓
-4. beforeUpload()    - 上传开始前调用
+4. beforeTransfer()    - 上传开始前调用
    ↓
 5. onProgress()      - 上传过程中持续调用
    ↓
@@ -505,8 +505,8 @@ onFileSelect(file, context) {
   return file;
 }
 
-// 方式2：在 beforeUpload 中返回 false
-beforeUpload(file, context) {
+// 方式2：在 beforeTransfer 中返回 false
+beforeTransfer(file, context) {
   if (!shouldUpload(file)) {
     return false;  // 阻止上传
   }
@@ -550,7 +550,7 @@ onFileSelect(file, context) {
 **提交步骤**:
 1. Fork 仓库
 2. 创建新分支 (`feature/my-plugin`)
-3. 实现插件（遵循 `IUploaderPlugin` 接口）
+3. 实现插件（遵循 `IUDPlugin` 接口）
 4. 编写详细文档（README.md）
 5. 添加使用示例
 6. 提交 Pull Request

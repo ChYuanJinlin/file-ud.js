@@ -519,7 +519,7 @@ app.post("/upload", uploadSingle.single("file"), (req, res) => {
 
   const fileInfo = {
     success: true,
-    message: "文件上传成功",
+    message: "文件传输成功",
     data: {
       originalName: req.file.originalname,
       filename: req.file.filename,
@@ -530,12 +530,12 @@ app.post("/upload", uploadSingle.single("file"), (req, res) => {
     },
   };
 
-  console.log(`✅ 文件上传成功: ${req.file.originalname} (${req.file.size} bytes)`);
+  console.log(`✅ 文件传输成功: ${req.file.originalname} (${req.file.size} bytes)`);
   res.json(fileInfo);
 });
 
 // ============================================
-// 7. 多文件上传接口
+// 7. 多文件传输接口
 // ============================================
 app.post("/upload-multiple", uploadSingle.array("files", 10), (req, res) => {
   if (!req.files || req.files.length === 0) {
@@ -554,10 +554,10 @@ app.post("/upload-multiple", uploadSingle.array("files", 10), (req, res) => {
     url: `http://localhost:3000/uploads/${file.filename}`,
   }));
 
-  console.log(`✅ 多文件上传成功: ${filesInfo.length} 个文件`);
+  console.log(`✅ 多文件传输成功: ${filesInfo.length} 个文件`);
   res.json({
     success: true,
-    message: `${filesInfo.length} 个文件上传成功`,
+    message: `${filesInfo.length} 个文件传输成功`,
     data: filesInfo,
   });
 });
@@ -630,12 +630,56 @@ app.delete("/dedup-record/:fileHash", (req, res) => {
 });
 
 // ============================================
-// 10. 静态文件服务
+// 10. 文件下载接口（普通二进制下载）
+// ============================================
+app.get("/download/:filename", (req, res) => {
+  const filename = decodeURIComponent(req.params.filename);
+  const filePath = path.join(UPLOAD_DIR, filename);
+
+  console.log(`📥 下载请求: ${filename}`);
+
+  // 检查文件是否存在
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({
+      success: false,
+      message: "文件不存在",
+    });
+  }
+
+  const stat = fs.statSync(filePath);
+  const fileSize = stat.size;
+
+  // 设置响应头
+  res.setHeader('Content-Length', fileSize);
+  res.setHeader('Content-Type', 'application/octet-stream');
+  res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+
+  // 创建读取流并传输
+  const readStream = fs.createReadStream(filePath);
+  readStream.pipe(res);
+
+  readStream.on('error', (err) => {
+    console.error(`   ❌ 文件读取失败: ${err.message}`);
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        message: "文件读取失败",
+      });
+    }
+  });
+
+  readStream.on('end', () => {
+    console.log(`   ✅ 下载完成: ${fileSize} bytes`);
+  });
+});
+
+// ============================================
+// 11. 静态文件服务
 // ============================================
 app.use("/uploads", express.static(UPLOAD_DIR));
 
 // ============================================
-// 11. 启动服务器
+// 12. 启动服务器
 // ============================================
 app.listen(3000, () => {
   console.log("\n========================================");
@@ -647,9 +691,10 @@ app.listen(3000, () => {
   console.log("📤 分片上传: POST /upload-chunk");
   console.log("🔀 合并分片: POST /merge-chunks");
   console.log("📁 普通上传: POST /upload");
-  console.log("📁 多文件上传: POST /upload-multiple");
+  console.log("📁 多文件传输: POST /upload-multiple");
   console.log("📁 文件列表: GET /files");
   console.log("🗑️ 删除记录: DELETE /dedup-record/:fileHash");
+  console.log("📥 文件下载: GET /download/:filename");
   console.log("📁 静态文件: GET /uploads/:filename");
   console.log("========================================\n");
 });

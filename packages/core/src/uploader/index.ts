@@ -1,18 +1,18 @@
 import { Errors } from "..";
 import Transfer from "../transfer/Transfer";
 import {
-  BeforeUploadCallBack,
+  beforeTransferCallBack,
   ErrorCallBack,
   EventName,
   uploaderConfigs,
   IFile,
-  IUploaderPlugin,
+  IUDPlugin,
   onInitChunkCallback,
   OnMergeChunkCallBack,
   OpenFileCallback,
   SelectCallBack,
   UpdateCallBack,
-  UploadSuccessCallBack,
+  successCallback,
 } from "../types";
 import {
   checkNetworkStatus,
@@ -36,7 +36,7 @@ export const defaultConfig: uploaderConfigs = {
   file: "file",
 };
 
-export default class Uploader<T = any> extends Transfer<UploadFile> {
+export default class Uploader<T = any> extends Transfer<UploadFile,T> {
   public inputHTML: HTMLInputElement | null;
   public static objectUrls: any[] = [];
   public static baseConfig: uploaderConfigs;
@@ -48,24 +48,19 @@ export default class Uploader<T = any> extends Transfer<UploadFile> {
   public static isInterceptorInstalled = false;
   public totalPercent: number = 0;
 
-  public lastLoadedMap = new Map();
-
   public static fileIndex = 0;
   // 添加拦截器相关属性
   public static originalXHR?: typeof XMLHttpRequest | null;
   public static interceptorActive = false;
-  public static id: number = 0;
-  public id = 0;
-  private plugins: IUploaderPlugin[] = [];
-  private pluginSharedData = new Map<string, any>();
+
   public static onError: ErrorCallBack;
   // 静态默认插件
-  private static defaultPlugins: IUploaderPlugin[] = [];
-  private openCallBack: OpenFileCallback = () => null;
-  private beforeUploadCallback: BeforeUploadCallBack | null | undefined = null;
+  private static defaultPlugins: IUDPlugin<UploadFile>[] = [];
+  public openCallBack: OpenFileCallback = () => null;
+  public beforeTransferCallback: beforeTransferCallBack | null | undefined = null;
 
-  private uploadSuccessCallback: UploadSuccessCallBack<T> = () => null;
-  private selectCallback: SelectCallBack | null | undefined = null;
+
+  public selectCallback: SelectCallBack | null | undefined = null;
 
   /* 
   清空文件
@@ -83,7 +78,12 @@ export default class Uploader<T = any> extends Transfer<UploadFile> {
     this.totalFormatSize = "0 B";
     this.triggerUpdate();
   }
-
+  /**
+   * 设置全局默认插件（影响之后创建的所有实例）
+   */
+  static setDefaultPlugins(plugins: IUDPlugin<UploadFile>[]): void {
+    Uploader.defaultPlugins = plugins;
+  }
   /**
    * 设置文件列表（用于回显已上传的文件）
    * @param files - 要回显的文件列表，可以是 UploadFile 实例或文件信息对象
@@ -145,30 +145,6 @@ export default class Uploader<T = any> extends Transfer<UploadFile> {
     logger.info("Uploader", `setFiles: 成功回显 ${this.files.length} 个文件`);
   }
 
-  /**
-   * 更新全局统计信息（内部方法）
-   * @private
-   */
-  public updateGlobalStats() {
-    // 重新计算总字节数
-    this.totalBytes = this.files.reduce((sum, file) => {
-      return sum + (file.File?.size || 0);
-    }, 0);
-
-    // 更新格式化后的总大小
-    this.totalFormatSize = formatFileSize(this.totalBytes);
-
-    // 计算总进度
-    if (this.files.length > 0) {
-      const totalPercent = this.files.reduce((sum, file) => {
-        return sum + (file.percent || 0);
-      }, 0);
-      this.totalPercent = Math.round(totalPercent / this.files.length);
-    } else {
-      this.totalPercent = 0;
-    }
-  }
-
   constructor(config?: uploaderConfigs) {
     super();
     this.inputHTML = null;
@@ -198,122 +174,10 @@ export default class Uploader<T = any> extends Transfer<UploadFile> {
       this.openCallBack = fn;
     }
   }
-  /**
-   * 注册插件
-   * @param plugin 插件实例
-   * @param options 插件配置
-   */
-  use(plugin: IUploaderPlugin | IUploaderPlugin[], options?: any): this {
-    const plugins = Array.isArray(plugin) ? plugin : [plugin];
-
-    for (const p of plugins) {
-      // 检查是否已注册
-      if (this.plugins.some((existing) => existing.name === p.name)) {
-        console.warn(`插件 ${p.name} 已存在，跳过注册`);
-        continue;
-      }
-
-      // 调用插件的 install 方法
-      if (p.install) {
-        p.install(this, options);
-      }
-      p.created?.(this);
-      this.plugins.push(p);
-      console.log(`✅ 插件已注册: ${p.name} v${p.version || "1.0.0"}`);
-    }
-
-    // 按优先级排序
-    this.plugins.sort((a, b) => (a.priority || 50) - (b.priority || 50));
-
-    return this;
-  }
-  /**
-   * 设置全局默认插件（影响之后创建的所有实例）
-   */
-  static setDefaultPlugins(plugins: IUploaderPlugin[]): void {
-    Uploader.defaultPlugins = plugins;
-  }
-  /**
-   * 移除插件
-   * @param name 插件名称
-   */
-  unuse(name: string): this {
-    const index = this.plugins.findIndex((p) => p.name === name);
-    if (index !== -1) {
-      const plugin = this.plugins[index];
-      plugin.destroy?.();
-      this.plugins.splice(index, 1);
-      console.log(`🗑️ 插件已移除: ${name}`);
-    }
-    return this;
-  }
-
-  /**
-   * 获取插件
-   * @param name 插件名称
-   */
-  getPlugin(name?: string): IUploaderPlugin | IUploaderPlugin[] | undefined {
-    if (name) {
-      return this.plugins.find((p) => p.name === name);
-    }
-    return [...this.plugins];
-  }
-
-  /**
-   * 执行插件钩子
-   * @param hook 钩子名称
-   * @param args 参数
-   */
-  private async runHook<K extends keyof IUploaderPlugin>(
-    hook: K,
-    ...args: any[]
-  ): Promise<any[]> {
-    const results: any[] = [];
-
-    for (const plugin of this.plugins) {
-      const handler = plugin[hook];
-      if (handler && typeof handler === "function") {
-        const result = await (handler as any).apply(plugin, args);
-        results.push(result);
-      }
-    }
-
-    return results;
-  }
-
-  /**
-   * 重置上传器状态为初始值（统一重置逻辑）
-   * @private
-   */
-  private resetUploaderState(): void {
-    this.lastLoadedMap = new Map();
-    this.id = Uploader.id++;
-    this.transferredBytes = 0;
-    this.totalBytes = 0;
-    this.totalFormatSize = "0 B";
-    this.transferredFormatSize = "0 B";
-    this.totalTransferredBytes = 0;
-    this.speed = {
-      currentSpeedFormatted: "",
-      averageSpeedFormatted: "",
-      currentSpeed: 0,
-      averageSpeed: 0,
-    };
-    this.transferTime = {
-      startTime: 0,
-      endTime: 0,
-      duration: 0,
-      durationFormatted: "0s",
-    };
-    this.totalPercent = 0;
-    this.activeFiles = [];
-    this.events = new Map<EventName, Set<Function>>();
-    this.files = [];
-  }
 
   private init() {
     // 使用统一的重置方法
-    this.resetUploaderState();
+    this.resetState();
 
     // 继承默认插件
     this.plugins = [...Uploader.defaultPlugins];
@@ -357,28 +221,16 @@ export default class Uploader<T = any> extends Transfer<UploadFile> {
   public updateConfig(config: Partial<uploaderConfigs>) {
     this.config = mergeObjects(this.config!, config);
   }
-  set onBeforeUpload(callback: BeforeUploadCallBack) {
-    this.beforeUploadCallback = callback;
+  set onbeforeTransfer(callback: beforeTransferCallBack) {
+    this.beforeTransferCallback = callback;
   }
 
-  set onSuccess(callback: UploadSuccessCallBack<T>) {
-    this.uploadSuccessCallback = callback;
+  set onSuccess(callback: successCallback<T>) {
+    this.successCallback = callback;
   }
 
   set onSelect(callback: SelectCallBack) {
     this.selectCallback = callback;
-  }
-
-  set onUpdate(callback: UpdateCallBack) {
-    this.updateCallback = callback;
-  }
-
-  set onInitChunk(callback: onInitChunkCallback) {
-    this.onInitChunkCallback = callback;
-  }
-
-  set onMergeChunk(callback: OnMergeChunkCallBack) {
-    this.OnMergeChunkCallBack = callback;
   }
 
   public remObjectUrls(url: string) {
@@ -454,9 +306,10 @@ export default class Uploader<T = any> extends Transfer<UploadFile> {
           }
 
           // ✅ 使用统一的 start() 方法
-          return file.start();
+
+          return file.start(file.uploadChunkManager);
         } catch (error) {
-          console.error(file.fileName + "文件上传失败:", error);
+          console.error(file.fileName + "文件传输失败:", error);
         }
       });
       await Promise.all(uploadPromises);
@@ -537,6 +390,7 @@ export default class Uploader<T = any> extends Transfer<UploadFile> {
           status: "pending",
           extension: getFileExtension(file.name),
           formatSize: formatFileSize(file.size),
+          size: file.size,
           index: Uploader.fileIndex++,
         },
         this,
@@ -600,7 +454,7 @@ export default class Uploader<T = any> extends Transfer<UploadFile> {
       });
 
       const beforeResults = await this.runHook(
-        "beforeUpload",
+        "beforeTransfer",
         uploadFileInstance,
         pluginContext,
       );
@@ -611,7 +465,7 @@ export default class Uploader<T = any> extends Transfer<UploadFile> {
       this.files.push(uploadFileInstance);
       this.activeFiles.push(uploadFileInstance);
       if (this.config?.autoUpload) {
-        uploadFileInstance.start();
+        uploadFileInstance.start(uploadFileInstance.uploadChunkManager);
       }
     }
   }

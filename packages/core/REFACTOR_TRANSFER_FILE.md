@@ -180,7 +180,7 @@ export default class UploadFile<T = any> extends TransferFile<T> {
   public reject: ((reason?: any) => void) | undefined;
   
   // 兼容性 getter/setter（保持向后兼容）
-  public get __uploader__(): Uploader {
+  public get transfer(): Uploader {
     return this.__parent__;
   }
   
@@ -290,7 +290,7 @@ public get __downloader__(): DownloaderType {
 }
 
 // UploadFile
-public get __uploader__(): Uploader {
+public get transfer(): Uploader {
   return this.__parent__;
 }
 
@@ -343,7 +343,7 @@ const customProxy = createReactiveTransferFile(myFile, myManager);
 1. **Proxy 类型** - UploadFile 的 proxy 类型使用了 `@ts-ignore`，这是有意为之的设计权衡
 2. **抽象方法** - 子类必须实现所有抽象方法（start、pause、resume、cancel、retry）
 3. **受保护属性** - 不要直接修改 `__transferredBytes__` 等 protected 属性，应通过公共方法
-4. **兼容性** - 旧的属性名（`__uploader__`、`transferSpeed`）仍然可用，但建议迁移到新命名
+4. **兼容性** - 旧的属性名（`transfer`、`transferSpeed`）仍然可用，但建议迁移到新命名
 5. **代理函数** - [createReactiveTransferFile](file://d:\yjl\file-UD\packages\core\src\utils\index.ts#L198-L250) 用于通用场景，[createReactiveUploadFile](file://d:\yjl\file-UD\packages\core\src\utils\index.ts#252-L256) 用于 UploadFile 专用场景，两者都应保留
 
 ## 🔮 未来优化方向

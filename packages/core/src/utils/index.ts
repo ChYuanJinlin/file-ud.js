@@ -1,3 +1,5 @@
+import Downloader from "../downloader";
+import DownloadFile from "../downloader/DownloadFile";
 import TransferFile from "../transfer/TransferFile";
 import { IFile, TimeInfo } from "../types";
 import Uploader from "../uploader";
@@ -168,20 +170,20 @@ export const validator = {
   size(fileSize: number, maxSize: number) {
     return fileSize <= maxSize;
   },
-  type(accept: string[], file: IFile) {
+  type(accept: string[], file: TransferFile) {
     if (accept.length > 0) {
       return accept.some((acceptType) => {
         // 处理通配符，如 'image/*'
         if (acceptType.endsWith("/*")) {
           const category = acceptType.split("/")[0];
-          return file.File.type.startsWith(category);
+          return file.File?.type.startsWith(category);
         }
         // 处理扩展名，如 '.jpg'
         if (acceptType.startsWith(".")) {
           return file.fileName.toLowerCase().endsWith(acceptType.toLowerCase());
         }
         // 处理 MIME 类型
-        return file.File.type === acceptType;
+        return file.File?.type === acceptType;
       });
     }
     return true;
@@ -189,18 +191,19 @@ export const validator = {
 };
 
 /**
- * 创建响应式的 UploadFile 实例
- * @param uploadFile 原始的 UploadFile 实例
- * @param uploader Uploader 实例
- * @returns Proxy 包装后的 UploadFile
+ * 创建响应式文件实例的通用工厂函数
+ * @param file 原始的文件实例（UploadFile 或 DownloadFile）
+ * @param manager 管理器实例（Uploader 或 Downloader）
+ * @param managerKey 管理器在文件上的属性名（'transfer' 或 '__downloader__'）
+ * @returns Proxy 包装后的文件实例
  */
-export function createReactiveUploadFile(
-  file: UploadFile,
-  uploader: Uploader,
-): UploadFile {
-  // 添加一个内部属性指向 uploader
-  Object.defineProperty(file, "__uploader__", {
-    value: uploader,
+function createReactiveFile<
+  T extends object,
+  M extends { triggerUpdate: () => void },
+>(file: T, manager: M): T {
+  // 添加一个内部属性指向管理器
+  Object.defineProperty(file, 'transfer', {
+    value: manager,
     enumerable: false, // 不可枚举，避免循环引用
     writable: false,
     configurable: false,
@@ -223,7 +226,6 @@ export function createReactiveUploadFile(
     },
 
     set(target, prop, value, receiver) {
-      const up = target.__uploader__;
       // 获取旧值
       const oldValue = Reflect.get(target, prop, receiver);
 
@@ -233,7 +235,7 @@ export function createReactiveUploadFile(
       // 如果值真的变化了，触发更新
       if (oldValue !== value) {
         // 触发 update 回调（使用防抖优化）
-        uploader.triggerUpdate();
+        manager.triggerUpdate();
       }
 
       return result;
@@ -243,10 +245,36 @@ export function createReactiveUploadFile(
     deleteProperty(target, prop) {
       const result = Reflect.deleteProperty(target, prop);
       // 触发更新回调
-      uploader.triggerUpdate();
+      manager.triggerUpdate();
       return result;
     },
-  });
+  }) as T;
+}
+
+/**
+ * 创建响应式的 UploadFile 实例
+ * @param uploadFile 原始的 UploadFile 实例
+ * @param uploader Uploader 实例
+ * @returns Proxy 包装后的 UploadFile
+ */
+export function createReactiveUploadFile(
+  file: UploadFile,
+  uploader: Uploader,
+): UploadFile {
+  return createReactiveFile(file, uploader);
+}
+
+/**
+ * 创建响应式的 DownloadFile 实例
+ * @param file 原始的 DownloadFile 实例
+ * @param downloader Downloader 实例
+ * @returns Proxy 包装后的 DownloadFile
+ */
+export function createReactiveDownloadFile(
+  file: DownloadFile,
+  downloader: Downloader,
+): DownloadFile {
+  return createReactiveFile(file, downloader);
 }
 
 /**

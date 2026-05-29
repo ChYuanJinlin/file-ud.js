@@ -199,7 +199,7 @@ uploader.onUpdate((files) => {
 
 | 场景 | 推荐策略 | 配置建议 |
 |------|---------|---------|
-| **大文件上传** | exponential | maxRetries: 5, initialDelay: 2000 |
+| **大文件传输** | exponential | maxRetries: 5, initialDelay: 2000 |
 | **小文件批量上传** | fixed | maxRetries: 3, initialDelay: 1000 |
 | **弱网环境** | exponential | maxRetries: 8, initialDelay: 3000, maxDelay: 60000 |
 | **实时性要求高** | linear | maxRetries: 2, initialDelay: 500 |

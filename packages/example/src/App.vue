@@ -44,7 +44,6 @@ const test1 = FileUD.createUploader<{
 }>("test1", {
   action: "/api/upload-chunk",
   file({ formData, uploadFile, chunkIndex, data }) {
-
     formData.append("file", data);
     formData.append("fileHash", uploadFile.uploadChunkManager?.fileHash!);
     formData.append("fileName", uploadFile.File.name);
@@ -69,7 +68,6 @@ test1.onMergeChunk = async (ch) => {
 };
 
 test1.onInitChunk = async (uploadFile) => {
-
   const { data } = await checkFile({
     fileHash: uploadFile.uploadChunkManager?.fileHash!,
     fileName: uploadFile.fileName,
@@ -130,7 +128,7 @@ test1.onInitChunk = async (uploadFile) => {
 };
 
 // ==================== 响应式数据 ====================
-const files = ref<TransferFile[]>([]);
+const files = ref<TransferFile<UploadFile>[]>([]);
 
 // ✅ 创建响应式的全局统计信息
 const globalStats = ref({
@@ -159,7 +157,7 @@ Uploader.onError = (err) => {
 
 test1.on("files-complete", (fileList) => {
   console.log("🚀 ~ fileList:", fileList);
-  ElMessage.success("所有文件上传完成！");
+  ElMessage.success("所有文件传输完成！");
 });
 
 test1.onSuccess = (res) => {
@@ -198,17 +196,19 @@ const cancelledCount = computed(
 // 切换上传模式
 const handlerChunk = () => {
   if (isChunk.value) {
+    isChunk.value = false;
     test1.updateConfig({
       chunkOptions: null,
-    });
-    isChunk.value = false;
-    ElMessage.info("已切换到大文件分片上传模式");
-  } else {
-    isChunk.value = true;
-    test1.updateConfig({
-      chunkOptions: {},
+      action: "/api/upload",
     });
     ElMessage.info("已切换到普通上传模式");
+  } else {
+    test1.updateConfig({
+      chunkOptions: {},
+      action: "/api/upload-chunk",
+    });
+    isChunk.value = true;
+    ElMessage.info("已切换到大文件分片上传模式");
   }
 };
 
@@ -321,7 +321,7 @@ const printReport = () => {
       <button @click="test1.clearFiles()">清除文件列表</button>
       <button @click="loadSavedFiles()">🔄 回显文件（清空后回显）</button>
       <button @click="handlerChunk()">
-        {{ isChunk ? "普通上传" : "大文件上传" }}
+        {{ isChunk ? "普通上传" : "大文件传输" }}
       </button>
       <button @click="test1.pauseAll()">全部暂停</button>
       <button @click="test1.resumeAll()">全部继续</button>
@@ -356,7 +356,7 @@ const printReport = () => {
       <div class="header-content">
         <h1 class="title">
           <el-icon :size="32" color="#409EFF"><Upload /></el-icon>
-          File-UD 文件上传测试平台
+          File-UD 文件传输测试平台
         </h1>
         <p class="subtitle">支持秒传、断点续传、分片上传等多种功能</p>
       </div>

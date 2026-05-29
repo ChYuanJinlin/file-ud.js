@@ -152,7 +152,7 @@ class UploadMonitor {
     }
     
     // ✅ 追踪上传成功（支持文件级别的成功）
-    if (entry.message.includes('文件上传成功')) {
+    if (entry.message.includes('文件传输成功')) {
       const fileId = this.extractFileId(entry);
       console.log('[Monitor Debug] 匹配到上传成功:', { fileId, hasFileId: !!fileId });
       if (fileId) {

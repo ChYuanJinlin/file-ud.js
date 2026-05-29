@@ -90,7 +90,7 @@ for (let chunkIndex = 0; chunkIndex < this.totalChunks; chunkIndex++) {
 
 ```typescript
 public async startUpload() {
-  const up = this.uploadFile.__uploader__;
+  const up = this.uploadFile.transfer;
 
   // ... 其他初始化代码
 
@@ -493,7 +493,7 @@ uploader.onSuccess = (file) => {
 
 ## 🤝 相关 API
 
-- [cancel()](file://d:\yjl\file-UD\packages\core\src\uploader\UploadFile.ts#L187-L205) - 取消单个文件上传
+- [cancel()](file://d:\yjl\file-UD\packages\core\src\uploader\UploadFile.ts#L187-L205) - 取消单个文件传输
 - [retry()](file://d:\yjl\file-UD\packages\core\src\uploader\UploadFile.ts#L301-L385) - 重试失败的上传
 - [pause()](file://d:\yjl\file-UD\packages\core\src\uploader\UploadFile.ts#L206-L216) - 暂停上传
 - [resume()](file://d:\yjl\file-UD\packages\core\src\uploader\UploadFile.ts#L217-L227) - 恢复上传

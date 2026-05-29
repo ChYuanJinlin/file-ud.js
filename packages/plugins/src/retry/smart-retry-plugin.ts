@@ -1,4 +1,4 @@
-import { IUploaderPlugin, PluginContext } from "@file-ud.js/core/types";
+import { IUDPlugin, PluginContext } from "@file-ud.js/core/types";
 import { UploadFile } from "@file-ud.js/core";
 
 /**
@@ -45,7 +45,7 @@ export interface SmartRetryConfig {
  * }));
  * ```
  */
-export class SmartRetryPlugin implements IUploaderPlugin {
+export class SmartRetryPlugin implements IUDPlugin {
   name = "SmartRetryPlugin";
   version = "1.0.0";
   desc = "智能重试策略插件，支持指数退避、线性增长等多种重试策略";

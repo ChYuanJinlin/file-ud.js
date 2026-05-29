@@ -556,7 +556,7 @@ function cancelAndCleanup(file) {
 
 ## 🤝 相关 API
 
-- [cancel()](file://d:\yjl\file-UD\packages\core\src\uploader\UploadFile.ts#L187-L205) - 取消单个文件上传
+- [cancel()](file://d:\yjl\file-UD\packages\core\src\uploader\UploadFile.ts#L187-L205) - 取消单个文件传输
 - [pause()](file://d:\yjl\file-UD\packages\core\src\uploader\UploadFile.ts#L206-L216) - 暂停上传
 - [resume()](file://d:\yjl\file-UD\packages\core\src\uploader\UploadFile.ts#L217-L227) - 恢复上传
 - [startUpload()](file://d:\yjl\file-UD\packages\core\src\uploader\uploadChunkManager.ts#L1220-L1348) - 开始/重新开始上传

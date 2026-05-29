@@ -21,7 +21,7 @@ import { logger, LogLevel, initLogger } from '@core/utils/logger';
 logger.debug('uploadChunkManager', '分片详情', { index: 0, size: 1024 });
 
 // 信息日志
-logger.info('UploadFile', '文件上传成功', fileName);
+logger.info('UploadFile', '文件传输成功', fileName);
 
 // 警告日志
 logger.warn('uploadChunkManager', '更新分片状态失败:', error);
@@ -130,7 +130,7 @@ logger.debug('uploadChunkManager', '分片切割完成', {
 });
 
 // INFO: 关键业务流程节点
-logger.info('UploadFile', '文件上传成功', fileName);
+logger.info('UploadFile', '文件传输成功', fileName);
 logger.info('uploadChunkManager', '所有分片合并完成');
 
 // WARN: 可恢复的异常、降级处理

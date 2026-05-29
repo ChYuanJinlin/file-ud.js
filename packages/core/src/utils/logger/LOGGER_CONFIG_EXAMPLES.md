@@ -26,7 +26,7 @@ const uploader = new Uploader({
 **输出示例**：
 ```
 [2024-01-15 10:30:45.123] [DEBUG] [uploadChunkManager] 分片切割完成 { totalChunks: 10, chunkSize: 5242880 }
-[2024-01-15 10:30:45.456] [INFO] [UploadFile] 文件上传开始 test.pdf
+[2024-01-15 10:30:45.456] [INFO] [UploadFile] 文件传输开始 test.pdf
 [2024-01-15 10:30:46.789] [WARN] [uploadChunkManager] IndexedDB 更新失败，使用备用方案
 [2024-01-15 10:30:47.012] [ERROR] [Uploader] 网络请求失败 Error: timeout
 ```

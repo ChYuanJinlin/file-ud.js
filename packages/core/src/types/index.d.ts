@@ -1,10 +1,13 @@
 import { FileUDError } from "../fileUD/errors";
 import Uploader from "../uploader";
+import Downloader from "../downloader/index";
 import ChunkManager from "../uploader/UploadChunkManager";
 import UploadFile from "../uploader/UploadFile";
 import TransferFile from "../transfer/TransferFile";
+import Transfer from "../transfer/Transfer";
+import type { AxiosRequestConfig, AxiosInstance } from "axios";
 /**
- * 文件上传接受类型定义
+ * 文件传输接受类型定义
  * 支持常见的 MIME 类型、通配符和文件后缀名
  */
 export type AcceptFileType =
@@ -213,7 +216,26 @@ export type FileConfig = {
   formData: FormData;
   chunkIndex?: number;
 };
-export interface uploaderConfigs {
+export interface UDConfig {
+  /* 分片上传下载配置 */
+  chunkOptions?: ChunkOptions | null;
+  /* 可选：传入自定义 axios 实例 */
+  axiosInstance?: AxiosInstance;
+  /**
+   * 文件传输下载地址，可以是字符串或者promise函数
+   * @return {Promise}
+   */
+  action:
+    | string
+    | ((formData: FormData, uploadFile: UploadFile) => Promise<any>);
+  /* 上传下载文件的数量限制 */
+  limit?: number;
+  /* 上传下载文件限制的大小 */
+  maxSize?: number;
+  /* 上传下载请求的头部信息 */
+  headers?: Record<string, any>;
+}
+export interface uploaderConfigs extends UDConfig {
   /* 是否支持多选 */
   multiple?: boolean;
   /* 接受的文件类型（支持 MIME 类型或文件后缀名） */
@@ -224,25 +246,9 @@ export interface uploaderConfigs {
   elementId?: string;
   /* 是否自动上传 */
   autoUpload?: boolean;
-  /**
-   * 文件上传地址，可以是字符串或者promise函数
-   * @return {Promise}
-   */
-  action:
-    | string
-    | ((formData: FormData, uploadFile: UploadFile) => Promise<any>);
-  /* 上传文件的数量限制 */
-  limit?: number;
-  /* 上传文件限制的大小 */
-  maxSize?: number;
-  /* 上传请求的头部信息 */
-  headers?: Record<string, any>;
+
   /* 上传文件标识 */
   file?: string | ((FileConfig: FileConfig) => void);
-  /* 分片上传配置 */
-  chunkOptions?: ChunkOptions | null;
-  /* 可选：传入自定义 axios 实例 */
-  axiosInstance?: AxiosInstance;
 }
 
 export interface PluginContext {
@@ -268,9 +274,9 @@ export interface PluginContext {
   message?: string;
 }
 /* 
-插件接口 每个插件需要实现 IUploaderPlugin 接口
+插件接口 每个插件需要实现 IUDPlugin 接口
 */
-export interface IUploaderPlugin {
+export interface IUDPlugin<T extends TransferFile = TransferFile> {
   /** 插件名称 */
   name: string;
 
@@ -282,10 +288,10 @@ export interface IUploaderPlugin {
   priority?: number;
 
   /** 插件初始化（注册时调用一次） */
-  install?: (uploader: Uploader, options?: any) => void | Promise<void>;
+  install?: (uploader: Transfer<T>, options?: any) => void | Promise<void>;
 
   // 创建时钩子
-  created?: (uploader: Uploader) => void | Promise<void>;
+  created?: (uploader: Transfer<T>) => void | Promise<void>;
   /** 文件选择后触发 */
   onFileSelect?: (
     file: UploadFile,
@@ -293,40 +299,38 @@ export interface IUploaderPlugin {
   ) => Promise<UploadFile | void | false> | UploadFile | void;
 
   /** 上传前触发 */
-  beforeUpload?: (
+  beforeTransfer?: (
     file: UploadFile,
     context: PluginContext,
   ) => Promise<boolean | void> | boolean | void;
 
   /** 上传进度触发 */
-  onProgress?: (
-    percent: number,
-    file: UploadFile,
-    context: PluginContext,
-  ) => void;
+  onProgress?: (percent: number, file: T, context: PluginContext) => void;
 
   /** 上传成功触发 */
-  onSuccess?: (response: any, file: UploadFile, context: PluginContext) => void;
+  onSuccess?: (response: any, file: T, context: PluginContext) => void;
 
   /** 上传失败触发 */
-  onError?: (error: Error, file: UploadFile, context: PluginContext) => void;
+  onError?: (error: Error, file: T, context: PluginContext) => void;
 
   /** 插件销毁时调用 */
   destroy?: () => void;
 }
-export type PluginConstructor = new (options?: any) => IUploaderPlugin;
+export type PluginConstructor = new (options?: any) => IUDPlugin;
 
-/* 文件上传状态类型 */
+/* 文件传输状态类型 */
 export interface IFile {
   /* 文件唯一标识符 */
-  fileId: string;
+  fileId?: string;
   /* 文件访问URL */
   url: string;
   /* 文件名称 */
   fileName: string;
+  /* 文件大小 */
+  size?: number;
   /* 文件对象 */
-  File: File;
-  /* 文件上传的进度百分比 */
+  File?: File;
+  /* 文件传输的进度百分比 */
   percent?: number;
   /* 文件扩展名 */
   extension?: string;
@@ -353,11 +357,10 @@ export interface IFile {
   abort?: () => void;
   /* 是否在重试中 */
   isRetry?: boolean;
-  /* 文件上传的索引 */
+  /* 文件传输的索引 */
   index?: number;
-  /* Uploader 对象 */
-  __uploader__?: Uploader;
-  /* 文件上传的状态 */
+
+  /* 文件传输的状态 */
   status?:
     | "pending"
     | "UDLoading"
@@ -383,19 +386,32 @@ export interface IFile {
   uploadId?: string;
 }
 
+/**
+ * 下载文件接口
+ */
+export interface IDownloadFile extends Omit<IFile, "transfer"> {
+  /* 保存的文件名 */
+  saveFileName?: string;
+  /* 是否使用 Blob 下载 */
+  useBlob?: boolean;
+  /* Downloader 对象 */
+  __downloader__?: Downloader;
+}
+
 /* 错误回调函数类型 */
 export type ErrorCallBack = (errors: FileUDErrorJSON) => void;
 
 /* 上传前的操作回调函数类型 */
-export type BeforeUploadCallBack = (
+export type beforeTransferCallBack = (
   file: UploadFile,
 ) => boolean | Promise<Boolean> | undefined | null;
 
 /* 上传成功回调函数类型 */
-export type UploadSuccessCallBack<T> = (response: T, file: UploadFile) => void;
+export type successCallback<T> = (response: T, file: TransferFile) => void;
 
 /* 更新回调函数类型 */
-export type UpdateCallBack = (file: TransferFile[]) => void;
+export type UpdateCallBack<T = any> = (file: T[]) => void;
+
 /* 
 初始化回调函数类型
 */
@@ -451,7 +467,7 @@ export interface UploaderEvents {
   /* 文件开始上传事件 */
   "files-start": (files: UploadFile[]) => void;
   /* 文件完成上传事件 */
-  "files-complete": (files: UploadFile[]) => void;
+  "files-complete": (files: TransferFile[]) => void;
 
   // 分片上传相关事件
   /* 分片上传开始事件 */
@@ -490,8 +506,35 @@ export interface UploaderEvents {
   "instant-upload": (data: { file: UploadFile; reason: string }) => void;
 }
 
+/**
+ * 下载器事件接口
+ */
+export interface DownloaderEvents {
+  /* 文件列表变化事件 */
+  change: (downloadFile: DownloadFile) => void;
+  /* 下载进度事件 */
+  progress: (percent: number) => void;
+  /* 更新事件 */
+  update: (downloaderFiles: DownloadFile[]) => void;
+  /* 错误事件 */
+  error: (error: Error, file: DownloadFile) => void;
+  /* 暂停下载事件 */
+  pause: (file: DownloadFile) => void;
+  /* 恢复下载事件 */
+  resume: (file: DownloadFile) => void;
+  /* 取消下载事件 */
+  cancel: (file: DownloadFile) => void;
+  /* 移除文件事件 */
+  remove: (file: DownloadFile) => void;
+  /* 文件开始下载事件 */
+  "files-start": (files: DownloadFile[]) => void;
+  /* 文件完成下载事件 */
+  "files-complete": (files: DownloadFile[]) => void;
+}
+
 /* 事件名称类型 */
 export type EventName = keyof UploaderEvents;
+export type DownloaderEventName = keyof DownloaderEvents;
 
 /* 事件回调函数类型 */
 export type EventCallback<T extends EventName> = UploaderEvents[T];
@@ -516,18 +559,45 @@ export interface speedInfo {
 
 /**
  * 上传时间统计信息接口
- * 记录文件上传的生命周期时间节点
+ * 记录文件传输的生命周期时间节点
  */
 export interface TimeInfo {
-  /** 上传开始时间戳 (毫秒) */
+  /** 开始时间戳 (毫秒) */
   startTime: number;
 
-  /** 上传结束时间戳 (毫秒),未完成时为 0 */
+  /** 结束时间戳 (毫秒) */
   endTime: number;
 
-  /** 上传总耗时 (毫秒),未完成时为 0 */
+  /** 总耗时 (毫秒) */
   duration: number;
 
-  /** 格式化后的耗时,如 "5.23s"、"1m 30s" */
+  /** 格式化后的耗时,如 "5.23s"、"1m 30s"、"2h 15m" */
   durationFormatted: string;
+}
+
+/**
+ * 下载配置选项
+ */
+export interface DownloadOptions {
+  /** 下载链接 */
+  url: string;
+  /** 文件名 */
+  fileName?: string;
+  /** 是否使用 Blob 方式下载（浏览器环境触发下载对话框） */
+  useBlob?: boolean;
+  /** 超时时间（毫秒） */
+  timeout?: number;
+  /** 请求头 */
+  headers?: Record<string, string>;
+  /** Axios 实例（可选） */
+  axiosInstance?: any;
+}
+
+/**
+ * 下载器配置
+ */
+export interface DownloaderConfig extends UDConfig {
+  /** 默认超时时间 */
+  timeout?: number;
+  axiosOptions?: AxiosRequestConfig;
 }

@@ -3,12 +3,12 @@ import {
   FileUDError,
   ErrorCode,
 } from "@file-ud.js/core";
-import { IUploaderPlugin, PluginContext } from "@file-ud.js/core/types";
+import { IUDPlugin, PluginContext } from "@file-ud.js/core/types";
 /**
  * 插件基类
  * 提供通用的错误处理和日志功能
  */
-export abstract class BasePlugin implements IUploaderPlugin {
+export abstract class BasePlugin implements IUDPlugin {
   /** 插件名称 */
   abstract name: string;
   

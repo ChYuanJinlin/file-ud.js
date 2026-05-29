@@ -135,8 +135,8 @@ uploader.use(new SmartRetryPlugin({
    ```
 
 3. **尝试基础功能**
-   - 单文件上传
-   - 多文件上传
+   - 单文件传输
+   - 多文件传输
    - 进度显示
 
 ---
@@ -163,7 +163,7 @@ uploader.use(new SmartRetryPlugin({
 ### 💎 高级技巧
 
 1. **开发自定义插件**
-   - 实现 IUploaderPlugin 接口
+   - 实现 IUDPlugin 接口
    - 利用事件钩子
    - 管理插件状态
 
