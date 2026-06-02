@@ -647,7 +647,7 @@ export default class UploadChunkManager extends ChunkManager {
           error: error instanceof Error ? error.message : String(error),
           completedChunks: this.completedChunks,
           totalChunks: this.totalChunks,
-          progress: this.uploadFile.proxy.progress,
+          progress: this.uploadFile.proxy.percent,
         },
       );
 
@@ -668,7 +668,7 @@ export default class UploadChunkManager extends ChunkManager {
    * 合并所有分片
    */
   private async mergeChunks(): Promise<any> {
-    const up = this.uploadFile.transfer;
+    const up = this.uploadFile.up;
     this.uploadFile.proxy.status = "merging";
 
     // 触发合并开始事件
@@ -1264,11 +1264,11 @@ export default class UploadChunkManager extends ChunkManager {
           return;
         }
       }
-      computeTransferTime(this.uploadFile.proxy.uploadTime).start();
+      computeTransferTime(this.uploadFile.proxy.transferTime).start();
       // 使用信号量控制并发
       await this.uploadWithConcurrency();
 
-      computeTransferTime(this.uploadFile.proxy.uploadTime).end();
+      computeTransferTime(this.uploadFile.proxy.transferTime).end();
 
       // ✅ 关键修复：上传完成后检查统计信息并触发合并
       await this.checkStatistics();

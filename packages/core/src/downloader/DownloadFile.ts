@@ -1,16 +1,11 @@
 import axios from "axios";
 import { IDownloadFile } from "../types";
-import type Downloader from ".";
-import {
-  createReactiveDownloadFile,
-  formatSpeed,
-  formatFileSize,
-  logger,
-  checkNetworkStatus,
-  computeTransferTime,
-} from "../utils";
 import TransferFile from "../transfer/TransferFile";
+
+import { computeTransferTime, createReactiveDownloadFile } from "../utils";
 import DownloadChunkManager from "./DownloadChunkManager";
+import Downloader from ".";
+import Transfer from "../transfer/Transfer";
 
 /**
  * 文件下载实例类
@@ -22,14 +17,12 @@ export default class DownloadFile<T = any> extends TransferFile<
   DownloadFile,
   T
 > {
-  /** 所属的 Downloader 实例 */
-  public dl: Downloader;
   /**
    * 分片管理器实例
    * 每个文件拥有独立的 uploadChunkManager,实现并发控制、断点续传和失败隔离
    */
   public downloadChunkManager: DownloadChunkManager | null = null;
-
+  public dl: Downloader<T>;
   /** 下载控制器 */
   private controller: AbortController | null = null;
 
@@ -53,42 +46,34 @@ export default class DownloadFile<T = any> extends TransferFile<
   /** 下载开始的时间戳 (毫秒) */
   public downloadStartTime: number = 0;
 
-  constructor(file: IDownloadFile, downloader: Downloader) {
-    super(file, downloader);
-    this.dl = file.__downloader__!;
-    this.proxy = createReactiveDownloadFile(this, downloader);
+  constructor(file: IDownloadFile, transfer: Transfer) {
+    super(file, transfer);
+    this.dl = transfer as unknown as Downloader<T>;
+    this.proxy = createReactiveDownloadFile(this, transfer);
   }
 
-  // /**
-  //  * 执行下载
-  //  */
-  // private async download(): Promise<T> {
-  //   const downloader = this.__downloader__;
-  //   const { url, headers, timeout, axiosInstance } = this.options;
+  /**
+   * 执行下载
+   */
+  private async download(): Promise<T> {
+    this.proxy.loading = true;
+    return new Promise(async (resolve, reject) => {
+      this.transfer.loading = true;
 
-  //   const client = axiosInstance || axios;
+      if (!this.dl.config?.action) {
+        console.warn("请设置下载地址");
+        return;
+      }
 
-  //   const response = await client.get(url, {
-  //     responseType: this.options.useBlob ? "blob" : "arraybuffer",
-  //     headers: {
-  //       ...downloader.config?.headers,
-  //       ...headers,
-  //     },
-  //     timeout: timeout || downloader.config?.timeout,
-  //     signal: this.controller?.signal,
-  //     onDownloadProgress: (progressEvent) => {
-  //       this.handleProgress(progressEvent);
-  //     },
-  //   });
-
-  //   if (this.options.useBlob) {
-  //     this.blob = response.data;
-  //     this.__totalBytes__ = this.blob.size;
-  //     this.proxy.formatSize = formatFileSize(this.blob.size);
-  //   }
-
-  //   return response.data;
-  // }
+      // 记录下载开始时间
+      if (!this.downloadChunkManager) {
+        computeTransferTime(this.proxy.transferTime).start();
+      }
+       if (! this.transfer.transferTime.startTime) {
+        computeTransferTime( this.transfer.transferTime).start();
+      }
+    });
+  }
 
   // /**
   //  * 处理下载进度

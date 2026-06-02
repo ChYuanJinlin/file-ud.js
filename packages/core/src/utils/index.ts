@@ -1,5 +1,6 @@
 import Downloader from "../downloader";
 import DownloadFile from "../downloader/DownloadFile";
+import Transfer from "../transfer/Transfer";
 import TransferFile from "../transfer/TransferFile";
 import { IFile, TimeInfo } from "../types";
 import Uploader from "../uploader";
@@ -202,7 +203,7 @@ function createReactiveFile<
   M extends { triggerUpdate: () => void },
 >(file: T, manager: M): T {
   // 添加一个内部属性指向管理器
-  Object.defineProperty(file, 'transfer', {
+  Object.defineProperty(file, "transfer", {
     value: manager,
     enumerable: false, // 不可枚举，避免循环引用
     writable: false,
@@ -259,7 +260,7 @@ function createReactiveFile<
  */
 export function createReactiveUploadFile(
   file: UploadFile,
-  uploader: Uploader,
+  uploader: Transfer,
 ): UploadFile {
   return createReactiveFile(file, uploader);
 }
@@ -272,7 +273,7 @@ export function createReactiveUploadFile(
  */
 export function createReactiveDownloadFile(
   file: DownloadFile,
-  downloader: Downloader,
+  downloader: Transfer,
 ): DownloadFile {
   return createReactiveFile(file, downloader);
 }

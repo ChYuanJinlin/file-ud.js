@@ -1,14 +1,12 @@
-import type { DownloaderConfig, DownloadOptions, IFile } from "../types";
+import type { DownloaderConfig, IFile } from "../types";
+import Transfer from "../transfer/Transfer";
 import {
   mergeObjects,
   formatFileSize,
-  isFileActive,
-  formatSpeed,
   logger,
   getFileExtension,
-  generateFileId,
 } from "../utils";
-import Transfer from "../transfer/Transfer";
+
 import DownloadFile from "./DownloadFile";
 
 export const defaultConfig: DownloaderConfig = {
@@ -28,7 +26,7 @@ export const defaultConfig: DownloaderConfig = {
  * - 并发控制
  * - 服务端交互 (HTTP 下载)
  */
-export default class Downloader<T = any> extends Transfer<DownloadFile<T>> {
+export default class Downloader<T = any> extends Transfer<DownloadFile, T> {
   /** 全局基础配置 */
   public static baseConfig: DownloaderConfig;
 
@@ -94,7 +92,7 @@ export default class Downloader<T = any> extends Transfer<DownloadFile<T>> {
         formatSize: formatFileSize(file.size),
         size: file.size,
       },
-      this,
+      this as unknown as Transfer,
     );
 
     // 添加到文件列表
@@ -106,7 +104,7 @@ export default class Downloader<T = any> extends Transfer<DownloadFile<T>> {
     this.triggerUpdate();
 
     // // 立即开始下载
-    // downloadFile.start();
+    downloadFile.start(downloadFile.downloadChunkManager);
 
     return downloadFile;
   }

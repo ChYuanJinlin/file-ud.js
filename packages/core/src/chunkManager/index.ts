@@ -48,11 +48,11 @@ export default class ChunkManager {
   public pauseResolves: Array<() => void> = []; // 改为数组，存储所有等待的 resolve
   public activeUploads: Set<Promise<void>> = new Set(); // 当前活跃的上传任务
   public abortControllers: AbortController[] = []; // 保存所有活跃分片的 AbortController
-
+  public chunkManager: ChunkManager;
   // 网速计算所需的内部状态
   public lastUpdateTime: number = 0;
   public lastChunkBytes: number = 0;
-  public transferFile: TransferFile | null = null; // 当前上传的文件对象
+
   // 分片上传耗时统计
   public chunkStats: {
     averageTime: number;
@@ -65,7 +65,7 @@ export default class ChunkManager {
    */
   public isInstantUpload = false;
 
-  constructor(ChunkOptions: ChunkOptions, file: TransferFile) {
+  constructor(ChunkOptions: ChunkOptions, file: TransferFile<any, any>) {
     this.config = ChunkOptions; // 保存配置
     this.chunkSize = ChunkOptions.chunkSize ?? 1024 * 1024 * 5; // 默认5MB
     this.maxConcurrent = ChunkOptions.maxConcurrent ?? 5; // 默认同时上传5个分片
@@ -73,9 +73,9 @@ export default class ChunkManager {
       ChunkOptions.retries !== undefined ? ChunkOptions.retries : 5; // 默认重试5次，允许设置为 null 禁用自动重试
     this.retryDelay = ChunkOptions.retryDelay ?? 1000; // 默认重试延迟1秒
     this.timeout = ChunkOptions.timeout ?? 30000; // 默认超时30秒
-    this.transferFile = file;
     this.totalChunks = Math.ceil(file.File.size / this.chunkSize);
     this.chunks = [];
     this.completedChunks = 0; // 显式初始化 completedChunks
+
   }
 }

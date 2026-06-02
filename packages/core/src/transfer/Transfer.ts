@@ -236,20 +236,20 @@ export default class Transfer<
     averageSpeedFormatted: string;
   } {
     let totalCurrentSpeed = 0;
-    let totalUploadedBytes = 0;
+    let transferTotaldBytes = 0;
     let totalFileSize = 0;
-    let uploadingFileCount = 0;
+    let TransferFileuFileCount = 0;
 
     // 遍历所有正在上传的文件，累加速率和字节数
     this.files.forEach((file) => {
       if (isFileActive(file)) {
-        uploadingFileCount++;
+        TransferFileuFileCount++;
 
         // 累加文件大小（用于计算平均速度）
         totalFileSize += file.File.size;
 
         // 使用统一方法获取已上传字节数
-        totalUploadedBytes += this.getFileUploadedBytes(file);
+        transferTotaldBytes += this.getFileBytes(file);
         // 如果文件有速度信息，累加瞬时速度
         if (file.speed) {
           totalCurrentSpeed += file.speed.currentSpeed;
@@ -257,13 +257,13 @@ export default class Transfer<
       } else if (file.status === "success") {
         // 已完成文件也计入总大小（用于计算整体平均速度）
         totalFileSize += file.File.size;
-        totalUploadedBytes += file.File.size;
+        transferTotaldBytes += file.File.size;
       }
     });
 
     // 计算全局平均速度：总已上传字节 / 总耗时
     let globalAverageSpeed = 0;
-    if (totalUploadedBytes > 0 && uploadingFileCount > 0) {
+    if (transferTotaldBytes > 0 && TransferFileuFileCount > 0) {
       // 找到最早开始上传的文件的时间
       let earliestStartTime = Date.now();
       this.files.forEach((file) => {
@@ -277,12 +277,12 @@ export default class Transfer<
 
       const totalTime = (Date.now() - earliestStartTime) / 1000;
       if (totalTime > 0) {
-        globalAverageSpeed = totalUploadedBytes / totalTime;
+        globalAverageSpeed = transferTotaldBytes / totalTime;
       }
     }
 
     // 更新全局已上传大小（使用 formatFileSize 格式化）
-    this.transferredFormatSize = formatFileSize(totalUploadedBytes);
+    this.transferredFormatSize = formatFileSize(transferTotaldBytes);
 
     return {
       currentSpeed: totalCurrentSpeed,
@@ -298,7 +298,7 @@ export default class Transfer<
    * @returns 已上传字节数
    * @private
    */
-  private getFileUploadedBytes(file: T): number {
+  private getFileBytes(file: T): number {
     return file.chunkManager
       ? file.chunkManager.totalChunkSize
       : file.__transferBytes__ || 0;

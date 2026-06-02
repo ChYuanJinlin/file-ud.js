@@ -1,10 +1,10 @@
 export { default as FileUD } from "./fileUD";
 export { default as Transfer } from "./transfer/Transfer";
 export { default as TransferFile } from "./transfer/TransferFile";
+export { default as DownloadFile } from "./downloader/DownloadFile";
 export { default as UploadFile } from "./uploader/UploadFile";
-// export { default as DownloadFile } from "./downloader/DownloadFile";
+export { default as Downloader } from "./downloader";
 export { default as Uploader } from "./uploader";
-// export { default as Downloader } from "./downloader";
 export type { ErrorOptions, ErrorContext } from "./fileUD/errors";
 export { FileUDError, ErrorCode, Errors } from "./fileUD/errors";
 export type * from "./types/index";

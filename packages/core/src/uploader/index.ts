@@ -128,7 +128,7 @@ export default class Uploader<T = any> extends Transfer<UploadFile,T> {
           // 保留其他可能的属性
           ...(fileData as any),
         },
-        this,
+        this as unknown as Transfer,
       );
 
       // 添加到文件列表

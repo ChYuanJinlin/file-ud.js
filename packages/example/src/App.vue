@@ -31,6 +31,7 @@ import {
 import { IFile } from "@file-ud.js/core/types";
 import Uploader from "@file-ud.js/core/uploader";
 import { uploadMonitor } from "@file-ud.js/core/utils";
+import DownloadFile from "node_modules/@file-ud.js/core/src/downloader/DownloadFile";
 
 // ==================== 初始化上传器 ====================
 const isChunk = ref(true);
@@ -129,6 +130,7 @@ test1.onInitChunk = async (uploadFile) => {
 
 // ==================== 响应式数据 ====================
 const files = ref<TransferFile<UploadFile>[]>([]);
+const files2 = ref<TransferFile<DownloadFile>[]>([]);
 
 // ✅ 创建响应式的全局统计信息
 const globalStats = ref({

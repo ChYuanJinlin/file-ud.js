@@ -12,6 +12,7 @@ import {
 } from "../utils";
 import { ErrorCode, FileUDError } from "../fileUD/errors";
 import TransferFile from "../transfer/TransferFile";
+import Transfer from "../transfer/Transfer";
 
 /**
  * 文件传输实例类
@@ -20,8 +21,6 @@ import TransferFile from "../transfer/TransferFile";
  * @template T - 上传成功后的响应数据类型
  */
 export default class UploadFile<T = any> extends TransferFile<UploadFile, T> {
-  [x: string]: any;
-
   public up: Uploader<T>;
   /**
    * 分片管理器实例
@@ -58,18 +57,17 @@ export default class UploadFile<T = any> extends TransferFile<UploadFile, T> {
   /** 上传开始的时间戳 (毫秒) */
   public uploadStartTime: number = 0;
 
-  constructor(file: IFile, up: Uploader) {
-    super(file, up);
-    this.up = up;
-
-    this.proxy = createReactiveUploadFile(this, up);
+  constructor(file: IFile, transfer: Transfer) {
+    super(file, transfer);
+    this.up = transfer as unknown as Uploader<T>;
+    this.proxy = createReactiveUploadFile(this, transfer);
     // 如果是分片上传（检查 chunkOptions 配置）,在构造时就创建 uploadChunkManager
     if (this.up.config?.chunkOptions) {
       this.uploadChunkManager = new UploadChunkManager(
         this.up.config.chunkOptions,
         this,
       );
-
+      this.chunkManager = this.uploadChunkManager;
       // ✅ 如果回显数据中包含分片信息，初始化 uploadChunkManager 状态
       if (file.totalChunks !== undefined) {
         this.initChunkManagerFromRestore(file);
@@ -177,7 +175,7 @@ export default class UploadFile<T = any> extends TransferFile<UploadFile, T> {
     const up = this.transfer;
     if (
       file.fileHash &&
-      this.this.up.config?.chunkOptions?.enableFileCache &&
+      this.up.config?.chunkOptions?.enableFileCache &&
       (!this.File || this.File.size === 0)
     ) {
       logger.info("UploadFile", `尝试从缓存恢复文件: ${this.fileName}`, {
