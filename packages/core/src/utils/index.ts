@@ -127,7 +127,7 @@ export function getFileExtension(filename?: string) {
  * @returns 是否为活跃上传状态
  * @private
  */
-export function isFileActive(file: TransferFile): boolean {
+export function isFileActive(file: TransferFile<any>): boolean {
   return ["UDLoading", "paused", "fail", "merging"].includes(file.status!);
 }
 /**
@@ -171,7 +171,7 @@ export const validator = {
   size(fileSize: number, maxSize: number) {
     return fileSize <= maxSize;
   },
-  type(accept: string[], file: TransferFile) {
+  type(accept: string[], file: TransferFile<any>) {
     if (accept.length > 0) {
       return accept.some((acceptType) => {
         // 处理通配符，如 'image/*'
@@ -207,15 +207,17 @@ function createReactiveFile<
     value: manager,
     enumerable: false, // 不可枚举，避免循环引用
     writable: false,
-    configurable: false,
+    configurable: true,
   });
 
   return new Proxy(file, {
-    get(target, prop, receiver) {
-      // 获取属性值
-      const value = Reflect.get(target, prop, receiver);
+    get(target, prop, _receiver) {
+      // 🔑 不传 receiver，避免 Vue reactive proxy 双重代理时
+      //     对 non-configurable / non-writable 属性的读取报错
+      const value = Reflect.get(target, prop);
 
-      // 如果是函数，需要绑定 this 并包装
+      // 🔑 函数必须绑定 target 作为 this！
+      //     否则 row.resume() 中 this 是 Vue proxy → this.transfer 触发 Proxy 报错
       if (typeof value === "function") {
         return function (...args: any[]) {
           const result = value.apply(target, args);
@@ -226,12 +228,12 @@ function createReactiveFile<
       return value;
     },
 
-    set(target, prop, value, receiver) {
-      // 获取旧值
-      const oldValue = Reflect.get(target, prop, receiver);
+    set(target, prop, value, _receiver) {
+      // 🔑 不传 receiver，原因同上
+      const oldValue = Reflect.get(target, prop);
 
       // 设置新值
-      const result = Reflect.set(target, prop, value, receiver);
+      const result = Reflect.set(target, prop, value);
 
       // 如果值真的变化了，触发更新
       if (oldValue !== value) {
@@ -289,6 +291,11 @@ export function extractPathFromFunction(str: string): string | null {
   const match = str.match(pattern);
 
   return match ? match[1] : null;
+}
+
+/** 判断一个值是否为纯对象（非 null、非数组、typeof === "object"） */
+export function isPlainObject(value: any): value is Record<string, any> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 /**

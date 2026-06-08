@@ -1,22 +1,23 @@
 import { openDB, IDBPDatabase } from "idb";
 
-// 文件分块信息，索引和是否已上传的状态
+// 文件分块信息，索引和是否已传输的状态
 export interface ChunkRecord {
   index: number;
   uploaded: boolean;
 }
 
-// 整个上传任务的记录，包含文件名，大小，分块大小，总分块数等信息，以及所有分块上传的装填
-export interface UploadTaskRecord {
-  id: string; // file md5
+// 整个传输任务的记录，包含文件名，大小，分块大小，总分块数等信息，以及所有分块传输的状态
+export interface TransferTaskRecord {
+  id: string; // 文件标识（MD5 或指纹）
   filename: string; // 文件名
   size: number; // 文件大小
   chunkSize: number; // 分块大小
   totalChunks: number; // 总分块数
-  chunks: ChunkRecord[]; // 所有分块上传的装填
+  chunks: ChunkRecord[]; // 所有分块传输的状态
   createdAt: number; // 创建时间
   updatedAt: number; // 更新时间
 }
+
 // 文件 Hash 缓存记录
 export interface FileHashRecord {
   id: string; // 快速指纹: filename_lastModified_size
@@ -27,16 +28,17 @@ export interface FileHashRecord {
   createdAt: number;
   updatedAt: number;
 }
-const DB_NAME = "FileUploadDB"; // 数据库名
-const STORE_NAME = "uploadTasks"; // 存储对象名
+
+const DB_NAME = "FileTransferDB"; // 数据库名
+const STORE_NAME = "transferTasks"; // 传输任务存储对象名
 const VERSION = 1; // 数据库版本
-let dbInstance: IDBPDatabase<UploadTaskRecord> | null = null;
+let dbInstance: IDBPDatabase<TransferTaskRecord> | null = null;
 const HASH_STORE_NAME = "fileHashes"; // Hash 缓存存储对象名
 
 /**
  * 检查数据库连接是否有效
  */
-function isDbValid(db: IDBPDatabase<UploadTaskRecord>): boolean {
+function isDbValid(db: IDBPDatabase<TransferTaskRecord>): boolean {
   try {
     // 尝试创建一个简单的事务来测试连接
     const tx = db.transaction(STORE_NAME, "readonly");
@@ -48,7 +50,7 @@ function isDbValid(db: IDBPDatabase<UploadTaskRecord>): boolean {
 }
 
 // 初始化数据库（单例模式，避免重复打开）
-export const initDB = async (): Promise<IDBPDatabase<UploadTaskRecord>> => {
+export const initDB = async (): Promise<IDBPDatabase<TransferTaskRecord>> => {
   // ✅ 如果已有有效连接，直接返回
   if (dbInstance && isDbValid(dbInstance)) {
     return dbInstance;
@@ -66,15 +68,15 @@ export const initDB = async (): Promise<IDBPDatabase<UploadTaskRecord>> => {
   }
 
   try {
-    dbInstance = await openDB<UploadTaskRecord>(DB_NAME, VERSION, {
+    dbInstance = await openDB<TransferTaskRecord>(DB_NAME, VERSION, {
       upgrade(db) {
-        // 创建存储对象
+        // 创建传输任务存储对象
         if (!db.objectStoreNames.contains(STORE_NAME)) {
           const store = db.createObjectStore(STORE_NAME, { keyPath: "id" });
           // 创建索引以便按更新时间查询
           store.createIndex("updatedAt", "updatedAt", { unique: false });
         }
-        // 创建 Hash 缓存存储对象（新增）
+        // 创建 Hash 缓存存储对象
         if (!db.objectStoreNames.contains(HASH_STORE_NAME)) {
           const hashStore = db.createObjectStore(HASH_STORE_NAME, {
             keyPath: "id",
@@ -106,7 +108,7 @@ export const initDB = async (): Promise<IDBPDatabase<UploadTaskRecord>> => {
  * @returns Promise<T>
  */
 async function executeDbOperation<T>(
-  operation: (db: IDBPDatabase<UploadTaskRecord>) => Promise<T>
+  operation: (db: IDBPDatabase<TransferTaskRecord>) => Promise<T>
 ): Promise<T> {
   try {
     const db = await initDB();
@@ -134,9 +136,9 @@ async function executeDbOperation<T>(
   }
 }
 
-// 保存上传任务（新增或更新）
-export const saveUploadTask = async (
-  task: Omit<UploadTaskRecord, "updatedAt"> & Partial<UploadTaskRecord>,
+// 保存传输任务（新增或更新）
+export const saveTransferTask = async (
+  task: Omit<TransferTaskRecord, "updatedAt"> & Partial<TransferTaskRecord>,
 ): Promise<void> => {
   try {
     await executeDbOperation(async (db) => {
@@ -148,24 +150,25 @@ export const saveUploadTask = async (
       });
     });
   } catch (error) {
-    console.error("保存上传任务失败:", error);
+    console.error("保存传输任务失败:", error);
     throw error;
   }
 };
 
-// 获取上传任务
-export const getUploadTask = async (
+// 获取传输任务
+export const getTransferTask = async (
   id: string,
-): Promise<UploadTaskRecord | null> => {
+): Promise<TransferTaskRecord | null> => {
   try {
     return await executeDbOperation(async (db) => {
       return await db.get(STORE_NAME, id);
     });
   } catch (error) {
-    console.error("获取上传任务失败:", error);
+    console.error("获取传输任务失败:", error);
     return null;
   }
 };
+
 /**
  * 生成文件的快速指纹（使用文件属性）
  * @param filename 文件名
@@ -180,6 +183,7 @@ export const generateQuickFingerprintFromProps = (
 ): string => {
   return `${filename}_${lastModified}_${size}`;
 };
+
 /**
  * 生成文件的快速指纹（用于缓存查找）
  * @param file 文件对象
@@ -215,14 +219,14 @@ export const getCachedHash = async (
   }
 };
 
-// 删除上传任务
-export const deleteUploadTask = async (id: string): Promise<void> => {
+// 删除传输任务
+export const deleteTransferTask = async (id: string): Promise<void> => {
   try {
     await executeDbOperation(async (db) => {
       await db.delete(STORE_NAME, id);
     });
   } catch (error) {
-    console.error("删除上传任务失败:", error);
+    console.error("删除传输任务失败:", error);
     throw error;
   }
 };
@@ -256,11 +260,45 @@ export const saveFileHash = async (file: File, hash: string): Promise<void> => {
     throw error;
   }
 };
+
 /**
- * 更新单个分片的上传状态
- * @param taskId 任务ID（文件MD5）
+ * 通过指纹字符串直接保存 Hash 缓存（适用于下载等无 File 对象的场景）
+ * @param fingerprint 文件指纹字符串
+ * @param hash 要缓存的 Hash
+ * @param meta 额外元信息（文件名/大小等，可选）
+ */
+export const saveHashByFingerprint = async (
+  fingerprint: string,
+  hash: string,
+  meta?: { filename?: string; size?: number },
+): Promise<void> => {
+  try {
+    await executeDbOperation(async (db) => {
+      const now = Date.now();
+
+      const record: FileHashRecord = {
+        id: fingerprint,
+        hash,
+        filename: meta?.filename || "",
+        size: meta?.size || 0,
+        lastModified: 0,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      await db.put(HASH_STORE_NAME, record);
+    });
+  } catch (error) {
+    console.error("保存 Hash 缓存失败:", error);
+    throw error;
+  }
+};
+
+/**
+ * 更新单个分片的传输状态
+ * @param taskId 任务ID
  * @param chunkIndex 分片索引
- * @param uploaded 是否已上传
+ * @param uploaded 是否已传输
  */
 export const updateChunkStatus = async (
   taskId: string,
@@ -297,18 +335,18 @@ export const updateChunkStatus = async (
 };
 
 /**
- * 获取所有未完成的上传任务
+ * 获取所有未完成的传输任务
  * @param maxAge 最大年龄（毫秒），超过此时间的任务视为过期，默认为 7 天
  */
-export const getIncompleteTasks = async (
+export const getIncompleteTransferTasks = async (
   maxAge?: number,
-): Promise<UploadTaskRecord[]> => {
+): Promise<TransferTaskRecord[]> => {
   try {
     return await executeDbOperation(async (db) => {
       const allTasks = await db.getAll(STORE_NAME);
 
       // 过滤出未完成的任务
-      const incompleteTasks = allTasks.filter((task: UploadTaskRecord) => {
+      const incompleteTasks = allTasks.filter((task: TransferTaskRecord) => {
         const isCompleted = task.chunks.every(
           (chunk: ChunkRecord) => chunk.uploaded,
         );
@@ -330,10 +368,10 @@ export const getIncompleteTasks = async (
 };
 
 /**
- * 清理过期的上传任务
+ * 清理过期的传输任务
  * @param maxAge 最大年龄（毫秒），默认为 7 天
  */
-export const cleanupExpiredTasks = async (
+export const cleanupExpiredTransferTasks = async (
   maxAge: number = 7 * 24 * 60 * 60 * 1000,
 ): Promise<number> => {
   try {

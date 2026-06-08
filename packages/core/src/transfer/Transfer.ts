@@ -1,4 +1,6 @@
 import {
+  beforeTransferCallBack,
+  ErrorCallBack,
   EventName,
   IFile,
   IUDPlugin,
@@ -8,13 +10,13 @@ import {
   successCallback,
   TimeInfo,
   UpdateCallBack,
-} from "../types";
+} from "../types/index";
 import { formatFileSize, formatSpeed, isFileActive } from "../utils";
 import { EventEmitter } from "../utils/event-emitter";
 import TransferFile from "./TransferFile";
 
 export default class Transfer<
-  T extends TransferFile<any> = TransferFile<any>,
+  T extends TransferFile<T> = TransferFile<any>,
   D = any,
 > extends EventEmitter {
   /** 当前传输任务的文件列表 */
@@ -60,28 +62,31 @@ export default class Transfer<
   };
 
   /** 内部定时器 ID，用于防抖更新 */
-  public __updateTimer__: ReturnType<typeof setTimeout> | null = null;
+  public __updateTimer__: number | undefined = undefined;
   public updateCallback: UpdateCallBack<T> | null | undefined = null;
-  public onInitChunkCallback: onInitChunkCallback | null = null;
+  public onInitChunkCallback: onInitChunkCallback<T> | null = null;
   public OnMergeChunkCallBack: OnMergeChunkCallBack | null = null;
+  public beforeTransferCallback: beforeTransferCallBack<T> | null | undefined =
+    null;
+
+  public static onError: ErrorCallBack;
   public successCallback: successCallback<D> = () => null;
   /**
-   * 触发更新回调（带防抖）
+   * 触发更新回调（requestAnimationFrame 防抖）
+   *
+   * 用 rAF 替代 setTimeout，确保同一帧内多次调用只执行一次，
+   * 多文件并发场景下所有文件的 Proxy set 共享同一个 rAF 调度。
    * @private
    */
   public triggerUpdate(): void {
-    // 清除之前的定时器
-    if (this.__updateTimer__) {
-      clearTimeout(this.__updateTimer__);
-    }
-
-    // 设置新的定时器，延迟执行更新回调
-    this.__updateTimer__ = setTimeout(() => {
+    if (this.__updateTimer__ !== undefined) return; // 已调度，跳过
+    this.__updateTimer__ = requestAnimationFrame(() => {
+      this.__updateTimer__ = undefined;
       // 计算并更新全局上传速率
       this.speed = this.calculateGlobalUploadSpeed();
 
       this.updateCallback?.([...this.files]);
-    }, 100); // 100ms 防抖延迟
+    });
   }
 
   /**
@@ -89,20 +94,24 @@ export default class Transfer<
    * @private
    */
   public updateGlobalStats() {
-    // 重新计算总字节数
+    // 重新计算总字节数（兼容下载场景：下载文件没有 File 对象，fallback 到 size 属性）
     this.totalBytes = this.files.reduce((sum, file) => {
-      return sum + (file.File?.size || 0);
+      return sum + (file.File?.size || file.size || 0);
     }, 0);
 
     // 更新格式化后的总大小
     this.totalFormatSize = formatFileSize(this.totalBytes);
 
-    // 计算总进度
-    if (this.files.length > 0) {
-      const totalPercent = this.files.reduce((sum, file) => {
-        return sum + (file.percent || 0);
-      }, 0);
-      this.totalPercent = Math.round(totalPercent / this.files.length);
+    // 计算总进度（按文件大小加权，避免简单平均导致的进度不准）
+    if (this.files.length > 0 && this.totalBytes > 0) {
+      let weightedPercent = 0;
+      this.files.forEach((file) => {
+        const fileSize = file.File?.size || file.size || 0;
+        if (fileSize > 0) {
+          weightedPercent += (file.percent || 0) * fileSize;
+        }
+      });
+      this.totalPercent = Math.round(weightedPercent / this.totalBytes);
     } else {
       this.totalPercent = 0;
     }
@@ -134,19 +143,28 @@ export default class Transfer<
     this.activeFiles = [];
     this.events = new Map<EventName, Set<Function>>();
     this.files = [];
+    this.plugins = [];
+    // ✅ 重置回调为安全的默认值，避免 Object.create 场景下出现 undefined
+    this.successCallback = () => null;
+    this.updateCallback = null;
+    this.beforeTransferCallback = null;
+    this.onInitChunkCallback = null;
+    this.OnMergeChunkCallBack = null;
   }
   set onUpdate(callback: UpdateCallBack<T>) {
     this.updateCallback = callback;
   }
 
-  set onInitChunk(callback: onInitChunkCallback) {
+  set onInitChunk(callback: onInitChunkCallback<T>) {
     this.onInitChunkCallback = callback;
   }
 
   set onMergeChunk(callback: OnMergeChunkCallBack) {
     this.OnMergeChunkCallBack = callback;
   }
-
+  set onSuccess(callback: successCallback<D>) {
+    this.successCallback = callback;
+  }
   /**
    * 注册插件
    * @param plugin 插件实例
@@ -246,7 +264,7 @@ export default class Transfer<
         TransferFileuFileCount++;
 
         // 累加文件大小（用于计算平均速度）
-        totalFileSize += file.File.size;
+        totalFileSize += file.File?.size || file.size || 0;
 
         // 使用统一方法获取已上传字节数
         transferTotaldBytes += this.getFileBytes(file);
@@ -256,8 +274,8 @@ export default class Transfer<
         }
       } else if (file.status === "success") {
         // 已完成文件也计入总大小（用于计算整体平均速度）
-        totalFileSize += file.File.size;
-        transferTotaldBytes += file.File.size;
+        totalFileSize += file.File?.size || file.size || 0;
+        transferTotaldBytes += file.File?.size || file.size || 0;
       }
     });
 

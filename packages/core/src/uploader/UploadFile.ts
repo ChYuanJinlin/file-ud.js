@@ -1,18 +1,17 @@
-import axios, { AxiosProgressEvent, Canceler } from "axios";
-import { IFile, speedInfo, TimeInfo } from "../types";
+import axios from "axios";
+import { IFile } from "../types";
 import Uploader from ".";
+import ChunkManager from "../chunkManager";
 import UploadChunkManager from "./UploadChunkManager";
 import {
   createReactiveUploadFile,
-  formatSpeed,
   formatFileSize,
   logger,
-  checkNetworkStatus,
   computeTransferTime,
 } from "../utils";
-import { ErrorCode, FileUDError } from "../fileUD/errors";
 import TransferFile from "../transfer/TransferFile";
 import Transfer from "../transfer/Transfer";
+import { XHRInterceptor } from "../xhr-intercepto";
 
 /**
  * 文件传输实例类
@@ -27,6 +26,7 @@ export default class UploadFile<T = any> extends TransferFile<UploadFile, T> {
    * 每个文件拥有独立的 uploadChunkManager,实现并发控制、断点续传和失败隔离
    */
   public uploadChunkManager: UploadChunkManager | null = null;
+  public static interceptor: XHRInterceptor<UploadFile>;
 
   /**
    * 全局共享的 WeakMap
@@ -38,24 +38,13 @@ export default class UploadFile<T = any> extends TransferFile<UploadFile, T> {
    * 全局共享的当前上传文件队列
    * 用于在拦截器中查找匹配的 FormData
    */
-  private static currentUploadQueue: UploadFile[] = [];
+  private static currentQueue: UploadFile[] = [];
 
   /**
    * 跟踪已分配到 XHR 的文件集合
    * 用于按顺序分配 XHR 实例,避免冲突
    */
   private static assignedFiles = new Set<UploadFile>();
-
-  // ==================== 速率计算内部状态 ====================
-
-  /** 上次计算速率的时间戳 (毫秒) */
-  public lastUpdateTime: number = 0;
-
-  /** 上次已上传的字节数 */
-  public lastUploadedBytes: number = 0;
-
-  /** 上传开始的时间戳 (毫秒) */
-  public uploadStartTime: number = 0;
 
   constructor(file: IFile, transfer: Transfer) {
     super(file, transfer);
@@ -73,8 +62,14 @@ export default class UploadFile<T = any> extends TransferFile<UploadFile, T> {
         this.initChunkManagerFromRestore(file);
       }
     }
+
     // 关键：在发起请求前设置拦截器，建立当前文件与 XHR 的映射
-    this.setupInterceptor(this);
+    this.initInterceptor();
+
+    // 添加到队列
+    UploadFile.currentQueue.push(this);
+    
+    UploadFile.interceptor.install();
     return this.proxy;
   }
 
@@ -233,30 +228,12 @@ export default class UploadFile<T = any> extends TransferFile<UploadFile, T> {
   }
 
   /**
-   * @description: 取消当前的请求
-   * @return {*}
+   * 执行普通上传的重试（模板方法覆写）
    */
-  cancel(fn: ((next: () => void) => void) | void) {
-    if (this.proxy.status !== "UDLoading" && this.proxy.status !== "paused") {
-      console.warn("没有需要取消的上传", this.fileName);
-      return;
-    }
-
-    const next = () => {
-      // 如果是分片上传，调用 uploadChunkManager 的 cancelUpload 方法
-      if (this.uploadChunkManager) {
-        this.uploadChunkManager.cancelUpload();
-      } else {
-        // 普通上传，直接 abort
-        this.abort?.();
-      }
-
-      this.transfer.totalTransferredBytes -= this.File.size;
-      this.transfer.emit("cancel", this.proxy);
-    };
-
-    fn ? fn(next) : next();
+  protected async doRetryTransfer(): Promise<T> {
+    return this.upload();
   }
+
   remove() {
     // 取消上传
     if (this.uploadChunkManager) {
@@ -277,201 +254,6 @@ export default class UploadFile<T = any> extends TransferFile<UploadFile, T> {
     // ✅ 删除重复的手动更新，updateGlobalStats 已经处理了
     up.triggerUpdate();
     up.emit("remove", this.proxy);
-  }
-
-  /**
-   * 重试上传
-   *
-   * 根据上传类型采用不同的重试策略:
-   * - **分片上传**: 调用 uploadChunkManager.retryFailedChunks(),仅重试失败的分片,已成功分片不重复上传
-   * - **普通上传**: 重新调用 upload() 方法,从头开始上传
-   *
-   * 重试前会重置文件状态为 UDLoading,进度归零,并标记 retry = true
-   *
-   * @example
-   * ```typescript
-   * // 监听错误事件
-   * uploader.on('error', (error) => {
-   *   console.error('上传失败:', error);
-   *
-   *   // 用户点击重试按钮
-   *   if (confirm('是否重试?')) {
-   *     file.rest();
-   *   }
-   * });
-   * ```
-   *
-   * @remarks
-   * - 分片上传的重试次数由 `chunkOptions.retries` 控制(默认 3 次)
-   * - 重试是异步操作,建议在 UI 上显示加载状态
-   * - 重试失败后会再次触发 error 事件
-   */
-  async retry() {
-    if (!["cancelled", "fail", "error"].includes(this.proxy.status!)) {
-      console.warn("没有需要重试的上传", this.fileName);
-      return;
-    }
-    // 根据当前状态决定重试策略
-    const isChunkUpload =
-      this.up.config?.chunkOptions && this.uploadChunkManager;
-    if (isChunkUpload && this.uploadChunkManager) {
-      // 分片上传的重试逻辑
-      const hasFailedChunks =
-        this.uploadChunkManager.getFailedChunksCount() > 0;
-      const allChunksCompleted =
-        this.uploadChunkManager.completedChunks ===
-        this.uploadChunkManager.totalChunks;
-
-      logger.info("UploadFile", `文件 ${this.fileName} 开始重试`, {
-        fileId: this.fileId,
-        fileName: this.fileName,
-        status: this.proxy.status,
-        completedChunks: this.uploadChunkManager.completedChunks,
-        totalChunks: this.uploadChunkManager.totalChunks,
-        hasFailedChunks,
-        allChunksCompleted,
-      });
-
-      if (allChunksCompleted && !hasFailedChunks) {
-        // 场景1：所有分片都成功了（可能在 merging 阶段失败）
-        // 需要重新开始整个上传流程
-        logger.info(
-          "UploadFile",
-          `所有分片已完成，重新开始上传流程（可能是合并阶段失败）`,
-        );
-
-        // 重置状态
-        this.proxy.isRetry = true;
-        this.proxy.status = "UDLoading";
-        // ⚠️ 不要重置 percent，保持当前进度显示
-
-        // 重新初始化并启动上传
-        await this.uploadChunkManager.startUpload().catch((err: any) => {
-          logger.error("UploadFile", `文件 ${this.fileName} 重试失败`, err);
-          this.onError(err);
-        });
-      } else if (hasFailedChunks) {
-        // 场景2：有失败的分片，只重试失败的分片
-        logger.info(
-          "UploadFile",
-          `发现 ${this.uploadChunkManager.getFailedChunksCount()} 个失败分片，仅重试失败分片`,
-        );
-
-        // 重置状态
-        this.proxy.isRetry = true;
-        this.proxy.status = "UDLoading";
-
-        // 仅重试失败的分片
-        await this.uploadChunkManager.retryFailedChunks().catch((err: any) => {
-          logger.error("UploadFile", `文件 ${this.fileName} 重试失败`, err);
-          this.onError(err);
-        });
-      } else {
-        // 尝试重新开始整个上传流程
-        this.proxy.isRetry = true;
-        this.proxy.status = "UDLoading";
-
-        await this.uploadChunkManager.startUpload().catch((err: any) => {
-          logger.error("UploadFile", `文件 ${this.fileName} 重试失败`, err);
-          this.onError(err);
-        });
-      }
-    } else {
-      // 普通上传：重新调用 upload 方法
-      logger.info("UploadFile", `文件 ${this.fileName} 开始重试普通上传`);
-
-      // 重置状态
-      this.proxy.isRetry = true;
-      this.proxy.percent = 0;
-      this.proxy.status = "UDLoading";
-
-      await this.upload().catch((err: any) => {
-        logger.error("UploadFile", `文件 ${this.fileName} 重试失败`, err);
-        this.onError(err);
-      });
-    }
-    this.proxy.isRetry = false;
-    this.transfer.emit("retry", this.proxy);
-  }
-
-  /**
-   * 暂停上传
-   *
-   * 暂停当前文件的上传过程。
-   * - **分片上传**: 暂停新分片的启动,等待当前活跃分片完成后进入暂停状态
-   * - **普通上传**: 直接中止 XHR 请求
-   *
-   * 暂停后会保存当前进度,可以通过 resume() 恢复上传。
-   *
-   * @example
-   * ```typescript
-   * // 用户点击暂停按钮
-   * pauseButton.addEventListener('click', () => {
-   *   file.pause();
-   *   console.log(file.status); // "paused"
-   * });
-   * ```
-   *
-   * @remarks
-   * - 只有处于 "UDLoading" 状态的文件才能暂停
-   * - 暂停后可以随时调用 resume() 恢复
-   * - 分片上传的进度会自动保存(如果启用了断点续传)
-   */
-  pause(): void {
-    if (this.proxy.status !== "UDLoading") {
-      console.warn(
-        "UploadFile",
-        `文件 ${this.fileName} 当前状态为 ${this.proxy.status},无法暂停`,
-      );
-      return;
-    }
-
-    // 委托给 uploadChunkManager 处理
-    if (this.uploadChunkManager) {
-      this.uploadChunkManager.pause();
-    } else {
-      console.warn("该模式不支持暂停", this.fileName);
-    }
-    this.transfer.emit("pause", this.proxy);
-  }
-
-  /**
-   * 恢复上传
-   *
-   * 从暂停的位置继续上传。
-   * - **分片上传**: 继续上传剩余的分片,已成功分片不会重复上传
-   * - **普通上传**: 由于 XHR 无法恢复,会重新开始上传
-   *
-   * @example
-   * ```typescript
-   * // 用户点击继续按钮
-   * resumeButton.addEventListener('click', () => {
-   *   file.resume();
-   *   console.log(file.status); // "UDLoading"
-   * });
-   * ```
-   *
-   * @remarks
-   * - 只有处于 "paused" 状态的文件才能恢复
-   * - 分片上传会从上次中断的位置继续
-   * - 普通上传会重新开始(因为 HTTP 请求无法恢复)
-   */
-  async resume(): Promise<void> {
-    if (this.proxy.status !== "paused") {
-      console.warn(
-        "UploadFile",
-        `文件 ${this.fileName} 当前状态为 ${this.proxy.status},无法恢复`,
-      );
-      return;
-    }
-
-    // 委托给 uploadChunkManager 处理
-    if (this.uploadChunkManager) {
-      await this.uploadChunkManager.resume();
-    } else {
-      console.warn("该模式不支持恢复", this.fileName);
-    }
-    this.transfer.emit("resume", this.proxy);
   }
 
   setFile(file: File | Blob, formData: FormData, index?: number) {
@@ -595,7 +377,7 @@ export default class UploadFile<T = any> extends TransferFile<UploadFile, T> {
             onChunkComplete?.(res);
           } else {
             // 普通上传：直接设置为成功并调用成功回调
-            this.onScuccess(res);
+            this.onSuccess(res);
             this.proxy.status = "success";
             this.proxy.percent = 100;
           }
@@ -621,72 +403,27 @@ export default class UploadFile<T = any> extends TransferFile<UploadFile, T> {
   }
 
   /**
-   * 计算全局上传进度（统一处理，避免重复代码）
+   * 返回上传的分片管理器
    */
-  private calculateGlobalProgress(event: ProgressEvent): void {
-    const up = this.transfer;
-
-    // 动态计算当前正在上传的文件总字节数和已上传字节数
-    let totalUploadedBytes = 0;
-    let currentTotalBytes = 0;
-    let totalFilesSize = 0;
-    this.up.files.forEach((file) => {
-      // 根据上传类型决定状态过滤条件
-      if (file.File?.size > 0) {
-        totalFilesSize += file.File.size;
-      }
-      const isActiveUpload = this.uploadChunkManager
-        ? ["UDLoading", "paused", "fail"].includes(file.status!)
-        : file.status === "UDLoading" || file.status === "paused";
-
-      if (isActiveUpload) {
-        currentTotalBytes += file.File.size;
-
-        if (file.uploadChunkManager) {
-          // 分片上传：使用 uploadChunkManager 的已上传字节数
-
-          totalUploadedBytes += file.uploadChunkManager.totalChunkSize;
-        } else {
-          // 普通上传：使用 __transferBytes__
-          totalUploadedBytes += file.__transferBytes__ || 0;
-        }
-      }
-    });
-
-    // 更新全局已上传字节数和总进度
-    up.transferredBytes = totalUploadedBytes;
-    up.totalBytes = totalFilesSize;
-    up.totalFormatSize = formatFileSize(totalFilesSize);
-    up.totalPercent =
-      currentTotalBytes > 0
-        ? Math.min(
-            100,
-            Math.floor((totalUploadedBytes / currentTotalBytes) * 100),
-          )
-        : this.uploadChunkManager
-        ? up.totalPercent
-        : 0;
+  protected getChunkManager(): ChunkManager | null {
+    return this.uploadChunkManager;
   }
 
   /**
-   * 处理上传进度事件
-   *
-   * 根据上传类型(分片/普通)采用不同的进度计算策略:
-   * - 分片上传: 委托给 uploadChunkManager.updateProgress() 处理,支持断点续传进度合并
-   * - 普通上传: 直接计算百分比 (loaded / total * 100)
-   *
-   * 同时触发速率计算和进度事件通知
-   *
-   * @param event - XHR 进度事件对象,包含 loaded 和 total 属性
-   *
-   *
-   *
-   * @private
+   * 获取文件大小（上传场景：直接用 File.size）
    */
-  private handleProgress(event: ProgressEvent): void {
-    const up = this.transfer;
-    // 统一处理不同类型的事件对象
+  public getFileSize(): number {
+    return this.File?.size || 0;
+  }
 
+  /**
+   * 更新当前文件的上传进度和已传输字节数（模板方法）
+   *
+   * 根据上传类型采用不同的进度计算策略：
+   * - 普通上传：从 event.loaded/event.total 直接计算百分比和字节数
+   * - 分片上传：由 uploadChunkManager 独立维护进度，此处无需额外操作
+   */
+  protected updateLocalProgress(event: ProgressEvent): void {
     if (!this.uploadChunkManager) {
       if (this.File.size > 0) {
         this.proxy.percent = Math.floor((event.loaded * 100) / event.total);
@@ -698,221 +435,7 @@ export default class UploadFile<T = any> extends TransferFile<UploadFile, T> {
         this.__transferBytes__ = 0;
       }
     }
-
-    // 更新当前文件已上传的大小（使用 formatFileSize 格式化）
-    this.proxy.transferFormatSize = formatFileSize(this.__transferBytes__);
-
-    // 使用统一方法计算全局进度
-    this.calculateGlobalProgress(event);
-
-    // 触发进度事件,通知外部监听器
-    // 计算并更新当前文件的上传速率
-    // 内部包含防抖逻辑(100ms 最小间隔)
-    this.calculateSpeed(this.__transferBytes__);
-    up.emit("progress", up.totalPercent);
   }
 
-  /**
-   * 计算上传速率(带防抖优化)
-   *
-   * 采用最小时间间隔采样策略,避免高频进度回调导致数值剧烈抖动。
-   * 瞬时速度基于最近两个有效采样点计算,平均速度基于总耗时和总字节数计算。
-   *
-   * @param loadedBytes - 当前已上传的字节数
-   *
-   *
-   * @private
-   */
-  private calculateSpeed(loadedBytes: number): void {
-    const now = Date.now();
 
-    // 初始化上传开始时间(首次调用)
-    if (this.uploadStartTime === 0) {
-      this.uploadStartTime = now;
-      this.lastUpdateTime = now;
-      this.lastUploadedBytes = loadedBytes;
-      return;
-    }
-
-    // 防抖: 最小时间间隔采样(100ms)
-    // 避免高频回调导致计算开销过大和数值抖动
-    const timeDiff = now - this.lastUpdateTime;
-    if (timeDiff < 100) {
-      return; // 跳过本次计算,等待下次采样
-    }
-
-    // 计算瞬时速度(bytes/s)
-    // 公式: (当前字节 - 上次字节) / 时间差(秒)
-    const bytesDiff = loadedBytes - this.lastUploadedBytes;
-    const currentSpeed = (bytesDiff / timeDiff) * 1000;
-
-    // 计算平均速度(bytes/s)
-    // 公式: 总字节 / 总耗时(秒)
-    const totalTime = now - this.uploadStartTime;
-    const averageSpeed = totalTime > 0 ? (loadedBytes / totalTime) * 1000 : 0;
-
-    // 更新速率信息到 Proxy 对象
-    // 通过 Proxy.set 陷阱自动触发 Uploader.triggerUpdate()
-    // 进而聚合所有文件的速率到 Uploader.speed
-    this.proxy.speed = {
-      currentSpeed,
-      averageSpeed,
-      currentSpeedFormatted: formatSpeed(currentSpeed),
-      averageSpeedFormatted: formatSpeed(averageSpeed),
-    };
-
-    // 更新内部状态,为下次计算做准备
-    this.lastUpdateTime = now;
-    this.lastUploadedBytes = loadedBytes;
-  }
-
-  /**
-   * 设置当前文件的请求拦截器（全局只安装一次）
-   * @param fileInstance 当前文件实例
-   */
-  public setupInterceptor(fileInstance: UploadFile): void {
-    // 保存原始 XHR 引用
-    Uploader.originalXHR = window.XMLHttpRequest;
-
-    // 将当前文件添加到全局上传队列
-    UploadFile.currentUploadQueue.push(fileInstance);
-
-    // 只在第一次安装全局拦截器
-    if (!Uploader.isInterceptorInstalled) {
-      const OriginalXHR = window.XMLHttpRequest;
-
-      const XHRProxy = function (this: any) {
-        const xhr = new OriginalXHR();
-        const upload = xhr.upload;
-
-        let requestHeaders: Record<string, string> = {};
-        let currentFileInstance: UploadFile | null = null;
-
-        // 拦截 setRequestHeader
-        const originalSetHeader = xhr.setRequestHeader;
-        xhr.setRequestHeader = function (name: string, value: string) {
-          requestHeaders[name] = value;
-          return originalSetHeader.call(this, name, value);
-        };
-
-        // 拦截 send - 这是关键！
-        const originalSend = xhr.send;
-        xhr.send = function (body?: any) {
-          // ✅ 在发送请求前检查网络状态
-          const networkCheck = checkNetworkStatus();
-          if (!networkCheck.online) {
-            const error = new FileUDError(
-              ErrorCode.NETWORK,
-              "网络连接异常，请检查网络设置后重试",
-              {
-                fileName: currentFileInstance?.fileName,
-                fileId: currentFileInstance?.fileId,
-                timestamp: networkCheck.timestamp,
-              },
-              {
-                recoverable: true,
-                retryable: true,
-                suggestion: "请检查网络连接后重试",
-                userVisible: true,
-              },
-            );
-
-            logger.error("UploadFile", `网络检查失败: ${error.message}`, {
-              fileId: currentFileInstance?.fileId,
-              fileName: currentFileInstance?.fileName,
-            });
-
-            // 设置文件状态为 error
-            if (currentFileInstance) {
-              currentFileInstance.proxy.status = "error";
-              currentFileInstance.onError(error);
-            }
-
-            // 中止请求
-            throw error;
-          }
-
-          // 优先从请求体获取 formData
-          let formDataToSend = body;
-
-          // 优先从 WeakMap 获取关联的文件实例
-          currentFileInstance = UploadFile.xhrToFileMap.get(xhr) || null;
-
-          // 如果 WeakMap 中没有，从队列中按顺序取一个未使用的文件
-          if (
-            !currentFileInstance &&
-            UploadFile.currentUploadQueue.length > 0
-          ) {
-            // 从队列中找到第一个未被分配的文件
-            for (const file of UploadFile.currentUploadQueue) {
-              if (!UploadFile.assignedFiles.has(file)) {
-                currentFileInstance = file;
-                UploadFile.xhrToFileMap.set(xhr, file);
-                UploadFile.assignedFiles.add(file);
-                break;
-              }
-            }
-
-            // 如果所有文件都被分配了，使用第一个文件（覆盖）
-
-            if (!currentFileInstance) {
-              currentFileInstance = UploadFile.currentUploadQueue[0];
-              UploadFile.xhrToFileMap.set(xhr, currentFileInstance);
-            }
-          }
-
-          // 添加上传器的全局 headers
-          if (currentFileInstance?.up?.config?.headers) {
-            Object.entries(currentFileInstance.up.config.headers).forEach(
-              ([key, value]) => {
-                const headerExists = Object.keys(requestHeaders).some(
-                  (existingKey) =>
-                    existingKey.toLowerCase() === key.toLowerCase(),
-                );
-                if (!headerExists) {
-                  xhr.setRequestHeader(key, value as string);
-                }
-              },
-            );
-          }
-
-          // 绑定进度回调到当前文件实例
-          upload.onprogress = function (event: ProgressEvent) {
-            if (currentFileInstance) {
-              currentFileInstance.handleProgress(event);
-            }
-          };
-
-          // 设置 abort 方法
-          if (currentFileInstance) {
-            currentFileInstance.abort = () => {
-              if (xhr.readyState !== XMLHttpRequest.DONE) {
-                xhr.abort();
-                if (currentFileInstance) {
-                  currentFileInstance.proxy.isCancel = true;
-                  currentFileInstance.proxy.status = "cancelled";
-                }
-              }
-            };
-          }
-
-          return originalSend.call(this, formDataToSend);
-        };
-
-        return xhr;
-      } as any;
-
-      // 复制原型方法
-      XHRProxy.prototype = OriginalXHR.prototype;
-
-      // 替换全局 XHR
-      window.XMLHttpRequest = XHRProxy;
-      Uploader.isInterceptorInstalled = true;
-
-      console.log("✅ 全局 XHR 拦截器已安装");
-    }
-
-    // 标记当前文件的拦截器已激活
-    Uploader.interceptorActive = true;
-  }
 }

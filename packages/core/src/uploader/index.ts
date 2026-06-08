@@ -13,7 +13,7 @@ import {
   SelectCallBack,
   UpdateCallBack,
   successCallback,
-} from "../types";
+} from "../types/index";
 import {
   checkNetworkStatus,
   formatFileSize,
@@ -36,7 +36,7 @@ export const defaultConfig: uploaderConfigs = {
   file: "file",
 };
 
-export default class Uploader<T = any> extends Transfer<UploadFile,T> {
+export default class Uploader<T = any> extends Transfer<UploadFile, T> {
   public inputHTML: HTMLInputElement | null;
   public static objectUrls: any[] = [];
   public static baseConfig: uploaderConfigs;
@@ -53,12 +53,9 @@ export default class Uploader<T = any> extends Transfer<UploadFile,T> {
   public static originalXHR?: typeof XMLHttpRequest | null;
   public static interceptorActive = false;
 
-  public static onError: ErrorCallBack;
   // 静态默认插件
   private static defaultPlugins: IUDPlugin<UploadFile>[] = [];
   public openCallBack: OpenFileCallback = () => null;
-  public beforeTransferCallback: beforeTransferCallBack | null | undefined = null;
-
 
   public selectCallback: SelectCallBack | null | undefined = null;
 
@@ -221,12 +218,8 @@ export default class Uploader<T = any> extends Transfer<UploadFile,T> {
   public updateConfig(config: Partial<uploaderConfigs>) {
     this.config = mergeObjects(this.config!, config);
   }
-  set onbeforeTransfer(callback: beforeTransferCallBack) {
+  set onbeforeTransfer(callback: beforeTransferCallBack<UploadFile>) {
     this.beforeTransferCallback = callback;
-  }
-
-  set onSuccess(callback: successCallback<T>) {
-    this.successCallback = callback;
   }
 
   set onSelect(callback: SelectCallBack) {
@@ -393,7 +386,7 @@ export default class Uploader<T = any> extends Transfer<UploadFile,T> {
           size: file.size,
           index: Uploader.fileIndex++,
         },
-        this,
+        this as unknown as Transfer,
       );
       let processedFile: UploadFile | null = null;
 

@@ -1,6 +1,7 @@
 import { FileUDError } from "../fileUD/errors";
 import Uploader from "../uploader";
 import Downloader from "../downloader/index";
+import DownloadFile from "../downloader/DownloadFile";
 import ChunkManager from "../uploader/UploadChunkManager";
 import UploadFile from "../uploader/UploadFile";
 import TransferFile from "../transfer/TransferFile";
@@ -216,18 +217,12 @@ export type FileConfig = {
   formData: FormData;
   chunkIndex?: number;
 };
-export interface UDConfig {
+export interface UDConfig<T = any> {
   /* 分片上传下载配置 */
   chunkOptions?: ChunkOptions | null;
   /* 可选：传入自定义 axios 实例 */
   axiosInstance?: AxiosInstance;
-  /**
-   * 文件传输下载地址，可以是字符串或者promise函数
-   * @return {Promise}
-   */
-  action:
-    | string
-    | ((formData: FormData, uploadFile: UploadFile) => Promise<any>);
+
   /* 上传下载文件的数量限制 */
   limit?: number;
   /* 上传下载文件限制的大小 */
@@ -235,7 +230,7 @@ export interface UDConfig {
   /* 上传下载请求的头部信息 */
   headers?: Record<string, any>;
 }
-export interface uploaderConfigs extends UDConfig {
+export interface uploaderConfigs extends UDConfig<UploadFile> {
   /* 是否支持多选 */
   multiple?: boolean;
   /* 接受的文件类型（支持 MIME 类型或文件后缀名） */
@@ -246,11 +241,27 @@ export interface uploaderConfigs extends UDConfig {
   elementId?: string;
   /* 是否自动上传 */
   autoUpload?: boolean;
-
+  /**
+   * 文件传输下载地址，可以是字符串或者promise函数
+   * @return {Promise}
+   */
+  action: string | ((formData: FormData, transferFile: UploadFile) => Promise<any>);
   /* 上传文件标识 */
   file?: string | ((FileConfig: FileConfig) => void);
 }
-
+/**
+ * 下载器配置
+ */
+export interface DownloaderConfig extends UDConfig<DownloadFile> {
+  /** 默认超时时间 */
+  timeout?: number;
+  /**
+   * 文件传输下载地址，可以是字符串或者promise函数
+   * @return {Promise}
+   */
+  action: string | ((transferFile: DownloadFile) => Promise<any>);
+  axiosOptions?: AxiosRequestConfig;
+}
 export interface PluginContext {
   /** 上传器实例 */
   uploader: Uploader;
@@ -318,8 +329,7 @@ export interface IUDPlugin<T extends TransferFile = TransferFile> {
 }
 export type PluginConstructor = new (options?: any) => IUDPlugin;
 
-/* 文件传输状态类型 */
-export interface IFile {
+export interface UDFile {
   /* 文件唯一标识符 */
   fileId?: string;
   /* 文件访问URL */
@@ -328,12 +338,29 @@ export interface IFile {
   fileName: string;
   /* 文件大小 */
   size?: number;
-  /* 文件对象 */
-  File?: File;
+  /* 流式保存 FileHandle（File System Access API） */
+  fileHandle?: FileSystemFileHandle;
+
+  /* 文件传输的状态 */
+  status?:
+    | "pending"
+    | "UDLoading"
+    | "paused"
+    | "success"
+    | "fail"
+    | "error"
+    | "cancelled"
+    | "merging"
+    | "hashing";
+}
+/* 文件传输状态类型 */
+export interface IFile extends UDFile {
   /* 文件传输的进度百分比 */
   percent?: number;
   /* 文件扩展名 */
   extension?: string;
+  /* 文件对象 */
+  File?: File;
   /* 
   loading 状态
   */
@@ -360,17 +387,6 @@ export interface IFile {
   /* 文件传输的索引 */
   index?: number;
 
-  /* 文件传输的状态 */
-  status?:
-    | "pending"
-    | "UDLoading"
-    | "paused"
-    | "success"
-    | "fail"
-    | "error"
-    | "cancelled"
-    | "merging"
-    | "hashing";
   speed?: speedInfo;
 
   // ==================== 分片上传回显相关字段 ====================
@@ -402,9 +418,9 @@ export interface IDownloadFile extends Omit<IFile, "transfer"> {
 export type ErrorCallBack = (errors: FileUDErrorJSON) => void;
 
 /* 上传前的操作回调函数类型 */
-export type beforeTransferCallBack = (
-  file: UploadFile,
-) => boolean | Promise<Boolean> | undefined | null;
+export type beforeTransferCallBack<T extends TransferFile> = (
+  file: T,
+) => boolean | Promise<Boolean> | undefined | null | { [key: string]: any };
 
 /* 上传成功回调函数类型 */
 export type successCallback<T> = (response: T, file: TransferFile) => void;
@@ -415,15 +431,16 @@ export type UpdateCallBack<T = any> = (file: T[]) => void;
 /* 
 初始化回调函数类型
 */
-export type onInitChunkCallback = (
-  file: UploadFile,
+export type onInitChunkCallback<T> = (
+  file: T,
   totalChunks: number,
   fileHash: string,
 ) =>
   | Promise<{
       fileHash: string;
       chunks?: number[] | null | undefined;
-      isInstantUpload?: boolean; // ✅ 标记是否为真正的秒传（文件已存在，无需合并）
+      isInstantUpload?: boolean; // ✅ 上传秒传标记（文件已存在，无需合并）
+      isInstantDownload?: boolean; // ✅ 下载秒下标记（所有分片已存在，无需下载）
       url?: string;
       shouldRemove?: boolean; // ✅ 标记是否需要移除该文件（秒传时自动移除）
     }>
@@ -442,66 +459,79 @@ export type SelectCallBack = (
   file: File,
 ) => boolean | Promise<Boolean> | undefined | null;
 
-/* 上传器事件接口 */
-export interface UploaderEvents {
+/**
+ * 分片事件数据辅助类型（上传/下载共用）
+ */
+export interface ChunkStartData<T = TransferFile<any>> {
+  file: T;
+  totalChunks: number;
+  chunkSize: number;
+}
+
+export interface ChunkSuccessData<T = TransferFile<any>> {
+  chunkIndex: number;
+  totalChunks: number;
+  completedChunks: number;
+  percent: number;
+  file: T;
+}
+
+export interface ChunkErrorData<T = TransferFile<any>> {
+  chunkIndex: number;
+  totalChunks: number;
+  error: string;
+  file: T;
+}
+
+/**
+ * 基础传输事件接口（上传/下载共用）
+ *
+ * 注意：error 和 update 未纳入基类，因为上传/下载的签名完全不同：
+ *   - Uploader.error = (errors: FileUDErrorJSON) => void
+ *   - Downloader.error = (error: Error, file: DownloadFile) => void
+ */
+export interface BaseTransferEvents<T = TransferFile<any>> {
   /* 文件列表变化事件 */
-  change: (uploadFile: UploadFile) => void;
+  change: (file: T) => void;
+  /* 传输进度事件 */
+  progress: (percent: number) => void;
+  /* 暂停传输事件 */
+  pause: (file: T) => void;
+  /* 恢复传输事件 */
+  resume: (file: T) => void;
+  /* 取消传输事件 */
+  cancel: (file: T) => void;
+  /* 重试传输事件 */
+  retry: (file: T) => void;
+  /* 移除文件事件 */
+  remove: (file: T) => void;
+  /* 文件开始传输事件 */
+  "files-start": (files: T[]) => void;
+  /* 文件完成传输事件 */
+  "files-complete": (files: TransferFile[]) => void;
+  // 分片相关（上传/下载共用）
+  /* 分片成功事件 */
+  "chunk-success": (data: ChunkSuccessData<T>) => void;
+  /* 分片失败事件 */
+  "chunk-error": (data: ChunkErrorData<T>) => void;
+  /* 合并开始事件 */
+  merging: (data: { file: T; completedChunks: number; totalChunks: number }) => void;
+  /* 合并成功事件 */
+  "merge-success": (data: { file: T; response?: any }) => void;
+  /* 合并失败事件 */
+  "merge-error": (data: { file: T; error: string }) => void;
+}
+
+/* 上传器事件接口 */
+export interface UploaderEvents extends BaseTransferEvents<UploadFile> {
   /* 选择文件时触发的事件 */
   select: (file: File) => boolean;
-  /* 上传进度事件 */
-  progress: (percent: number) => void;
   /* 更新事件 */
   update: (uploaderFile: UploaderFile[]) => void;
   /* 错误事件 */
   error: ErrorCallBack;
-  /* 暂停上传事件 */
-  pause: (file: UploadFile) => void;
-  /* 恢复上传事件 */
-  resume: (file: UploadFile) => void;
-  /* 取消上传事件 */
-  cancel: (file: UploadFile) => void;
-  /* 重试上传事件 */
-  retry: (file: UploadFile) => void;
-  /* 移除文件事件 */
-  remove: (file: UploadFile) => void;
-  /* 文件开始上传事件 */
-  "files-start": (files: UploadFile[]) => void;
-  /* 文件完成上传事件 */
-  "files-complete": (files: TransferFile[]) => void;
-
-  // 分片上传相关事件
   /* 分片上传开始事件 */
-  "chunk-upload-start": (data: {
-    file: UploadFile;
-    totalChunks: number;
-    chunkSize: number;
-  }) => void;
-  /* 分片上传成功事件 */
-  "chunk-success": (data: {
-    chunkIndex: number;
-    totalChunks: number;
-    completedChunks: number;
-    percent: number;
-    file: UploadFile;
-  }) => void;
-  /* 分片上传失败事件 */
-  "chunk-error": (data: {
-    chunkIndex: number;
-    totalChunks: number;
-    error: string;
-    file: UploadFile;
-  }) => void;
-  /* 合并开始事件 */
-  merging: (data: {
-    file: UploadFile;
-    completedChunks: number;
-    totalChunks: number;
-  }) => void;
-  /* 合并成功事件 */
-  "merge-success": (data: { file: UploadFile; response?: any }) => void;
-  /* 合并失败事件 */
-  "merge-error": (data: { file: UploadFile; error: string }) => void;
-
+  "chunk-upload-start": (data: ChunkStartData<UploadFile>) => void;
   /* 秒传成功事件（文件已存在，自动移除） */
   "instant-upload": (data: { file: UploadFile; reason: string }) => void;
 }
@@ -509,27 +539,13 @@ export interface UploaderEvents {
 /**
  * 下载器事件接口
  */
-export interface DownloaderEvents {
-  /* 文件列表变化事件 */
-  change: (downloadFile: DownloadFile) => void;
-  /* 下载进度事件 */
-  progress: (percent: number) => void;
+export interface DownloaderEvents extends BaseTransferEvents<DownloadFile> {
   /* 更新事件 */
   update: (downloaderFiles: DownloadFile[]) => void;
   /* 错误事件 */
   error: (error: Error, file: DownloadFile) => void;
-  /* 暂停下载事件 */
-  pause: (file: DownloadFile) => void;
-  /* 恢复下载事件 */
-  resume: (file: DownloadFile) => void;
-  /* 取消下载事件 */
-  cancel: (file: DownloadFile) => void;
-  /* 移除文件事件 */
-  remove: (file: DownloadFile) => void;
-  /* 文件开始下载事件 */
-  "files-start": (files: DownloadFile[]) => void;
-  /* 文件完成下载事件 */
-  "files-complete": (files: DownloadFile[]) => void;
+  /* 分片下载开始事件 */
+  "chunk-download-start": (data: ChunkStartData<DownloadFile>) => void;
 }
 
 /* 事件名称类型 */
@@ -591,13 +607,4 @@ export interface DownloadOptions {
   headers?: Record<string, string>;
   /** Axios 实例（可选） */
   axiosInstance?: any;
-}
-
-/**
- * 下载器配置
- */
-export interface DownloaderConfig extends UDConfig {
-  /** 默认超时时间 */
-  timeout?: number;
-  axiosOptions?: AxiosRequestConfig;
 }

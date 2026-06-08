@@ -52,6 +52,32 @@ export const mergeChunks = (data) => {
  *   totalPages: number 
  * }>
  */
+/**
+ * 下载文件（GET 方式，支持分片下载）
+ * @param fileName 文件名
+ * @returns Promise<AxiosResponse>
+ */
+export const downloadFileApi = (fileName: string) => {
+  return Ajax.get(`/download/${encodeURIComponent(fileName)}`, undefined, {
+    responseType: "blob",
+  });
+};
+
+/**
+ * 下载 Excel（POST 方式，不分片示例）
+ * @param params 下载参数
+ * @returns Promise<AxiosResponse>
+ */
+export const downloadExcelApi = (params: {
+  columns: number;
+  rows: number;
+  fileName: string;
+}) => {
+  return Ajax.post("/download-excel", params, {
+    responseType: "blob",
+  });
+};
+
 export const getFileList = (data?: {
   page?: number;
   pageSize?: number;

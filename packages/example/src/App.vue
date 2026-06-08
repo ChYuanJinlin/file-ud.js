@@ -2,586 +2,465 @@
 import { ref, computed } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
-  Upload,
-  Delete,
-  Refresh,
-  VideoPause,
-  VideoPlay,
-  CircleClose,
-  Document,
-  Picture,
-  VideoCamera,
-  Headset,
-  Files,
-  Setting,
-  InfoFilled,
-  Check,
-  Loading,
-  Warning,
+  Upload, Delete, Refresh, VideoPause, VideoPlay, CircleClose,
+  Document, Picture, VideoCamera, Headset, Files,
 } from "@element-plus/icons-vue";
-import { FileUD, TransferFile, UploadFile } from "@file-ud.js/core";
+import { Downloader, FileUD, Uploader } from "@file-ud.js/core";
 import {
-  uploadFile,
-  upload,
-  getFileList,
-  checkFile,
-  createUploadTask,
-  mergeChunks,
+  uploadFile, upload, getFileList, checkFile, createUploadTask, mergeChunks,
+  downloadFileApi, downloadExcelApi,
 } from "./api";
-import { IFile } from "@file-ud.js/core/types";
-import Uploader from "@file-ud.js/core/uploader";
-import { uploadMonitor } from "@file-ud.js/core/utils";
-import DownloadFile from "node_modules/@file-ud.js/core/src/downloader/DownloadFile";
+import { IFile, UDFile, DownloaderConfig, uploaderConfigs } from "@file-ud.js/core/types";
 
-// ==================== 初始化上传器 ====================
-const isChunk = ref(true);
+// ==================== 共享工具函数 ====================
 
-FileUD.startUDLogger({
-  enabled: true,
-});
+const getFileIcon = (ext?: string) => {
+  const e = ext?.toLowerCase() || "";
+  if ([".jpg", ".jpeg", ".png", ".gif", ".bmp", ".svg", ".webp"].includes(e)) return Picture;
+  if ([".mp4", ".avi", ".mov", ".wmv", ".flv", ".mkv"].includes(e)) return VideoCamera;
+  if ([".mp3", ".wav", ".ogg", ".aac", ".flac"].includes(e)) return Headset;
+  return Document;
+};
 
-const test1 = FileUD.createUploader<{
-  url: string;
-}>("test1", {
-  action: "/api/upload-chunk",
+const statusTypeMap: Record<string, "success" | "warning" | "danger" | "info"> = {
+  success: "success", error: "danger", fail: "danger", paused: "warning", cancelled: "info",
+};
+
+const statusTextMap: Record<string, string> = {
+  pending: "等待中", UDLoading: "传输中", paused: "已暂停",
+  success: "已完成", error: "传输错误", fail: "传输失败",
+  merging: "合并中", hashing: "计算哈希中", cancelled: "已取消",
+};
+
+// ==================== 上传器 ====================
+
+const isChunkUpload = ref(true);
+
+const buildUploaderConfig = (): uploaderConfigs => ({
+  action: isChunkUpload.value ? "/api/upload-chunk" : "/api/upload",
+  multiple: true,
+  headers: { Authorization: "Bearer your-token" },
+  chunkOptions: isChunkUpload.value ? {} : null,
   file({ formData, uploadFile, chunkIndex, data }) {
     formData.append("file", data);
     formData.append("fileHash", uploadFile.uploadChunkManager?.fileHash!);
     formData.append("fileName", uploadFile.File.name);
     formData.append("chunkIndex", chunkIndex?.toString()!);
-    formData.append(
-      "totalChunks",
-      uploadFile.uploadChunkManager?.totalChunks.toString()!,
-    );
+    formData.append("totalChunks", uploadFile.uploadChunkManager?.totalChunks.toString()!);
   },
-  multiple: true,
-  chunkOptions: isChunk.value ? {} : null,
 });
 
-// ==================== 回调函数 ====================
-test1.onMergeChunk = async (ch) => {
+const uploader = FileUD.createUploader("uploader", buildUploaderConfig());
+
+uploader.onMergeChunk = async (ch) => {
   const { data } = await mergeChunks({
-    fileHash: ch.fileHash,
-    fileName: ch.uploadFile.fileName,
-    totalChunks: ch?.totalChunks!,
+    fileHash: ch.fileHash, fileName: ch.uploadFile.fileName, totalChunks: ch.totalChunks!,
   });
   return data;
 };
 
-test1.onInitChunk = async (uploadFile) => {
+uploader.onInitChunk = async (uploadFile) => {
   const { data } = await checkFile({
     fileHash: uploadFile.uploadChunkManager?.fileHash!,
     fileName: uploadFile.fileName,
   });
 
-  // ✅ 情况1：真正的秒传 - 文件已完整存在
   if (data.exists && data.isInstantUpload === true) {
-    console.log("⚡ 秒传成功，跳过上传和合并");
-    return {
-      ...data,
-      url: data.fileInfo.url,
-      isInstantUpload: true,
-    };
+    return { ...data, url: data.fileInfo.url, isInstantUpload: true };
   }
-
-  // ✅ 情况2：分片可复用但文件不存在
-  if (data.canReuseChunks === true) {
-    console.log("🔄 分片可复用，但需要重新上传以创建新文件");
-    return {
-      chunks: data.chunks,
-      fileHash: data.fileHash || "",
-      shouldRemove: false,
-    };
+  if (data.canReuseChunks) {
+    return { chunks: data.chunks, fileHash: data.fileHash || "", shouldRemove: false };
   }
-
-  // ✅ 情况3：普通断点续传或新文件
   if (!data.exists) {
-    if (data.chunks && data.chunks.length > 0) {
-      console.log(
-        `🔄 断点续传: ${data.chunks.length}/${data.totalChunks} 分片已上传`,
-      );
-      return {
-        chunks: data.chunks,
-        fileHash: data.fileHash || "",
-        shouldRemove: false,
-      };
+    if (data.chunks?.length) {
+      return { chunks: data.chunks, fileHash: data.fileHash || "", shouldRemove: false };
     }
-
-    console.log("📝 新文件，创建上传任务");
     await createUploadTask({
       fileHash: uploadFile.uploadChunkManager?.fileHash,
       fileName: uploadFile.fileName,
       totalChunks: uploadFile.uploadChunkManager?.totalChunks!,
       fileSize: uploadFile.File.size,
     });
-
-    return {
-      chunks: [],
-      fileHash: "",
-      shouldRemove: false,
-    };
+    return { chunks: [], fileHash: "", shouldRemove: false };
   }
-
-  return {
-    fileHash: data.fileHash || "",
-    shouldRemove: false,
-  };
+  return { fileHash: data.fileHash || "", shouldRemove: false };
 };
+
+// ==================== 下载器（普通文件下载） ====================
+
+const isChunkDownload = ref(true);
+const isStreamSave = ref(true); // 🚀 流式保存开关（File System Access API）
+
+const buildDownloaderConfig = (): DownloaderConfig => ({
+  action(downloadFile) { return downloadFileApi(downloadFile.fileName); },
+  chunkOptions: isChunkDownload.value ? {} : null,
+});
+
+const downloader = FileUD.createDownloader("downloader", buildDownloaderConfig());
+
+downloader.onInitChunk = async (downloadFile, totalChunks, fileHash) => {
+  // 分片下载时检查服务端文件状态（断点续传）
+  const { data } = await checkFile({
+    fileHash,
+    fileName: downloadFile.fileName,
+    totalChunks,
+  });
+  return { fileHash: data.fileHash || fileHash, chunks: data.chunks || [] };
+};
+
+downloader.beforeTransferCallback = (file) => ({});
+
+// ==================== Excel 下载器（POST，不分片） ====================
+
+const excelDownloader = FileUD.createDownloader("excelDownloader", {
+  action(downloadFile) {
+    return downloadExcelApi({
+      columns: 6, rows: 50, fileName: downloadFile.fileName || "test-excel",
+    });
+  },
+  axiosOptions: { method: "post", responseType: "blob" },
+});
+
+// ==================== 日志 ====================
+
+FileUD.startUDLogger({ enabled: true });
+
+// ==================== 全局错误 ====================
+
+Uploader.onError = (err: any) => ElMessage.error(`上传错误: ${err.message || "未知错误"}`);
 
 // ==================== 响应式数据 ====================
-const files = ref<TransferFile<UploadFile>[]>([]);
-const files2 = ref<TransferFile<DownloadFile>[]>([]);
 
-// ✅ 创建响应式的全局统计信息
-const globalStats = ref({
-  totalPercent: 0,
-  totalBytes: 0,
-  totalFormatSize: "0 B",
-  transferredFormatSize: "0 B",
-  speed: { averageSpeedFormatted: "0 B/s" },
+const uploadFiles = ref<any[]>([]);
+const downloadFiles = ref<any[]>([]);
+const serverFiles = ref<any[]>([]);
+
+const uploadStats = ref({ totalPercent: 0, totalFormatSize: "0 B", transferredFormatSize: "0 B", speed: "0 B/s" });
+const downloadStats = ref({ totalPercent: 0, totalFormatSize: "0 B", transferredFormatSize: "0 B", speed: "0 B/s" });
+
+// ==================== 事件绑定 ====================
+
+uploader.on("files-complete", () => {
+  ElMessage.success("所有文件上传完成！");
+  fetchServerFiles();
 });
 
-// ✅ 监听 test1 的属性变化并更新响应式数据
-const updateGlobalStats = () => {
-  globalStats.value = {
-    totalPercent: test1.totalPercent,
-    totalBytes: test1.totalBytes,
-    totalFormatSize: test1.totalFormatSize,
-    transferredFormatSize: test1.transferredFormatSize,
-    speed: test1.speed || { averageSpeedFormatted: "0 B/s" },
+uploader.onSuccess = (res: any) => console.log("上传成功:", res);
+
+uploader.onUpdate = (files) => {
+  uploadFiles.value = files;
+  uploadStats.value = {
+    totalPercent: uploader.totalPercent,
+    totalFormatSize: uploader.totalFormatSize,
+    transferredFormatSize: uploader.transferredFormatSize,
+    speed: uploader.speed?.averageSpeedFormatted || "0 B/s",
   };
 };
 
-Uploader.onError = (err) => {
-  console.log("🚀 ~ err:1", err);
-  ElMessage.error(`上传错误: ${err.message || "未知错误"}`);
-};
-
-test1.on("files-complete", (fileList) => {
-  console.log("🚀 ~ fileList:", fileList);
-  ElMessage.success("所有文件传输完成！");
-});
-
-test1.onSuccess = (res) => {
-  console.log("🚀 ~ res:", res);
-};
-
-test1.onUpdate = (fileList) => {
-  files.value = fileList;
-  // ✅ 每次文件列表更新时，同步更新全局统计信息
-  updateGlobalStats();
-};
-
-// ==================== 计算属性 ====================
-const uploadingCount = computed(
-  () => files.value.filter((f) => f.status === "UDLoading").length,
-);
-
-const pausedCount = computed(
-  () => files.value.filter((f) => f.status === "paused").length,
-);
-
-const successCount = computed(
-  () => files.value.filter((f) => f.status === "success").length,
-);
-
-const errorCount = computed(
-  () => files.value.filter((f) => f.status === "error").length,
-);
-
-const cancelledCount = computed(
-  () => files.value.filter((f) => f.status === "cancelled").length,
-);
-
-// ==================== 方法 ====================
-
-// 切换上传模式
-const handlerChunk = () => {
-  if (isChunk.value) {
-    isChunk.value = false;
-    test1.updateConfig({
-      chunkOptions: null,
-      action: "/api/upload",
-    });
-    ElMessage.info("已切换到普通上传模式");
-  } else {
-    test1.updateConfig({
-      chunkOptions: {},
-      action: "/api/upload-chunk",
-    });
-    isChunk.value = true;
-    ElMessage.info("已切换到大文件分片上传模式");
-  }
-};
-
-// 获取文件类型图标
-const getFileIcon = (file: UploadFile) => {
-  const ext = file.extension?.toLowerCase() || "";
-  if (
-    [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".svg", ".webp"].includes(ext)
-  ) {
-    return Picture;
-  } else if ([".mp4", ".avi", ".mov", ".wmv", ".flv", ".mkv"].includes(ext)) {
-    return VideoCamera;
-  } else if ([".mp3", ".wav", ".ogg", ".aac", ".flac"].includes(ext)) {
-    return Headset;
-  }
-  return Document;
-};
-
-// 获取状态标签类型
-const getStatusType = (
-  status: string,
-): "success" | "warning" | "danger" | "info" | undefined => {
-  switch (status) {
-    case "success":
-      return "success";
-    case "error":
-      return "danger";
-    case "paused":
-      return "warning";
-    case "cancelled":
-      return "info";
-    default:
-      return undefined; // pending 和 UDLoading 使用默认样式
-  }
-};
-
-// 获取状态文本
-const getStatusText = (status: string) => {
-  const statusMap: Record<string, string> = {
-    pending: "等待中",
-    UDLoading: "上传中",
-    paused: "已暂停",
-    success: "已完成",
-    error: "上传错误",
-    fail: "上传失败",
-    merging: "合并文件中...",
-    hashing: "计算文件哈希中...",
-    cancelled: "已取消",
+const bindDownloaderEvents = (dl: any) => {
+  dl.onUpdate = (files) => {
+    downloadFiles.value = files;
+    downloadStats.value = {
+      totalPercent: dl.totalPercent,
+      totalFormatSize: dl.totalFormatSize,
+      transferredFormatSize: dl.transferredFormatSize,
+      speed: dl.speed?.averageSpeedFormatted || "0 B/s",
+    };
   };
-  return statusMap[status] || status;
+  dl.onSuccess = (res: any) => console.log("下载成功:", res);
+  dl.on("error", (err: any) => ElMessage.error(`下载失败: ${err.message || "未知错误"}`));
 };
 
-// 批量操作
-const pauseAll = () => {
-  test1.pauseAll();
-  ElMessage.info("已全部暂停");
+bindDownloaderEvents(downloader);
+bindDownloaderEvents(excelDownloader);
+
+// ==================== 获取服务端文件列表 ====================
+
+const fetchServerFiles = () => {
+  getFileList().then((res: any) => { serverFiles.value = res.data; });
+};
+fetchServerFiles();
+
+// ==================== 模式切换 ====================
+
+const toggleUploadMode = () => {
+  isChunkUpload.value = !isChunkUpload.value;
+  uploader.updateConfig(buildUploaderConfig());
+  ElMessage.info(isChunkUpload.value ? "已切换到分片上传模式" : "已切换到普通上传模式");
 };
 
-const resumeAll = () => {
-  test1.resumeAll();
-  ElMessage.success("已全部继续");
+const toggleDownloadMode = () => {
+  isChunkDownload.value = !isChunkDownload.value;
+  downloader.updateConfig(buildDownloaderConfig());
+  ElMessage.info(isChunkDownload.value ? "已切换到分片下载模式" : "已切换到普通下载模式");
 };
 
+// ==================== 批量操作（uploader） ====================
+
+const pauseAll = () => { uploader.pauseAll(); ElMessage.info("已全部暂停"); };
+const resumeAll = () => { uploader.resumeAll(); ElMessage.success("已全部继续"); };
 const cancelAll = () => {
-  ElMessageBox.confirm("确定要取消所有文件的上传吗？", "提示", {
-    confirmButtonText: "确定",
-    cancelButtonText: "取消",
-    type: "warning",
-  })
-    .then(() => {
-      test1.cancelAll();
-      ElMessage.info("已全部取消");
-    })
+  ElMessageBox.confirm("确定要取消所有上传吗？", "提示", { confirmButtonText: "确定", cancelButtonText: "取消", type: "warning" })
+    .then(() => { uploader.cancelAll(); ElMessage.info("已全部取消"); })
+    .catch(() => {});
+};
+const retryAll = () => { uploader.retryAll(); ElMessage.success("已开始重试"); };
+const clearUploadFiles = () => {
+  ElMessageBox.confirm("确定要清除上传文件列表吗？", "提示", { confirmButtonText: "确定", cancelButtonText: "取消", type: "warning" })
+    .then(() => uploader.clearFiles())
     .catch(() => {});
 };
 
-const retryAll = () => {
-  test1.retryAll();
-  ElMessage.success("已开始重试");
-};
+// ==================== 批量操作（downloader） ====================
 
-const clearFiles = () => {
-  ElMessageBox.confirm("确定要清除文件列表吗？", "提示", {
-    confirmButtonText: "确定",
-    cancelButtonText: "取消",
-    type: "warning",
-  })
-    .then(() => {
-      test1.clearFiles();
-      // ✅ 清除文件后重置全局统计信息
-      updateGlobalStats();
-      ElMessage.success("文件列表已清除");
-    })
+const dlPauseAll = () => { downloader.pauseAll(); excelDownloader.pauseAll(); ElMessage.info("已全部暂停"); };
+const dlResumeAll = () => { downloader.resumeAll(); excelDownloader.resumeAll(); ElMessage.success("已全部继续"); };
+const dlCancelAll = () => {
+  ElMessageBox.confirm("确定要取消所有下载吗？", "提示", { confirmButtonText: "确定", cancelButtonText: "取消", type: "warning" })
+    .then(() => { downloader.cancelAll(); excelDownloader.cancelAll(); ElMessage.info("已全部取消"); })
     .catch(() => {});
 };
+const dlRetryAll = () => { downloader.retryAll(); excelDownloader.retryAll(); ElMessage.success("已开始重试"); };
 
-// 打印监控报告
-const printReport = () => {
-  uploadMonitor.printReport();
-  ElMessage.info("监控报告已输出到控制台");
+// ==================== 计数统计 ====================
+
+const uploadCounts = computed(() => ({
+  loading: uploadFiles.value.filter((f) => f.status === "UDLoading").length,
+  paused: uploadFiles.value.filter((f) => f.status === "paused").length,
+  success: uploadFiles.value.filter((f) => f.status === "success").length,
+  error: uploadFiles.value.filter((f) => ["error", "fail"].includes(f.status)).length,
+  cancelled: uploadFiles.value.filter((f) => f.status === "cancelled").length,
+}));
+
+const downloadCounts = computed(() => ({
+  loading: downloadFiles.value.filter((f) => f.status === "UDLoading").length,
+  paused: downloadFiles.value.filter((f) => f.status === "paused").length,
+  success: downloadFiles.value.filter((f) => f.status === "success").length,
+  error: downloadFiles.value.filter((f) => ["error", "fail"].includes(f.status)).length,
+  cancelled: downloadFiles.value.filter((f) => f.status === "cancelled").length,
+}));
+
+// ==================== 下载辅助 ====================
+
+/** 构造下载文件参数，为分片下载提供正确的代理 URL */
+const handleDownload = async (row: any) => {
+  const name = row.fileName || row.name || "";
+
+  // 🚀 流式保存：内部处理了兼容性检测 + 用户取消 + 错误回退
+  const fileHandle = isStreamSave.value
+    ? await Downloader.pickSaveFile(name)
+    : undefined;
+
+  // null = 用户取消；undefined = API 不可用，回退到普通模式
+  if (fileHandle === null) {
+    ElMessage.info("已取消保存");
+    return;
+  }
+
+  downloader.downloadFile({
+    url: `/api/download/${encodeURIComponent(name)}`,
+    fileName: name,
+    size: row.size,
+  }, fileHandle ?? undefined);
 };
 
-(window as any).test1 = test1;
+// ==================== 调试 ====================
+(window as any).test1 = uploader;
+(window as any).test2 = downloader;
 </script>
 
 <template>
   <div class="app-container">
-    <!-- <div>
-      <button @click="test1.open()">上传文件</button>
-      <button @click="test1.clearFiles()">清除文件列表</button>
-      <button @click="loadSavedFiles()">🔄 回显文件（清空后回显）</button>
-      <button @click="handlerChunk()">
-        {{ isChunk ? "普通上传" : "大文件传输" }}
-      </button>
-      <button @click="test1.pauseAll()">全部暂停</button>
-      <button @click="test1.resumeAll()">全部继续</button>
-      <button @click="test1.cancelAll()">全部取消</button>
-      <button @click="test1.retryAll()">全部重试</button>
-      总的大小:{{ test1.totalBytes }} 总进度:{{ test1.totalPercent }} 总速度:{{
-        test1.speed?.averageSpeedFormatted
-      }}
-      {{ test1.transferredFormatSize }}/{{ test1.totalFormatSize }}
-
-      <div v-for="item in files" :key="item.fileId">
-        进度{{ item.percent }} 状态{{ item.status }} 文件名{{
-          item.fileName
-        }}
-        md5 效验状态{{ item.hashPercent }}%
-
-        <img
-          style="width: 200px; height: 200px"
-          :src="item.url"
-          alt=""
-          srcset=""
-        />
-        <video width="500" height="500" :src="item.url" controls></video>
-        <button @click="item.pause()">暂停</button>
-        <button @click="item.resume()">继续</button>
-        <button @click="item.cancel()">取消</button>
-        <button @click="item.remove()">删除</button>
-        <button @click="item.retry()">重试</button>
-      </div>
-    </div> -->
+    <!-- ====== Header ====== -->
     <el-card class="header-card" shadow="hover">
       <div class="header-content">
         <h1 class="title">
           <el-icon :size="32" color="#409EFF"><Upload /></el-icon>
           File-UD 文件传输测试平台
         </h1>
-        <p class="subtitle">支持秒传、断点续传、分片上传等多种功能</p>
+        <p class="subtitle">支持秒传、断点续传、分片上传下载</p>
       </div>
     </el-card>
 
-    <!-- 统计卡片 -->
+    <!-- ====== 全局进度 ====== -->
     <el-row :gutter="16" class="stats-row">
-      <el-col :span="4">
-        <el-card shadow="hover" class="stat-card">
-          <div class="stat-item">
-            <el-icon :size="24" color="#409EFF"><Loading /></el-icon>
-            <div class="stat-info">
-              <div class="stat-value">{{ uploadingCount }}</div>
-              <div class="stat-label">上传中</div>
-            </div>
+      <el-col :span="12">
+        <el-card shadow="hover" class="progress-card">
+          <div class="progress-header">
+            <span class="section-title">📤 上传进度</span>
+            <span class="progress-text">{{ uploadStats.transferredFormatSize }} / {{ uploadStats.totalFormatSize }}</span>
           </div>
+          <el-progress :percentage="uploadStats.totalPercent" :stroke-width="16" />
+          <div class="progress-speed">平均速度: {{ uploadStats.speed }}</div>
         </el-card>
       </el-col>
-      <el-col :span="4">
-        <el-card shadow="hover" class="stat-card">
-          <div class="stat-item">
-            <el-icon :size="24" color="#E6A23C"><VideoPause /></el-icon>
-            <div class="stat-info">
-              <div class="stat-value">{{ pausedCount }}</div>
-              <div class="stat-label">已暂停</div>
-            </div>
+      <el-col :span="12">
+        <el-card shadow="hover" class="progress-card">
+          <div class="progress-header">
+            <span class="section-title">📥 下载进度</span>
+            <span class="progress-text">{{ downloadStats.transferredFormatSize }} / {{ downloadStats.totalFormatSize }}</span>
           </div>
-        </el-card>
-      </el-col>
-      <el-col :span="4">
-        <el-card shadow="hover" class="stat-card">
-          <div class="stat-item">
-            <el-icon :size="24" color="#67C23A"><Check /></el-icon>
-            <div class="stat-info">
-              <div class="stat-value">{{ successCount }}</div>
-              <div class="stat-label">已完成</div>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
-      <el-col :span="4">
-        <el-card shadow="hover" class="stat-card">
-          <div class="stat-item">
-            <el-icon :size="24" color="#F56C6C"><CircleClose /></el-icon>
-            <div class="stat-info">
-              <div class="stat-value">{{ errorCount }}</div>
-              <div class="stat-label">失败</div>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
-      <el-col :span="4">
-        <el-card shadow="hover" class="stat-card">
-          <div class="stat-item">
-            <el-icon :size="24" color="#909399"><InfoFilled /></el-icon>
-            <div class="stat-info">
-              <div class="stat-value">{{ cancelledCount }}</div>
-              <div class="stat-label">已取消</div>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
-      <el-col :span="4">
-        <el-card shadow="hover" class="stat-card">
-          <div class="stat-item">
-            <el-icon :size="24" color="#409EFF"><Files /></el-icon>
-            <div class="stat-info">
-              <div class="stat-value">{{ files.length }}</div>
-              <div class="stat-label">总文件数</div>
-            </div>
-          </div>
+          <el-progress :percentage="downloadStats.totalPercent" :stroke-width="16" />
+          <div class="progress-speed">平均速度: {{ downloadStats.speed }}</div>
         </el-card>
       </el-col>
     </el-row>
 
-    <!-- 全局进度 -->
-    <el-card class="progress-card" shadow="hover">
-      <div class="progress-header">
-        <span class="progress-title">全局上传进度</span>
-        <span class="progress-text">
-          {{ globalStats.transferredFormatSize }} /
-          {{ globalStats.totalFormatSize }}
-        </span>
-      </div>
-      <el-progress
-        :percentage="globalStats.totalPercent"
-        :stroke-width="20"
-        :format="((percent: number) => `${percent}%`) as any"
-      />
-      <div class="progress-info">
-        <span>平均速度: {{ globalStats.speed.averageSpeedFormatted }}</span>
-      </div>
-    </el-card>
-
-    <!-- 操作按钮区 -->
-    <el-card class="action-card" shadow="hover">
-      <div class="action-buttons">
-        <el-button type="primary" :icon="Upload" @click="test1.open()">
-          选择文件
-        </el-button>
-        <el-button :type="isChunk ? 'success' : 'info'" @click="handlerChunk">
-          {{ isChunk ? "普通上传 " : "分片上传" }}
-        </el-button>
-        <el-button type="warning" :icon="VideoPause" @click="pauseAll">
-          全部暂停
-        </el-button>
-        <el-button type="success" :icon="VideoPlay" @click="resumeAll">
-          全部继续
-        </el-button>
-        <el-button type="danger" :icon="CircleClose" @click="cancelAll">
-          全部取消
-        </el-button>
-        <el-button type="info" :icon="Refresh" @click="retryAll">
-          全部重试
-        </el-button>
-        <el-button @click="clearFiles"> 清除列表 </el-button>
-        <el-button type="primary" plain @click="printReport">
-          监控报告
-        </el-button>
-      </div>
-    </el-card>
-
-    <!-- 文件列表 -->
-    <el-card class="file-list-card" shadow="hover">
+    <!-- ====== 上传区域 ====== -->
+    <el-card class="section-card" shadow="hover">
       <template #header>
         <div class="card-header">
-          <span>文件列表 ({{ files.length }})</span>
+          <span class="section-title">📤 文件上传 ({{ uploadFiles.length }})</span>
+          <span class="header-stats">
+            <span class="stat-badge pending">等待 {{ uploadFiles.filter(f => f.status === 'pending').length }}</span>
+            <span class="stat-badge loading">上传中 {{ uploadCounts.loading }}</span>
+            <span class="stat-badge success">完成 {{ uploadCounts.success }}</span>
+            <span class="stat-badge error" v-if="uploadCounts.error">失败 {{ uploadCounts.error }}</span>
+          </span>
         </div>
       </template>
 
-      <el-table
-        :data="files"
-        style="width: 100%"
-        empty-text='暂无文件，请点击"选择文件"按钮添加'
-      >
+      <div class="action-bar">
+        <el-button-group>
+          <el-button type="primary" :icon="Upload" @click="uploader.open()">选择文件</el-button>
+          <el-button :type="isChunkUpload ? 'warning' : 'success'" plain @click="toggleUploadMode">
+            {{ isChunkUpload ? "分片上传" : "普通上传" }}
+          </el-button>
+          <el-button :icon="VideoPause" @click="pauseAll" :disabled="!uploadCounts.loading">暂停</el-button>
+          <el-button :icon="VideoPlay" type="success" @click="resumeAll" :disabled="!uploadCounts.paused">继续</el-button>
+          <el-button :icon="Refresh" type="warning" @click="retryAll" :disabled="!uploadCounts.error">重试</el-button>
+          <el-button :icon="CircleClose" type="danger" @click="cancelAll">取消</el-button>
+          <el-button :icon="Delete" @click="clearUploadFiles">清空</el-button>
+        </el-button-group>
+      </div>
+
+      <el-table :data="uploadFiles" empty-text="暂无上传文件">
         <el-table-column label="文件名" min-width="200">
           <template #default="{ row }">
             <div class="file-name-cell">
-              <el-icon :size="20" class="file-icon">
-                <component :is="getFileIcon(row)" />
-              </el-icon>
-              <span class="file-name">{{ row.fileName }}</span>
+              <el-icon :size="18"><component :is="getFileIcon(row.extension)" /></el-icon>
+              <span>{{ row.fileName }}</span>
             </div>
           </template>
         </el-table-column>
-
-        <el-table-column label="大小" width="100">
+        <el-table-column label="大小" width="90"><template #default="{ row }">{{ row.formatSize }}</template></el-table-column>
+        <el-table-column label="进度" width="180">
           <template #default="{ row }">
-            {{ row.formatSize }}
+            <el-progress :percentage="row.percent" :status="row.status === 'error' ? 'exception' : undefined" :stroke-width="8" />
           </template>
         </el-table-column>
-
-        <el-table-column label="进度" width="200">
+        <el-table-column label="状态" width="90">
           <template #default="{ row }">
-            <el-progress
-              :percentage="row.percent"
-              :status="row.status === 'error' ? 'exception' : undefined"
-              :stroke-width="8"
-            />
+            <el-tag :type="statusTypeMap[row.status]" size="small">{{ statusTextMap[row.status] || row.status }}</el-tag>
           </template>
         </el-table-column>
-
-        <el-table-column label="状态" width="100">
+        <el-table-column label="哈希" width="80">
+          <template #default="{ row }">{{ row.hashPercent ? `${row.hashPercent}%` : "-" }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="240" fixed="right">
           <template #default="{ row }">
-            <el-tag
-              v-bind="
-                getStatusType(row.status)
-                  ? { type: getStatusType(row.status) }
-                  : {}
-              "
-              size="small"
-            >
-              {{ getStatusText(row.status) }}
-            </el-tag>
+            <el-button v-if="row.status === 'UDLoading'" size="small" :icon="VideoPause" @click="row.pause()">暂停</el-button>
+            <el-button v-if="row.status === 'paused'" size="small" type="success" :icon="VideoPlay" @click="row.resume()">继续</el-button>
+            <el-button v-if="['error','fail','cancelled'].includes(row.status)" size="small" type="warning" :icon="Refresh" @click="row.retry()">重试</el-button>
+            <el-button size="small" type="danger" :icon="Delete" @click="row.remove()">删除</el-button>
           </template>
         </el-table-column>
+      </el-table>
+    </el-card>
 
-        <el-table-column label="MD5校验" width="100">
+    <!-- ====== 服务端文件列表 ====== -->
+    <el-card class="section-card" shadow="hover">
+      <template #header>
+        <div class="card-header">
+          <span class="section-title">📁 服务端文件 ({{ serverFiles.length }})</span>
+          <el-button size="small" :icon="Refresh" @click="fetchServerFiles">刷新</el-button>
+        </div>
+      </template>
+      <el-table :data="serverFiles" empty-text="暂无文件">
+        <el-table-column label="文件名" min-width="220">
           <template #default="{ row }">
-            <span>{{
-              row.hashPercent !== undefined ? `${row.hashPercent}%` : "-"
-            }}</span>
-          </template>
-        </el-table-column>
-
-        <el-table-column label="操作" width="280" fixed="right">
-          <template #default="{ row }">
-            <div class="action-cell">
-              <el-button
-                v-if="row.status === 'UDLoading'"
-                size="small"
-                :icon="VideoPause"
-                @click="row.pause()"
-              >
-                暂停
-              </el-button>
-              <el-button
-                v-if="row.status === 'paused'"
-                size="small"
-                type="success"
-                :icon="VideoPlay"
-                @click="row.resume()"
-              >
-                继续
-              </el-button>
-              <el-button
-                v-if="row.status === 'error' || row.status === 'cancelled'"
-                size="small"
-                type="warning"
-                :icon="Refresh"
-                @click="row.retry()"
-              >
-                重试
-              </el-button>
-              <el-button
-                size="small"
-                type="danger"
-                :icon="Delete"
-                @click="row.remove()"
-              >
-                删除
-              </el-button>
+            <div class="file-name-cell">
+              <el-icon :size="18"><component :is="getFileIcon(row.extension)" /></el-icon>
+              <span>{{ row.fileName || row.name }}</span>
             </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="大小" width="90"><template #default="{ row }">{{ row.formatSize || row.size }}</template></el-table-column>
+        <el-table-column label="操作" width="160">
+          <template #default="{ row }">
+            <el-button size="small" type="primary" @click="handleDownload(row)">
+              {{ isChunkDownload ? "分片下载" : "直接下载" }}
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
+
+    <!-- ====== 下载区域 ====== -->
+    <el-card class="section-card" shadow="hover">
+      <template #header>
+        <div class="card-header">
+          <span class="section-title">📥 文件下载 ({{ downloadFiles.length }})</span>
+          <span class="header-stats">
+            <span class="stat-badge loading">下载中 {{ downloadCounts.loading }}</span>
+            <span class="stat-badge success">完成 {{ downloadCounts.success }}</span>
+            <span class="stat-badge error" v-if="downloadCounts.error">失败 {{ downloadCounts.error }}</span>
+          </span>
+        </div>
+      </template>
+
+      <div class="action-bar">
+        <el-button-group>
+          <el-button :type="isChunkDownload ? 'warning' : 'success'" plain @click="toggleDownloadMode">
+            {{ isChunkDownload ? "分片下载" : "普通下载" }}
+          </el-button>
+          <el-button
+            :type="isStreamSave ? 'primary' : 'info'"
+            plain
+            @click="isStreamSave = !isStreamSave"
+            :disabled="!isChunkDownload"
+          >
+            {{ isStreamSave ? "🚀 流式保存" : "💾 内存合并" }}
+          </el-button>
+          <el-button @click="excelDownloader.downloadFile({ fileName: 'excel_' + Date.now(), url: '', size: 0 } as any)">
+            POST下载Excel
+          </el-button>
+          <el-button :icon="VideoPause" @click="dlPauseAll" :disabled="!downloadCounts.loading">暂停</el-button>
+          <el-button :icon="VideoPlay" type="success" @click="dlResumeAll" :disabled="!downloadCounts.paused">继续</el-button>
+          <el-button :icon="Refresh" type="warning" @click="dlRetryAll" :disabled="!downloadCounts.error">重试</el-button>
+          <el-button :icon="CircleClose" type="danger" @click="dlCancelAll">取消</el-button>
+        </el-button-group>
+      </div>
+
+      <el-table :data="downloadFiles" empty-text="暂无下载任务">
+        <el-table-column label="文件名" min-width="200">
+          <template #default="{ row }">
+            <div class="file-name-cell">
+              <el-icon :size="18"><component :is="getFileIcon(row.extension)" /></el-icon>
+              <span>{{ row.fileName }}</span>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="大小" width="90"><template #default="{ row }">{{ row.formatSize }}</template></el-table-column>
+        <el-table-column label="进度" width="180">
+          <template #default="{ row }">
+            <el-progress :percentage="row.percent" :status="row.status === 'error' ? 'exception' : undefined" :stroke-width="8" />
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="90">
+          <template #default="{ row }">
+            <el-tag :type="statusTypeMap[row.status]" size="small">{{ statusTextMap[row.status] || row.status }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="哈希" width="80">
+          <template #default="{ row }">{{ row.hashPercent ? `${row.hashPercent}%` : "-" }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="240" fixed="right">
+          <template #default="{ row }">
+            <el-button v-if="row.status === 'UDLoading'" size="small" :icon="VideoPause" @click="row.pause()">暂停</el-button>
+            <el-button v-if="row.status === 'paused'" size="small" type="success" :icon="VideoPlay" @click="row.resume()">继续</el-button>
+            <el-button v-if="['error','fail','cancelled'].includes(row.status)" size="small" type="warning" :icon="Refresh" @click="row.retry()">重试</el-button>
+            <el-button size="small" type="danger" :icon="Delete" @click="row.remove()">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -590,160 +469,41 @@ const printReport = () => {
 </template>
 
 <style scoped>
-.app-container {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 20px;
-}
+.app-container { max-width: 1400px; margin: 0 auto; padding: 20px; }
 
-.header-card {
-  margin-bottom: 20px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border: none;
-}
+/* Header */
+.header-card { margin-bottom: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: none; }
+.header-card :deep(.el-card__body) { padding: 30px; }
+.header-content { text-align: center; color: white; }
+.title { font-size: 28px; margin: 0 0 8px 0; display: flex; align-items: center; justify-content: center; gap: 10px; }
+.subtitle { font-size: 14px; opacity: 0.9; margin: 0; }
 
-.header-card :deep(.el-card__body) {
-  padding: 30px;
-}
+/* Stats */
+.stats-row { margin-bottom: 20px; }
+.progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.progress-text { font-size: 14px; color: #606266; }
+.progress-speed { margin-top: 10px; font-size: 13px; color: #909399; }
 
-.header-content {
-  text-align: center;
-  color: white;
-}
+/* Section Cards */
+.section-card { margin-bottom: 20px; }
+.section-title { font-size: 16px; font-weight: bold; color: #303133; }
+.card-header { display: flex; justify-content: space-between; align-items: center; }
 
-.title {
-  font-size: 28px;
-  margin: 0 0 10px 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-}
+.action-bar { margin-bottom: 16px; display: flex; flex-wrap: wrap; gap: 8px; }
 
-.subtitle {
-  font-size: 14px;
-  opacity: 0.9;
-  margin: 0;
-}
+/* Header Stats Badges */
+.header-stats { display: flex; gap: 8px; font-size: 13px; }
+.stat-badge { padding: 2px 10px; border-radius: 12px; color: white; }
+.stat-badge.pending { background: #909399; }
+.stat-badge.loading { background: #409EFF; }
+.stat-badge.success { background: #67C23A; }
+.stat-badge.error { background: #F56C6C; }
 
-.stats-row {
-  margin-bottom: 20px;
-}
+/* File Cell */
+.file-name-cell { display: flex; align-items: center; gap: 6px; }
 
-.stat-card {
-  height: 100%;
-}
-
-.stat-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.stat-info {
-  flex: 1;
-}
-
-.stat-value {
-  font-size: 24px;
-  font-weight: bold;
-  color: #303133;
-}
-
-.stat-label {
-  font-size: 12px;
-  color: #909399;
-  margin-top: 4px;
-}
-
-.progress-card {
-  margin-bottom: 20px;
-}
-
-.progress-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.progress-title {
-  font-size: 16px;
-  font-weight: bold;
-  color: #303133;
-}
-
-.progress-text {
-  font-size: 14px;
-  color: #606266;
-}
-
-.progress-info {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 12px;
-  font-size: 13px;
-  color: #909399;
-}
-
-.action-card {
-  margin-bottom: 20px;
-}
-
-.action-buttons {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.file-list-card {
-  margin-bottom: 20px;
-}
-
-.card-header {
-  font-size: 16px;
-  font-weight: bold;
-  color: #303133;
-}
-
-.file-name-cell {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.file-icon {
-  color: #409eff;
-}
-
-.file-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.action-cell {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-/* 表格样式优化 */
-:deep(.el-table) {
-  font-size: 14px;
-}
-
-:deep(.el-table th) {
-  background-color: #f5f7fa;
-  color: #606266;
-  font-weight: 600;
-}
-
-:deep(.el-table td) {
-  padding: 12px 0;
-}
-
-:deep(.el-progress-bar__outer) {
-  background-color: #ebeef5;
-}
+/* Table */
+:deep(.el-table th) { background-color: #f5f7fa; font-weight: 600; }
+:deep(.el-table td) { padding: 10px 0; }
+:deep(.el-progress-bar__outer) { background-color: #ebeef5; }
 </style>

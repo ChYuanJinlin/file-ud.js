@@ -1,12 +1,14 @@
 import ChunkManager from "../chunkManager";
-import { IFile, speedInfo, TimeInfo } from "../types";
+import { IFile, speedInfo, TimeInfo } from "../types/index";
 import Transfer from "./Transfer";
-import { computeTransferTime, generateFileId, logger } from "../utils";
+import { computeTransferTime, formatFileSize, formatSpeed, generateFileId, logger } from "../utils";
 import { FileUDError, ErrorCode } from "../fileUD/errors";
 import UploadFile from "../uploader/UploadFile";
 import Uploader from "../uploader";
+import DownloadFile from "../downloader/DownloadFile";
+import { XHRInterceptor } from "../xhr-intercepto";
 
-export default class TransferFile<T, D = any> {
+export default class TransferFile<T extends TransferFile<T, any>, D = any> {
   /**
    * 上传速率统计信息
    * 包含瞬时速度、平均速度及其格式化字符串
@@ -34,7 +36,7 @@ export default class TransferFile<T, D = any> {
   /** 文件唯一标识符 */
   fileId: string;
   /** Proxy 代理对象,用于实现响应式更新 */
-  proxy: T;
+  proxy!: T;
 
   /** 文件预览 URL (Object URL) */
   url: string;
@@ -65,13 +67,13 @@ export default class TransferFile<T, D = any> {
 
   /** 当前文件已上传的大小（格式化字符串），如 "45.23 MB" */
   transferFormatSize: string = "0 B";
-
+  context: any;
   /** 表单数据对象,用于携带上传参数 */
   formData: FormData | null = null;
   chunkManager: ChunkManager | null = null;
   /** 是否处于重试状态 */
   isRetry?: boolean;
-
+  size: number = 0;
   /** Promise resolve 回调引用 */
   resolve: ((value: any) => void | undefined) | undefined;
 
@@ -80,14 +82,25 @@ export default class TransferFile<T, D = any> {
 
   /** 文件在队列中的索引 */
   index?: number;
-
+  sub: T | null;
   /** 取消上传的函数 */
   abort: IFile["abort"];
   /** 标记是否已计入总字节数（避免重试时重复累加） */
   public __hasCountedTotalBytes__: boolean = false;
   /** 当前文件已上传的字节数（用于普通上传计算总进度） */
   public __transferBytes__: number = 0;
+  public type: string = "";
 
+  // ==================== 速率计算内部状态 ====================
+
+  /** 上次计算速率的时间戳 (毫秒) */
+  protected lastUpdateTime: number = 0;
+
+  /** 上次已传输的字节数 */
+  protected lastTransferBytes: number = 0;
+
+  /** 传输开始的时间戳 (毫秒) */
+  protected transferStartTime: number = 0;
   constructor(file: IFile, transfer: Transfer) {
     this.fileId = generateFileId();
     this.url = file.url;
@@ -95,28 +108,29 @@ export default class TransferFile<T, D = any> {
     this.fileName = file.fileName;
     this.File = file.File!;
     this.percent = file.percent;
+    this.size = file.size || this.File?.size || 0;
     this.status = file.status;
     this.loading = false;
     this.extension = file.extension;
+    this.sub = null;
     this.formatSize = file.formatSize;
-    this.proxy = null as any; // 代理对象将在外部创建后赋值
     this.abort = file.abort;
     this.index = file.index!;
     this.isRetry = file.isRetry || false;
   }
   // 判断类型的辅助方法
-  private isUploader(): boolean {
-    return this.transfer.constructor.name === "UploaderFile";
+  public isUploader(): boolean {
+    return this.transfer.constructor.name === "Uploader";
   }
 
-  private isDownloader(): boolean {
-    return this.transfer.constructor.name === "DownloaderFile";
+  public isDownloader(): boolean {
+    return this.transfer.constructor.name === "Downloader";
   }
   /**
    * 开始传输
    *
    * 统一的传输入口，自动根据配置选择分片传输或普通传输：
-   * - **分片传输**: 调用 chunkManager.startUpload()
+   * - **分片传输**: 调用 chunkManager.start()
    * - **普通传输**: 由子类实现具体逻辑
    *
    * @example
@@ -135,76 +149,232 @@ export default class TransferFile<T, D = any> {
    * - 如果文件已传输成功，会抛出警告
    * - 这是异步操作，建议在 UI 上显示加载状态
    */
-  public async start(
-    chunkManager: ChunkManagerWithStartUpload | null,
-  ): Promise<T> {
+  public async start(chunkManager: ChunkManager | null): Promise<D> {
     // 分片传输
     const isDownload = this.isDownloader();
     const type = isDownload ? "下载" : "上传";
 
-    return new Promise(async (resolve, reject) => {
+    return new Promise<D>((resolve, reject) => {
       this.resolve = resolve;
       this.reject = reject;
-      try {
-        if (chunkManager) {
-          logger.info(
-            isDownload ? "DownloadFile" : "UploadFile",
-            `开始分片${type}: ${this.fileName}`,
-            {
-              fileId: this.fileId,
-              fileName: this.fileName,
-            },
-          );
-          await chunkManager.startUpload();
-        } else {
-          logger.info(
-            isDownload ? "DownloadFile" : "UploadFile",
-            `开始普通${type}: ${this.fileName}`,
-            {
-              fileId: this.fileId,
-              fileName: this.fileName,
-            },
-          );
 
-          if (this instanceof UploadFile) {
-            this.upload();
+      (async () => {
+        try {
+          if (chunkManager) {
+            logger.info(
+              isDownload ? "DownloadFile" : "UploadFile",
+              `开始分片${type}: ${this.fileName}`,
+              {
+                fileId: this.fileId,
+                fileName: this.fileName,
+              },
+            );
+            await (chunkManager as any).start();
           } else {
-            // 下载
-            this.download();
+            logger.info(
+              isDownload ? "DownloadFile" : "UploadFile",
+              `开始普通${type}: ${this.fileName}`,
+              {
+                fileId: this.fileId,
+                fileName: this.fileName,
+              },
+            );
+            let data: D;
+            if (this instanceof UploadFile) {
+              data = await this.upload();
+            } else {
+              // 下载
+              data = await (this as unknown as DownloadFile).download();
+            }
+            resolve(data);
           }
+        } catch (error) {
+          logger.error(
+            isDownload ? "DownloadFile" : "UploadFile",
+            `文件 ${this.fileName} ${type}失败`,
+            error,
+          );
+          this.onError(error);
+          reject(error);
         }
-      } catch (error) {
-        const type = isDownload ? "下载" : "上传";
-        logger.error(
-          isDownload ? "DownloadFile" : "UploadFile",
-          `文件 ${this.fileName} ${type}失败`,
-          error,
-        );
-        this.onError(error);
-        this.reject(error);
-        throw error;
-      }
+      })();
     });
   }
 
-  public onScuccess(res: D) {
+  // ==================== 取消 / 暂停 / 恢复 / 重试（基类统一实现） ====================
+
+  /**
+   * 取消当前传输
+   */
+  public cancel(fn: ((next: () => void) => void) | void): void {
+    if (this.proxy.status !== "UDLoading" && this.proxy.status !== "paused") {
+      const type = this.isDownloader() ? "下载" : "上传";
+      console.warn(`没有需要取消的${type}`, this.fileName);
+      return;
+    }
+
+    const next = () => {
+      const cm = this.getChunkManager();
+      if (cm) {
+        (cm as any).cancelUpload();
+      } else {
+        this.abort?.();
+      }
+      this.transfer.totalTransferredBytes -= this.getFileSize();
+      this.transfer.emit("cancel", this.proxy as any);
+    };
+
+    fn ? fn(next) : next();
+  }
+
+  /**
+   * 暂停传输（仅分片传输支持）
+   */
+  public pause(): void {
+    if (this.proxy.status !== "UDLoading") {
+      console.warn(
+        `文件 ${this.fileName} 当前状态为 ${this.proxy.status},无法暂停`,
+      );
+      return;
+    }
+
+    const cm = this.getChunkManager();
+    if (cm) {
+      (cm as any).pause();
+    } else {
+      console.warn("该模式不支持暂停", this.fileName);
+    }
+    this.transfer.emit("pause", this.proxy as any);
+  }
+
+  /**
+   * 恢复传输（仅分片传输支持）
+   */
+  public async resume(): Promise<void> {
+    if (this.proxy.status !== "paused") {
+      console.warn(
+        `文件 ${this.fileName} 当前状态为 ${this.proxy.status},无法恢复`,
+      );
+      return;
+    }
+
+    const cm = this.getChunkManager();
+    if (cm) {
+      await (cm as any).resume();
+    } else {
+      console.warn("该模式不支持恢复", this.fileName);
+    }
+    this.transfer.emit("resume", this.proxy as any);
+  }
+
+  /**
+   * 重试传输
+   */
+  public async retry(): Promise<void> {
+    if (!["cancelled", "fail", "error"].includes(this.proxy.status!)) {
+      const type = this.isDownloader() ? "下载" : "上传";
+      console.warn(`没有需要重试的${type}`, this.fileName);
+      return;
+    }
+
+    const cm = this.getChunkManager();
+    if (cm) {
+      const hasFailedChunks = cm.getFailedChunksCount() > 0;
+      const allChunksCompleted = cm.completedChunks === cm.totalChunks;
+
+      logger.info(
+        this.isDownloader() ? "DownloadFile" : "UploadFile",
+        `文件 ${this.fileName} 开始重试`,
+        {
+          fileId: this.fileId,
+          fileName: this.fileName,
+          status: this.proxy.status,
+          completedChunks: cm.completedChunks,
+          totalChunks: cm.totalChunks,
+          hasFailedChunks,
+          allChunksCompleted,
+        },
+      );
+
+      this.proxy.isRetry = true;
+      this.proxy.status = "UDLoading";
+
+      if (hasFailedChunks) {
+        await (cm as any).retryFailedChunks().catch((err: any) => {
+          logger.error(
+            this.isDownloader() ? "DownloadFile" : "UploadFile",
+            `文件 ${this.fileName} 重试失败`,
+            err,
+          );
+          this.onError(err);
+        });
+      } else {
+        await (cm as any).start().catch((err: any) => {
+          logger.error(
+            this.isDownloader() ? "DownloadFile" : "UploadFile",
+            `文件 ${this.fileName} 重试失败`,
+            err,
+          );
+          this.onError(err);
+        });
+      }
+    } else {
+      logger.info(
+        this.isDownloader() ? "DownloadFile" : "UploadFile",
+        `文件 ${this.fileName} 开始普通重试`,
+      );
+      this.proxy.isRetry = true;
+      this.proxy.percent = 0;
+      this.proxy.status = "UDLoading";
+
+      await this.doRetryTransfer().catch((err: any) => {
+        logger.error(
+          this.isDownloader() ? "DownloadFile" : "UploadFile",
+          `文件 ${this.fileName} 重试失败`,
+          err,
+        );
+        this.onError(err);
+      });
+    }
+    this.proxy.isRetry = false;
+    this.transfer.emit("retry", this.proxy as any);
+  }
+
+  /**
+   * 执行普通传输的重试（模板方法，由子类覆写）
+   * - UploadFile: 重试上传 → 调用 upload()
+   * - DownloadFile: 重试下载 → 调用 download()
+   */
+  protected async doRetryTransfer(): Promise<any> {
+    // 子类覆写
+  }
+
+  public onSuccess(res: D) {
+    const isDownload = this.isDownloader();
+
+    // ✅ 基类统一设置传输成功状态（普通/分片 上传/下载 均走此路径）
+    this.proxy.status = "success";
+
     this.transfer["runHook"]("onSuccess", res, this, this.transfer);
+
     this.transfer.successCallback?.(res, this.proxy);
+
     this.transfer.activeFiles.splice(
       this.transfer.activeFiles.indexOf(this),
       1,
     );
-    (this.transfer as unknown as Uploader<T>)?.remObjectUrls(this.url);
+    if (!isDownload) {
+      (this.transfer as unknown as Uploader<T>)?.remObjectUrls?.(this.url);
+    }
 
     // 添加 fileId 到日志参数中，供监控模块提取
-    const isDownload = this.isDownloader();
     logger.info(
       isDownload ? "DownloadFile" : "UploadFile",
       `文件传输成功: ${this.fileName}`,
       {
         fileId: this.fileId,
         fileName: this.fileName,
-        fileSize: this.File.size,
+        fileSize: this.File?.size ?? this.size ?? 0,
       },
     );
 
@@ -215,8 +385,17 @@ export default class TransferFile<T, D = any> {
     if (!this.transfer.activeFiles.length) {
       this.transfer.emit("files-complete", this.transfer.files);
       console.log("所有文件传输完成");
+
       computeTransferTime(this.transfer.transferTime).end();
       this.transfer.transferTime.startTime = 0;
+
+      if (this.sub) {
+        (this.sub as any).currentQueue = [];
+        (this.sub as any).assignedFiles = new Set<T>();
+        (this.sub as any).xhrToFileMap = new WeakMap<XMLHttpRequest, T>();
+        (this.sub as any).interceptor.assignedFiles = new Set<T>();
+        (this.sub as any).interceptor.restore();
+      }
     }
   }
 
@@ -230,7 +409,7 @@ export default class TransferFile<T, D = any> {
         {
           fileId: this.fileId,
           fileName: this.fileName,
-          fileSize: this.File.size,
+          fileSize: this.File?.size ?? this.size ?? 0,
         },
       );
       return;
@@ -243,7 +422,7 @@ export default class TransferFile<T, D = any> {
       {
         fileId: this.fileId,
         fileName: this.fileName,
-        fileSize: this.File.size,
+        fileSize: this.File?.size ?? this.size ?? 0,
         error: err.message || err,
       },
     );
@@ -257,5 +436,225 @@ export default class TransferFile<T, D = any> {
         err,
       ).toJSON(),
     );
+  }
+
+  public initInterceptor(): void {
+    const instance = this.constructor as any;
+    this.sub = instance;
+    if (instance.interceptor) return;
+
+    instance.interceptor = XHRInterceptor.getInstance<T>(
+      this.transfer.constructor.name,
+      {
+        name: this.transfer.constructor.name,
+
+        getGlobalHeaders: (file: any) => {
+          const configHeaders =
+            (file.constructor.name === "UploadFile" ? file.up : file.dl)?.config
+              ?.headers || {};
+
+          // 🔑 分片下载时，从队列 shift 取出当前 XHR 对应的 Range 头
+          //     并发安全：每个 XHR 的 send() 消费一个 entry，不会互相覆盖
+          const chunkHeaders = file._chunkHeadersQueue?.length > 0
+            ? file._chunkHeadersQueue.shift()!
+            : {};
+
+          return { ...configHeaders, ...chunkHeaders };
+        },
+
+        onProgress: (file, event) => {
+          file.handleProgress(event);
+        },
+
+        onAbort: (file, xhr) => {
+          file.abort = () => {
+            if (xhr.readyState !== XMLHttpRequest.DONE) {
+              xhr.abort();
+              file.proxy.isCancel = true;
+              file.proxy.status = "cancelled";
+            }
+          };
+        },
+
+        getFileQueue: () => instance.currentQueue,
+        getFileFromXHR: (xhr) => instance.xhrToFileMap.get(xhr) || null,
+        // ✅ 设置 XHR 与文件的映射
+        setFileToXHR: (xhr, file) => {
+          instance.xhrToFileMap.set(xhr, file);
+        },
+        markFileAsAssigned: (file) => instance.assignedFiles.add(file),
+
+        unmarkFileAsAssigned: (file) => instance.assignedFiles.delete(file),
+      },
+    );
+  }
+
+  // ==================== 进度 & 速率计算 ====================
+
+  /**
+   * 处理传输进度事件（供 XHRInterceptor 回调）
+   *
+   * 统一流程：
+   * 1. 调用子类的 {@link updateLocalProgress} 更新当前文件的本体进度/字节数
+   * 2. 更新格式化后的已传输大小
+   * 3. 调用子类的 {@link calculateGlobalProgress} 计算全局统计
+   * 4. 调用 {@link calculateSpeed} 计算并更新速率
+   * 5. 发射 progress 事件
+   *
+   * @param event - XHR 进度事件对象
+   */
+  public handleProgress(event: ProgressEvent): void {
+    const transfer = this.transfer;
+
+    // 1. 子类差异化：更新当前文件进度/字节数
+    this.updateLocalProgress(event);
+
+    // 2. 更新格式化后的已传输大小
+    this.proxy.transferFormatSize = formatFileSize(this.__transferBytes__);
+
+    // 3. 子类差异化：计算全局进度
+    this.calculateGlobalProgress(event);
+
+    // 4. 计算速率
+    this.calculateSpeed(this.__transferBytes__);
+
+    // 5. 发射进度事件
+    transfer.emit("progress", transfer.totalPercent);
+  }
+
+  /**
+   * 更新当前文件的进度和已传输字节数（模板方法，由子类实现）
+   *
+   * - **普通传输**：从 event.loaded/event.total 直接计算百分比
+   * - **分片传输**：由分片管理器独立维护进度，此处无需额外操作
+   *
+   * @param event - XHR 进度事件对象
+   */
+  protected updateLocalProgress(_event: ProgressEvent): void {
+    // 子类重写
+  }
+
+  /**
+   * 获取文件对应的分片管理器（模板方法，由子类实现）
+   * - UploadFile 返回 uploadChunkManager
+   * - DownloadFile 返回 downloadChunkManager
+   */
+  protected getChunkManager(): ChunkManager | null {
+    return null;
+  }
+
+  /**
+   * 获取文件大小（字节数），兼容上传（有 File 对象）和下载（无 File 对象）场景
+   */
+  public getFileSize(): number {
+    return this.File?.size || this.size || 0;
+  }
+
+  /**
+   * 计算全局传输进度（统一实现，子类只需覆写 getChunkManager / getFileSize）
+   *
+   * 汇总所有活动文件的传输进度，更新 transfer 实例上的全局统计
+   *
+   * @param _event - XHR 进度事件对象
+   */
+  protected calculateGlobalProgress(_event: ProgressEvent): void {
+    const transfer = this.transfer;
+
+    let totalTransferredBytes = 0;
+    let currentTotalBytes = 0;
+    let totalFilesSize = 0;
+
+    transfer.files.forEach((file) => {
+      const fileSize = file.getFileSize();
+      if (fileSize > 0) {
+        totalFilesSize += fileSize;
+      }
+
+      // 只统计活跃中的文件，避免已完成文件的字节被重复累加
+      const isActive = this.getChunkManager()
+        ? ["UDLoading", "paused", "fail"].includes(file.status!)
+        : file.status === "UDLoading" || file.status === "paused";
+
+      if (isActive) {
+        currentTotalBytes += fileSize;
+
+        const chunkManager = file.getChunkManager();
+        if (chunkManager) {
+          // 分片传输：使用 chunkManager 的已传输字节数
+          totalTransferredBytes += chunkManager.totalChunkSize;
+        } else {
+          // 普通传输：使用 __transferBytes__
+          totalTransferredBytes += file.__transferBytes__ || 0;
+        }
+      }
+    });
+
+    transfer.transferredBytes = totalTransferredBytes;
+    transfer.totalBytes = totalFilesSize;
+    transfer.totalFormatSize = formatFileSize(totalFilesSize);
+
+    if (currentTotalBytes > 0) {
+      // 已知总大小：精确计算加权百分比
+      transfer.totalPercent = Math.min(
+        100,
+        Math.floor((totalTransferredBytes / currentTotalBytes) * 100),
+      );
+    } else if (this.getChunkManager()) {
+      // 分片传输：保持当前值不变
+      transfer.totalPercent = transfer.totalPercent;
+    } else {
+      // 未知总大小（如下载无 Content-Length 头）：使用当前文件的 percent
+      transfer.totalPercent = this.proxy.percent || 0;
+    }
+  }
+
+  /**
+   * 计算传输速率（带防抖优化）
+   *
+   * 采用最小时间间隔采样策略，避免高频进度回调导致数值剧烈抖动。
+   * 瞬时速度基于最近两个有效采样点计算，平均速度基于总耗时和总字节数计算。
+   *
+   * @param loadedBytes - 当前已传输的字节数
+   */
+  protected calculateSpeed(loadedBytes: number): void {
+    const now = Date.now();
+
+    // 初始化传输开始时间（首次调用）
+    if (this.transferStartTime === 0) {
+      this.transferStartTime = now;
+      this.lastUpdateTime = now;
+      this.lastTransferBytes = loadedBytes;
+      return;
+    }
+
+    // 防抖：最小时间间隔采样（100ms）
+    // 避免高频回调导致计算开销过大和数值抖动
+    const timeDiff = now - this.lastUpdateTime;
+    if (timeDiff < 100) {
+      return;
+    }
+
+    // 计算瞬时速度（bytes/s）
+    // 公式：(当前字节 - 上次字节) / 时间差（秒）
+    const bytesDiff = loadedBytes - this.lastTransferBytes;
+    const currentSpeed = (bytesDiff / timeDiff) * 1000;
+
+    // 计算平均速度（bytes/s）
+    // 公式：总字节 / 总耗时（秒）
+    const totalTime = now - this.transferStartTime;
+    const averageSpeed = totalTime > 0 ? (loadedBytes / totalTime) * 1000 : 0;
+
+    // 更新速率信息到 Proxy 对象
+    // 通过 Proxy.set 陷阱自动触发 Transfer.triggerUpdate()
+    this.proxy.speed = {
+      currentSpeed,
+      averageSpeed,
+      currentSpeedFormatted: formatSpeed(currentSpeed),
+      averageSpeedFormatted: formatSpeed(averageSpeed),
+    };
+
+    // 更新内部状态，为下次计算做准备
+    this.lastUpdateTime = now;
+    this.lastTransferBytes = loadedBytes;
   }
 }
