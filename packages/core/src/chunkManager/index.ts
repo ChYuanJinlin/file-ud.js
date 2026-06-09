@@ -168,7 +168,7 @@ export default abstract class ChunkManager<
   constructor(ChunkOptions: ChunkOptions, file: T) {
     this.config = ChunkOptions;
     this.transferFile = file;
-    this.chunkSize = ChunkOptions.chunkSize ?? 1024 * 1024 * 5;
+    this.chunkSize = ChunkOptions.chunkSize ?? 1024 * 1024 * 20;
     this.maxConcurrent = ChunkOptions.maxConcurrent ?? 5;
     this.retries =
       ChunkOptions.retries !== undefined ? ChunkOptions.retries : 5;
@@ -491,6 +491,7 @@ export default abstract class ChunkManager<
 
         if (retryCount > maxRetries) {
           this.failedChunks.push(chunkIndex);
+          this.setFileStatusToFail();
           logger.error(
             this.getTag(),
             `分片 ${chunkIndex + 1}/${this.totalChunks} 最终失败（已重试 ${maxRetries} 次）`,
@@ -680,8 +681,8 @@ export default abstract class ChunkManager<
 
     this.calculateAndUpdateSpeed(fileSize);
 
-    // 更新文件速率
-    const totalTime = (performance.now() - this.chunkStartTime) / 1000;
+    // 更新文件速率（使用 checkStatistics 已算好的 totalChunkTime，避免 chunkStartTime 被重置导致失真）
+    const totalTime = this.totalChunkTime / 1000;
     const averageSpeed = totalTime > 0 ? fileSize / totalTime : 0;
     file.proxy.speed = {
       currentSpeed: 0,

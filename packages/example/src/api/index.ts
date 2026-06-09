@@ -88,3 +88,12 @@ export const getFileList = (data?: {
 }) => {
   return Ajax.get("/files", data);
 };
+
+/**
+ * 删除服务端文件（同时清理去重记录、任务记录、残留分片）
+ * @param fileName 文件名
+ * @returns Promise<{ success: boolean, message: string, data: { deletedItems: string[], fileName: string } }>
+ */
+export const deleteServerFile = (fileName: string) => {
+  return Ajax.delete(`/files/${encodeURIComponent(fileName)}`);
+};

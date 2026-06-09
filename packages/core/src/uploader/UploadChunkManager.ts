@@ -264,6 +264,14 @@ export default class UploadChunkManager extends ChunkManager {
             this.uploadFile.proxy.percent = 100;
             this.uploadFile.proxy.status = "success";
 
+            // 秒传文件设置速度（瞬时完成，无实际传输耗时）
+            this.uploadFile.proxy.speed = {
+              currentSpeed: 0,
+              averageSpeed: 0,
+              currentSpeedFormatted: "0 B/s",
+              averageSpeedFormatted: "0 B/s",
+            };
+
             // ✅ 关键修复：更新全局统计信息（总进度、总大小）
             const up = this.uploadFile.transfer;
             up.updateGlobalStats();
@@ -800,20 +808,6 @@ export default class UploadChunkManager extends ChunkManager {
    * 处理所有分片成功的情况
    */
   protected async handleAllChunksSuccess(): Promise<void> {
-    // 计算并更新全局上传速度
-    this.calculateAndUpdateSpeed(this.uploadFile.File.size);
-
-    // 更新单个文件的 speed（分片上传完成时）
-    const totalTime = (performance.now() - this.chunkStartTime) / 1000;
-    const averageSpeed =
-      totalTime > 0 ? this.uploadFile.File.size / totalTime : 0;
-    this.uploadFile.proxy.speed = {
-      currentSpeed: 0, // 上传已完成，瞬时速度为 0
-      averageSpeed,
-      currentSpeedFormatted: "0 B/s",
-      averageSpeedFormatted: formatSpeed(averageSpeed),
-    };
-
     // 调用合并接口
     try {
       // 🔑 进入合并阶段
@@ -833,6 +827,19 @@ export default class UploadChunkManager extends ChunkManager {
     } catch (error) {
       this.uploadFile.onError(error);
     }
+
+    // 🔑 更新速度必须在 merge 之后，避免 merge 请求的 XHR 进度事件覆盖速度
+    this.calculateAndUpdateSpeed(this.uploadFile.File.size);
+
+    const totalTime = this.totalChunkTime / 1000;
+    const averageSpeed =
+      totalTime > 0 ? this.uploadFile.File.size / totalTime : 0;
+    this.uploadFile.proxy.speed = {
+      currentSpeed: 0, // 上传已完成，瞬时速度为 0
+      averageSpeed,
+      currentSpeedFormatted: "0 B/s",
+      averageSpeedFormatted: formatSpeed(averageSpeed),
+    };
 
     // 使用统一方法计算上传统计信息
     this.calculateUploadStats();
@@ -1253,6 +1260,20 @@ export default class UploadChunkManager extends ChunkManager {
             // 记录总耗时
             this.chunkEndTime = performance.now();
             this.totalChunkTime = this.chunkEndTime - this.chunkStartTime;
+
+            // 🔑 更新速度（断点续传也可能触发 merge XHR 覆盖速度，必须在 merge 之后）
+            this.calculateAndUpdateSpeed(this.uploadFile.File.size);
+            const resumeTotalTime = this.totalChunkTime / 1000;
+            const resumeAvgSpeed =
+              resumeTotalTime > 0
+                ? this.uploadFile.File.size / resumeTotalTime
+                : 0;
+            this.uploadFile.proxy.speed = {
+              currentSpeed: 0,
+              averageSpeed: resumeAvgSpeed,
+              currentSpeedFormatted: "0 B/s",
+              averageSpeedFormatted: formatSpeed(resumeAvgSpeed),
+            };
 
             // 使用统一方法计算上传统计信息
             this.calculateUploadStats();

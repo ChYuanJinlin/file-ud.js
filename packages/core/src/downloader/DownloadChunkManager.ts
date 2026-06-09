@@ -17,6 +17,9 @@ export default class DownloadChunkManager extends ChunkManager {
   /** 流式写入的可写流 */
   private writable: FileSystemWritableFileStream | null = null;
 
+  /** 待完成写入的 Promise 列表（fire-and-forget，不阻塞 PQueue worker） */
+  private pendingWrites: Promise<void>[] = [];
+
   // ==================== 构造函数 ====================
 
   constructor(chunkOptions: ChunkOptions, file: TransferFile<any, any>) {
@@ -99,13 +102,17 @@ export default class DownloadChunkManager extends ChunkManager {
   /**
    * 合并所有已下载分片
    *
-   * - 流式模式：关闭 writable 完成磁盘写入，返回 FileHandle（文件已在磁盘，无需合并）
+   * - 流式模式：等待所有 fire-and-forget 写入完成后关闭 writable
    * - 内存模式：将 chunkBlobs Map 中的分片按顺序拼接为单一 Blob
    */
   protected async doMergeChunks(): Promise<Blob | FileSystemFileHandle> {
-    // 🔑 流式模式：关闭写入流，文件已完整落盘
+    // 🔑 流式模式：等待所有 fire-and-forget 写入完成，再关闭流
     if (this.writable && this.streamFileHandle) {
       try {
+        if (this.pendingWrites.length > 0) {
+          await Promise.all(this.pendingWrites);
+          this.pendingWrites = [];
+        }
         await this.writable.close();
         logger.info(this.getTag(), "✅ 流式写入完成，文件已落盘", {
           fileName: this.downloadFile.fileName,
@@ -146,17 +153,19 @@ export default class DownloadChunkManager extends ChunkManager {
   /**
    * 保存每个分片的 Blob 数据
    *
-   * - 流式模式：通过 writable.write(data, position) 直接写入磁盘，写入后 Blob 即可被 GC
+   * - 流式模式：fire-and-forget 写入（不 await，PQueue worker 立即继续下载下一个分片）
    * - 内存模式：存储到 chunkBlobs Map 中，待合并时一次性拼接
    */
   protected async doSaveChunkResult(chunkIndex: number, data: any): Promise<void> {
     if (!(data instanceof Blob)) return;
 
-    // 🔑 流式模式：按分片偏移量写入磁盘，支持乱序到达
+    // 🔑 流式模式：fire-and-forget 写盘，不阻塞 PQueue worker 获取下一个分片
     if (this.writable) {
       const position = chunkIndex * this.chunkSize;
-      await this.writable.write({ type: "write", position, data });
-      return; // Blob 写入完毕，可以被 GC 回收
+      this.pendingWrites.push(
+        this.writable.write({ type: "write", position, data }),
+      );
+      return;
     }
 
     // 内存兜底模式
@@ -193,6 +202,7 @@ export default class DownloadChunkManager extends ChunkManager {
    */
   protected doAfterStartReset(): void {
     this.chunkBlobs.clear();
+    this.pendingWrites = [];
 
     // 清理上次可能未关闭的写流
     if (this.writable) {

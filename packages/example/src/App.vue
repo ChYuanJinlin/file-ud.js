@@ -8,7 +8,7 @@ import {
 import { Downloader, FileUD, Uploader } from "@file-ud.js/core";
 import {
   uploadFile, upload, getFileList, checkFile, createUploadTask, mergeChunks,
-  downloadFileApi, downloadExcelApi,
+  downloadFileApi, downloadExcelApi, deleteServerFile,
 } from "./api";
 import { IFile, UDFile, DownloaderConfig, uploaderConfigs } from "@file-ud.js/core/types";
 
@@ -93,7 +93,7 @@ const isStreamSave = ref(true); // 🚀 流式保存开关（File System Access 
 
 const buildDownloaderConfig = (): DownloaderConfig => ({
   action(downloadFile) { return downloadFileApi(downloadFile.fileName); },
-  chunkOptions: isChunkDownload.value ? {} : null,
+  chunkOptions: isChunkDownload.value ? { chunkSize: 20 * 1024 * 1024 } : null,
 });
 
 const downloader = FileUD.createDownloader("downloader", buildDownloaderConfig());
@@ -134,6 +134,8 @@ Uploader.onError = (err: any) => ElMessage.error(`上传错误: ${err.message ||
 const uploadFiles = ref<any[]>([]);
 const downloadFiles = ref<any[]>([]);
 const serverFiles = ref<any[]>([]);
+const serverFileTableRef = ref();
+const serverFileSelection = ref<any[]>([]);
 
 const uploadStats = ref({ totalPercent: 0, totalFormatSize: "0 B", transferredFormatSize: "0 B", speed: "0 B/s" });
 const downloadStats = ref({ totalPercent: 0, totalFormatSize: "0 B", transferredFormatSize: "0 B", speed: "0 B/s" });
@@ -236,9 +238,69 @@ const downloadCounts = computed(() => ({
   loading: downloadFiles.value.filter((f) => f.status === "UDLoading").length,
   paused: downloadFiles.value.filter((f) => f.status === "paused").length,
   success: downloadFiles.value.filter((f) => f.status === "success").length,
-  error: downloadFiles.value.filter((f) => ["error", "fail"].includes(f.status)).length,
+  error: downloadFiles.value.filter((f) => ["error", "fail", "cancelled"].includes(f.status)).length,
+  cancelled: downloadFiles.value.filter((f) => f.status === "cancelled").length,
   cancelled: downloadFiles.value.filter((f) => f.status === "cancelled").length,
 }));
+
+// ==================== 服务端文件操作 ====================
+
+/** 删除服务端文件 */
+const handleDeleteFile = (row: any) => {
+  const name = row.fileName || row.name || "";
+  ElMessageBox.confirm(
+    `确定要删除服务端文件 "${name}" 吗？此操作不可恢复！`,
+    "删除确认",
+    { confirmButtonText: "确定删除", cancelButtonText: "取消", type: "warning" },
+  )
+    .then(async () => {
+      try {
+        const res: any = await deleteServerFile(name);
+        if (res.success) {
+          ElMessage.success(`文件 "${name}" 已删除`);
+          fetchServerFiles();
+        } else {
+          ElMessage.error(res.message || "删除失败");
+        }
+      } catch (err: any) {
+        ElMessage.error(`删除失败: ${err.message || "未知错误"}`);
+      }
+    })
+    .catch(() => {});
+};
+
+/** 批量下载 */
+const batchDownload = () => {
+  if (!serverFileSelection.value.length) return;
+  serverFileSelection.value.forEach((row) => handleDownload(row));
+};
+
+/** 批量删除 */
+const batchDelete = () => {
+  if (!serverFileSelection.value.length) return;
+  const names = serverFileSelection.value.map((r) => r.fileName || r.name || "").join("、");
+  ElMessageBox.confirm(
+    `确定要删除选中的 ${serverFileSelection.value.length} 个文件吗？此操作不可恢复！\n${names}`,
+    "批量删除确认",
+    { confirmButtonText: "确定删除", cancelButtonText: "取消", type: "warning" },
+  )
+    .then(async () => {
+      try {
+        await Promise.all(
+          serverFileSelection.value.map((row) => {
+            const name = row.fileName || row.name || "";
+            return deleteServerFile(name);
+          }),
+        );
+        ElMessage.success(`已删除 ${serverFileSelection.value.length} 个文件`);
+        serverFileTableRef.value?.clearSelection();
+        fetchServerFiles();
+      } catch (err: any) {
+        ElMessage.error(`批量删除失败: ${err.message || "未知错误"}`);
+      }
+    })
+    .catch(() => {});
+};
 
 // ==================== 下载辅助 ====================
 
@@ -354,6 +416,16 @@ const handleDownload = async (row: any) => {
             <el-tag :type="statusTypeMap[row.status]" size="small">{{ statusTextMap[row.status] || row.status }}</el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="耗时" width="80">
+          <template #default="{ row }">
+            {{ row.status === 'success' ? row.transferTime?.durationFormatted || '-' : '-' }}
+          </template>
+        </el-table-column>
+        <el-table-column label="平均速度" width="100">
+          <template #default="{ row }">
+            {{ row.status === 'success' ? row.speed?.averageSpeedFormatted || '-' : '-' }}
+          </template>
+        </el-table-column>
         <el-table-column label="哈希" width="80">
           <template #default="{ row }">{{ row.hashPercent ? `${row.hashPercent}%` : "-" }}</template>
         </el-table-column>
@@ -373,10 +445,19 @@ const handleDownload = async (row: any) => {
       <template #header>
         <div class="card-header">
           <span class="section-title">📁 服务端文件 ({{ serverFiles.length }})</span>
-          <el-button size="small" :icon="Refresh" @click="fetchServerFiles">刷新</el-button>
+          <div style="display:flex;gap:8px;">
+            <el-button size="small" type="primary" :disabled="!serverFileSelection.length" @click="batchDownload">
+              批量下载 ({{ serverFileSelection.length }})
+            </el-button>
+            <el-button size="small" type="danger" :disabled="!serverFileSelection.length" @click="batchDelete">
+              批量删除 ({{ serverFileSelection.length }})
+            </el-button>
+            <el-button size="small" :icon="Refresh" @click="fetchServerFiles">刷新</el-button>
+          </div>
         </div>
       </template>
-      <el-table :data="serverFiles" empty-text="暂无文件">
+      <el-table ref="serverFileTableRef" :data="serverFiles" empty-text="暂无文件" @selection-change="serverFileSelection = $event">
+        <el-table-column type="selection" width="45" />
         <el-table-column label="文件名" min-width="220">
           <template #default="{ row }">
             <div class="file-name-cell">
@@ -386,10 +467,13 @@ const handleDownload = async (row: any) => {
           </template>
         </el-table-column>
         <el-table-column label="大小" width="90"><template #default="{ row }">{{ row.formatSize || row.size }}</template></el-table-column>
-        <el-table-column label="操作" width="160">
+        <el-table-column label="操作" width="220">
           <template #default="{ row }">
             <el-button size="small" type="primary" @click="handleDownload(row)">
               {{ isChunkDownload ? "分片下载" : "直接下载" }}
+            </el-button>
+            <el-button size="small" type="danger" :icon="Delete" @click="handleDeleteFile(row)">
+              删除
             </el-button>
           </template>
         </el-table-column>
@@ -418,7 +502,6 @@ const handleDownload = async (row: any) => {
             :type="isStreamSave ? 'primary' : 'info'"
             plain
             @click="isStreamSave = !isStreamSave"
-            :disabled="!isChunkDownload"
           >
             {{ isStreamSave ? "🚀 流式保存" : "💾 内存合并" }}
           </el-button>
@@ -450,6 +533,16 @@ const handleDownload = async (row: any) => {
         <el-table-column label="状态" width="90">
           <template #default="{ row }">
             <el-tag :type="statusTypeMap[row.status]" size="small">{{ statusTextMap[row.status] || row.status }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="耗时" width="80">
+          <template #default="{ row }">
+            {{ row.status === 'success' ? row.transferTime?.durationFormatted || '-' : '-' }}
+          </template>
+        </el-table-column>
+        <el-table-column label="平均速度" width="100">
+          <template #default="{ row }">
+            {{ row.status === 'success' ? row.speed?.averageSpeedFormatted || '-' : '-' }}
           </template>
         </el-table-column>
         <el-table-column label="哈希" width="80">

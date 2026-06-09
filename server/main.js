@@ -611,7 +611,12 @@ app.get("/files", (req, res) => {
 
     const fileList = filteredFiles.map((file) => {
       const filePath = path.join(UPLOAD_DIR, file);
-      const stats = fs.statSync(filePath);
+      let stats;
+      try {
+        stats = fs.statSync(filePath);
+      } catch {
+        return null; // 文件无法访问就跳过
+      }
       const ext = path.extname(file).toLowerCase();
 
       let type = "other";
@@ -651,8 +656,8 @@ app.get("/files", (req, res) => {
 
     res.json({
       success: true,
-      data: fileList,
-      total: fileList.length,
+      data: fileList.filter(Boolean),
+      total: fileList.filter(Boolean).length,
     });
   });
 });
@@ -674,7 +679,85 @@ app.delete("/dedup-record/:fileHash", (req, res) => {
 });
 
 // ============================================
-// 10. 文件下载接口（支持 Range 分片下载）
+// 10. 删除服务端文件（同时清理 dedup / task / chunk）
+// ============================================
+app.delete("/files/:filename", (req, res) => {
+  const filename = decodeURIComponent(req.params.filename);
+  const filePath = path.join(UPLOAD_DIR, filename);
+
+  console.log(`🗑️ 删除文件请求: ${filename}`);
+
+  if (!fs.existsSync(filePath)) {
+    console.log(`   ⚠️ 文件不存在: ${filePath}`);
+    return res.json({ success: false, message: "文件不存在，可能已被删除" });
+  }
+
+  const deletedItems = [];
+
+  try {
+    // 1. 删除目标文件
+    fs.unlinkSync(filePath);
+    deletedItems.push(`文件: ${filename}`);
+    console.log(`   ✅ 已删除: ${filePath}`);
+
+    // 2. 扫描 dedup 记录，删除指向该文件名的记录及其关联的 task / chunk
+    let fileHash = null;
+    if (fs.existsSync(DEDUP_DIR)) {
+      const dedupFiles = fs.readdirSync(DEDUP_DIR).filter((f) => f.endsWith(".json"));
+      for (const df of dedupFiles) {
+        const dedupPath = path.join(DEDUP_DIR, df);
+        try {
+          const record = JSON.parse(fs.readFileSync(dedupPath, "utf-8"));
+          if (record.fileName === filename) {
+            fileHash = record.fileHash || path.basename(df, ".json");
+            fs.unlinkSync(dedupPath);
+            deletedItems.push(`去重记录: ${df}`);
+            console.log(`   ✅ 已删除去重记录: ${df}`);
+            break; // 一个文件最多一条记录
+          }
+        } catch (_) {}
+      }
+    }
+
+    // 3. 根据 fileHash 清理 task 记录和 chunk 文件
+    if (fileHash) {
+      // 删除 task 记录
+      const taskPath = path.join(TASK_DIR, `${fileHash}.json`);
+      if (fs.existsSync(taskPath)) {
+        fs.unlinkSync(taskPath);
+        deletedItems.push(`任务记录: ${fileHash}.json`);
+        console.log(`   ✅ 已删除任务记录: ${fileHash}.json`);
+      }
+
+      // 删除残留 chunk 文件
+      try {
+        const uploadFiles = fs.readdirSync(UPLOAD_DIR);
+        for (const f of uploadFiles) {
+          if (f.startsWith(`chunk_${fileHash}_`)) {
+            fs.unlinkSync(path.join(UPLOAD_DIR, f));
+            console.log(`   ✅ 已删除分片: ${f}`);
+          }
+        }
+      } catch (_) {}
+    }
+
+    res.json({
+      success: true,
+      message: "删除成功",
+      data: { deletedItems, fileName: filename },
+    });
+  } catch (error) {
+    console.error("删除文件失败:", error);
+    res.status(500).json({
+      success: false,
+      message: "删除文件失败",
+      error: error.message,
+    });
+  }
+});
+
+// ============================================
+// 11. 文件下载接口（支持 Range 分片下载）
 // ============================================
 app.get("/download/:filename", (req, res) => {
   const filename = decodeURIComponent(req.params.filename);
@@ -744,7 +827,7 @@ app.get("/download/:filename", (req, res) => {
   res.setHeader("Content-Length", chunkSize);
   res.setHeader("Content-Type", "application/octet-stream");
 
-  const readStream = fs.createReadStream(filePath, { start, end });
+  const readStream = fs.createReadStream(filePath, { start, end, highWaterMark: 1024 * 1024 });
   readStream.pipe(res);
 
   readStream.on("error", (err) => {
@@ -760,7 +843,29 @@ app.get("/download/:filename", (req, res) => {
 });
 
 // ============================================
-// 11. 静态文件服务
+// 11. Excel 文件生成下载
+// ============================================
+app.post("/download-excel", async (req, res) => {
+  const { columns = 10, rows = 1000, fileName = "data.xlsx" } = req.body;
+
+  // 生成简单的 CSV 内容（Excel 可以直接打开 CSV）
+  const headers = Array.from({ length: columns }, (_, i) => `列${i + 1}`).join(",");
+  const dataRows = Array.from({ length: rows }, (_, rowIdx) =>
+    Array.from({ length: columns }, (_, colIdx) => `数据${rowIdx + 1}-${colIdx + 1}`).join(",")
+  ).join("\n");
+
+  const csvContent = `${headers}\n${dataRows}`;
+  const fileBuffer = Buffer.from(csvContent, "utf-8");
+
+  // 如果需要真正的 xlsx，可以用 xlsx 库，这里用 CSV 代替
+  res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Length", fileBuffer.length);
+  res.send(fileBuffer);
+});
+
+// ============================================
+// 12. 静态文件服务
 // ============================================
 app.use("/uploads", express.static(UPLOAD_DIR));
 
@@ -780,6 +885,7 @@ app.listen(3000, () => {
   console.log("📁 多文件传输: POST /upload-multiple");
   console.log("📁 文件列表: GET /files");
   console.log("🗑️ 删除记录: DELETE /dedup-record/:fileHash");
+  console.log("🗑️ 删除文件: DELETE /files/:filename");
   console.log("📥 文件下载: GET /download/:filename");
   console.log("📁 静态文件: GET /uploads/:filename");
   console.log("========================================\n");
