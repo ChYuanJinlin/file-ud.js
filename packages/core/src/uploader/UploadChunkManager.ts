@@ -317,7 +317,8 @@ export default class UploadChunkManager extends ChunkManager {
             ); // 标记所有分片为已累加
             this.chunks = new Array(this.totalChunks).fill(true);
 
-            this.uploadFile.proxy.percent = 100;
+            // 🔑 全部分片已上传但未合并，进度卡在 99%，留给 completeMerge() 设 100%
+            this.uploadFile.proxy.percent = 99;
 
             // ✅ 关键修复：更新全局统计信息（总进度、总大小）
             const up = this.uploadFile.transfer;

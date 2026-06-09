@@ -178,10 +178,9 @@ export default class DownloadFile<T = any> extends TransferFile<
         this.downloadChunkManager.totalChunks &&
       this.downloadChunkManager.totalChunks > 0
     ) {
-      this.status = "success";
-      this.proxy.status = "success";
-      this.percent = 100;
-      this.proxy.percent = 100;
+      // 🔑 全部分片已传输完，但合并尚未开始 — 进度卡在 99%，状态留给 start() 流转
+      this.percent = 99;
+      this.proxy.percent = 99;
     }
 
     this.transfer.updateGlobalStats();
@@ -365,7 +364,7 @@ export default class DownloadFile<T = any> extends TransferFile<
    *
    * action 不区分普通/分片，只按类型分发：
    *   - 字符串 action → 始终走 axios（分片时 headers 里带 Range，普通时不带）
-   *   - 函数 action   → 始终调 cfg.action(this)（分片时 _chunkHeadersQueue 已 push，拦截器自动注入 Range）
+   *   - 函数 action → 始终调 cfg.action(this)（分片时 _chunkHeadersQueue 已 push，拦截器自动注入 Range）
    */
   private async _doHttpRequest(overrides?: {
     headers?: Record<string, string>;

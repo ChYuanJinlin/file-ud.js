@@ -110,8 +110,8 @@ export default abstract class ChunkManager<
   /** start() 重置后的额外清理，如下载场景清空 downloadedChunks */
   protected doAfterStartReset(): void {}
 
-  /** 分片传输成功后保存结果数据（上传存 response，下载存 blob 到 Map） */
-  protected doSaveChunkResult(_chunkIndex: number, _data: any): void {}
+  /** 分片传输成功后保存结果数据（上传存 response，下载存 blob 到 Map / 流式写入磁盘） */
+  protected async doSaveChunkResult(_chunkIndex: number, _data: any): Promise<void> {}
 
   /** onSuccess 之前的额外操作，如下载场景调用 saveBlob */
   protected async doBeforeOnSuccess(_mergeResult: any): Promise<void> {}
@@ -365,6 +365,9 @@ export default abstract class ChunkManager<
 
     this.timeout = Math.max(this.timeout, 60000);
 
+    // 🔑 在 doInit() 之前就设置 startTime，确保所有路径（普通 / 已全完成 / 异常）都有合法起始时间
+    computeTransferTime(file.proxy.transferTime).start();
+
     try {
       const res = await this.doInit();
 
@@ -376,9 +379,7 @@ export default abstract class ChunkManager<
       // 标记文件状态为传输中（分片传输路径统一入口，普通传输由子类在 download/upload 方法中设置）
       file.proxy.status = "UDLoading";
 
-      computeTransferTime(file.proxy.transferTime).start();
       await this.transferWithConcurrency();
-      computeTransferTime(file.proxy.transferTime).end();
 
       await this.checkStatistics();
     } catch (error) {
@@ -386,6 +387,9 @@ export default abstract class ChunkManager<
       this.chunkEndTime = performance.now();
       this.totalChunkTime = this.chunkEndTime - this.chunkStartTime;
       if (this.failedChunks.length > 0) throw error;
+    } finally {
+      // 🔑 finally 确保所有出口（正常返回 / 早期 return / 异常）都会记录结束时间
+      computeTransferTime(file.proxy.transferTime).end();
     }
   }
 
@@ -437,7 +441,7 @@ export default abstract class ChunkManager<
         this.removeAbortController(abortController);
 
         // 处理分片成功
-        this.handleChunkSuccess(chunkIndex, result);
+        await this.handleChunkSuccess(chunkIndex, result);
       } catch (error) {
         clearTimeout(timeoutId);
         this.removeAbortController(abortController);
@@ -504,15 +508,15 @@ export default abstract class ChunkManager<
   /**
    * 分片传输成功后的统一处理
    */
-  protected handleChunkSuccess(
+  protected async handleChunkSuccess(
     chunkIndex: number,
     result: { data: any; chunkSize: number },
-  ): void {
+  ): Promise<void> {
     const file = this.getTransferFile();
 
     if (!this.chunks[chunkIndex]) {
       // 保存分片结果（子类钩子）
-      this.doSaveChunkResult(chunkIndex, result.data);
+      await this.doSaveChunkResult(chunkIndex, result.data);
       this.response = result.data;
 
       this.chunks[chunkIndex] = true;
@@ -780,12 +784,25 @@ export default abstract class ChunkManager<
    */
   protected async completeMerge(): Promise<void> {
     const file = this.getTransferFile();
+
+    // 🔑 进入合并阶段
+    file.proxy.status = "merging";
+    file.transfer.emit("merging", {
+      file: file.proxy,
+      completedChunks: this.completedChunks,
+      totalChunks: this.totalChunks,
+    });
+
     try {
       const mergeResult = await this.doMergeChunks();
       this.chunkEndTime = performance.now();
       this.totalChunkTime = this.chunkEndTime - this.chunkStartTime;
       this.calculateStats();
       await this.doBeforeOnSuccess(mergeResult);
+
+      // 🔑 合并 + 保存全部完成后才推到 100%
+      file.proxy.percent = 100;
+
       file.onSuccess(mergeResult);
     } catch (error) {
       this.chunkEndTime = performance.now();
