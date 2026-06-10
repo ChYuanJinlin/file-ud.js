@@ -216,7 +216,7 @@ export default class TransferFile<T extends TransferFile<T, any>, D = any> {
     const next = () => {
       const cm = this.getChunkManager();
       if (cm) {
-        (cm as any).cancelUpload();
+        cm.cancel();
       } else {
         this.abort?.();
       }

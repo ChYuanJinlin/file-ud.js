@@ -240,7 +240,6 @@ const downloadCounts = computed(() => ({
   success: downloadFiles.value.filter((f) => f.status === "success").length,
   error: downloadFiles.value.filter((f) => ["error", "fail", "cancelled"].includes(f.status)).length,
   cancelled: downloadFiles.value.filter((f) => f.status === "cancelled").length,
-  cancelled: downloadFiles.value.filter((f) => f.status === "cancelled").length,
 }));
 
 // ==================== 服务端文件操作 ====================
