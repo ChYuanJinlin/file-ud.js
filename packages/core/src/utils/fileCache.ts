@@ -7,8 +7,9 @@ import { formatFileSize } from '.';
 import { logger } from './logger';
 
 const DB_NAME = 'file-ud-cache';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = 'files';
+const DOWNLOAD_PROGRESS_STORE = 'download-progress';
 
 /**
  * 文件缓存记录结构
@@ -81,17 +82,25 @@ function openDB(): Promise<IDBDatabase> {
 
     request.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result;
-      
-      // 创建对象存储空间
+
+      // 创建文件缓存存储空间
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         const store = db.createObjectStore(STORE_NAME, { keyPath: 'fileHash' });
-        
+
         // 创建索引
         store.createIndex('fileName', 'fileName', { unique: false });
         store.createIndex('createdAt', 'createdAt', { unique: false });
         store.createIndex('lastAccessedAt', 'lastAccessedAt', { unique: false });
-        
-        logger.info('FileCache', 'IndexedDB 数据库初始化成功');
+
+        logger.info('FileCache', 'IndexedDB 文件缓存存储初始化成功');
+      }
+
+      // 创建下载进度存储空间
+      if (!db.objectStoreNames.contains(DOWNLOAD_PROGRESS_STORE)) {
+        const progressStore = db.createObjectStore(DOWNLOAD_PROGRESS_STORE, { keyPath: 'fileHash' });
+        progressStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+
+        logger.info('FileCache', 'IndexedDB 下载进度存储初始化成功');
       }
     };
   });
@@ -472,3 +481,152 @@ async function updateLastAccessedTime(fileHash: string): Promise<void> {
   }
 }
 
+// ==================== 下载进度缓存 ====================
+
+/**
+ * 下载进度缓存记录结构
+ */
+interface DownloadProgressRecord {
+  fileHash: string;          // 文件唯一标识
+  fileName: string;
+  fileSize: number;
+  totalChunks: number;
+  completedChunks: number;
+  chunkIndexes: number[];   // 已下载的分片索引
+  updatedAt: number;
+}
+
+/**
+ * 保存下载进度到 IndexedDB
+ */
+export async function saveDownloadProgress(
+  fileHash: string,
+  fileName: string,
+  fileSize: number,
+  totalChunks: number,
+  chunkIndexes: number[],
+): Promise<void> {
+  try {
+    const record: DownloadProgressRecord = {
+      fileHash,
+      fileName,
+      fileSize,
+      totalChunks,
+      completedChunks: chunkIndexes.length,
+      chunkIndexes,
+      updatedAt: Date.now(),
+    };
+
+    await executeTransaction(async (db) => {
+      return new Promise<void>((resolve, reject) => {
+        const transaction = db.transaction([DOWNLOAD_PROGRESS_STORE], 'readwrite');
+        const store = transaction.objectStore(DOWNLOAD_PROGRESS_STORE);
+        const request = store.put(record);
+
+        request.onsuccess = () => {
+          logger.debug('FileCache', `下载进度已保存: ${fileName} (${chunkIndexes.length}/${totalChunks})`);
+          resolve();
+        };
+
+        request.onerror = () => {
+          logger.warn('FileCache', '保存下载进度失败', request.error);
+          reject(request.error);
+        };
+
+        transaction.onerror = () => {
+          logger.warn('FileCache', '事务执行失败', transaction.error);
+          reject(transaction.error);
+        };
+      });
+    });
+  } catch (error) {
+    logger.warn('FileCache', '保存下载进度异常', error);
+  }
+}
+
+/**
+ * 从 IndexedDB 加载下载进度
+ * @returns 已完成分片索引数组，未找到则返回 null
+ */
+export async function loadDownloadProgress(
+  fileHash: string,
+): Promise<{
+  fileName: string;
+  fileSize: number;
+  totalChunks: number;
+  chunkIndexes: number[];
+} | null> {
+  try {
+    return await executeTransaction(async (db) => {
+      return new Promise((resolve, reject) => {
+        const transaction = db.transaction([DOWNLOAD_PROGRESS_STORE], 'readonly');
+        const store = transaction.objectStore(DOWNLOAD_PROGRESS_STORE);
+        const request = store.get(fileHash);
+
+        request.onsuccess = () => {
+          const record: DownloadProgressRecord | undefined = request.result;
+
+          if (!record) {
+            logger.debug('FileCache', `未找到下载进度: ${fileHash}`);
+            resolve(null);
+            return;
+          }
+
+          logger.info('FileCache', `加载下载进度: ${record.fileName} (${record.completedChunks}/${record.totalChunks})`);
+
+          resolve({
+            fileName: record.fileName,
+            fileSize: record.fileSize,
+            totalChunks: record.totalChunks,
+            chunkIndexes: record.chunkIndexes,
+          });
+        };
+
+        request.onerror = () => {
+          logger.warn('FileCache', '加载下载进度失败', request.error);
+          reject(request.error);
+        };
+
+        transaction.onerror = () => {
+          logger.warn('FileCache', '事务执行失败', transaction.error);
+          reject(transaction.error);
+        };
+      });
+    });
+  } catch (error) {
+    logger.warn('FileCache', '加载下载进度异常', error);
+    return null;
+  }
+}
+
+/**
+ * 删除指定文件的下载进度记录
+ */
+export async function removeDownloadProgress(fileHash: string): Promise<void> {
+  try {
+    await executeTransaction(async (db) => {
+      return new Promise<void>((resolve, reject) => {
+        const transaction = db.transaction([DOWNLOAD_PROGRESS_STORE], 'readwrite');
+        const store = transaction.objectStore(DOWNLOAD_PROGRESS_STORE);
+        const request = store.delete(fileHash);
+
+        request.onsuccess = () => {
+          logger.debug('FileCache', `已删除下载进度: ${fileHash}`);
+          resolve();
+        };
+
+        request.onerror = () => {
+          logger.warn('FileCache', '删除下载进度失败', request.error);
+          reject(request.error);
+        };
+
+        transaction.onerror = () => {
+          logger.warn('FileCache', '事务执行失败', transaction.error);
+          reject(transaction.error);
+        };
+      });
+    });
+  } catch (error) {
+    logger.warn('FileCache', '删除下载进度异常', error);
+  }
+}

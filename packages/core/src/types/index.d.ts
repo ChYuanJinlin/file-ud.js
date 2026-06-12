@@ -189,9 +189,6 @@ export interface ChunkOptions {
   retryDelay?: number;
   /* 超时时间（毫秒） */
   timeout?: number;
-  /* 自定义上传ID（用于断点续传） */
-  uploadId?: string;
-
   // ==================== 文件缓存配置 ====================
   /* 是否启用文件缓存（将 File 对象存储到 IndexedDB，默认 false） */
   enableFileCache?: boolean;
@@ -245,7 +242,9 @@ export interface uploaderConfigs extends UDConfig<UploadFile> {
    * 文件传输下载地址，可以是字符串或者promise函数
    * @return {Promise}
    */
-  action: string | ((formData: FormData, transferFile: UploadFile) => Promise<any>);
+  action:
+    | string
+    | ((formData: FormData, transferFile: UploadFile) => Promise<any>);
   /* 上传文件标识 */
   file?: string | ((FileConfig: FileConfig) => void);
 }
@@ -515,7 +514,11 @@ export interface BaseTransferEvents<T = TransferFile<any>> {
   /* 分片失败事件 */
   "chunk-error": (data: ChunkErrorData<T>) => void;
   /* 合并开始事件 */
-  merging: (data: { file: T; completedChunks: number; totalChunks: number }) => void;
+  merging: (data: {
+    file: T;
+    completedChunks: number;
+    totalChunks: number;
+  }) => void;
   /* 合并成功事件 */
   "merge-success": (data: { file: T; response?: any }) => void;
   /* 合并失败事件 */

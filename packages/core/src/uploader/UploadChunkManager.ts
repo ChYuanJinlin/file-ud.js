@@ -791,6 +791,17 @@ export default class UploadChunkManager extends ChunkManager {
       // 所有分片上传成功，执行合并
       await this.handleAllChunksSuccess();
     } else if (this.failedChunks.length > 0) {
+      // 如果已取消或已暂停，跳过自动重试
+      if (this.isCancelled || this.isPaused) {
+        logger.info("uploadChunkManager", "上传已取消或暂停，跳过自动重试", {
+          fileId: this.uploadFile.fileId,
+          fileName: this.uploadFile.fileName,
+          isCancelled: this.isCancelled,
+          isPaused: this.isPaused,
+          failedChunks: this.failedChunks.length,
+        });
+        return;
+      }
       // 有失败分片，执行重试逻辑
       await this.handleFailedChunks();
     } else {
@@ -1334,17 +1345,6 @@ export default class UploadChunkManager extends ChunkManager {
     }
 
     for (let chunkIndex = 0; chunkIndex < this.totalChunks; chunkIndex++) {
-      // ✅ 关键修复：检查是否已取消，如果已取消则停止入队新任务
-      if (this.isCancelled) {
-        logger.info("uploadChunkManager", `检测到取消标志，停止入队新分片`, {
-          fileId: this.uploadFile.fileId,
-          fileName: this.uploadFile.fileName,
-          currentChunk: chunkIndex,
-          totalChunks: this.totalChunks,
-        });
-        break; // 跳出循环，不再入队新任务
-      }
-
       // 跳过已上传的分片（断点续传场景）
       if (this.chunks[chunkIndex]) {
         continue;
@@ -1374,6 +1374,15 @@ export default class UploadChunkManager extends ChunkManager {
             }
             throw error;
           }
+        }).catch((_error) => {
+          if (
+            _error instanceof Error &&
+            (_error.message === "Upload cancelled" ||
+              _error.message === "Transfer cancelled")
+          ) {
+            this.failedChunks.push(chunkIndex);
+          }
+          throw _error;
         }),
       );
     }
