@@ -475,12 +475,25 @@ export default class TransferFile<T extends TransferFile<T, any>, D = any> {
         },
 
         onAbort: (file, xhr) => {
-          file.abort = () => {
+          // 🔑 累加模式：并发分片会产生多个 XHR，file.abort 需能取消所有
+          if (!(file as any).__xhrAbortCallbacks) {
+            (file as any).__xhrAbortCallbacks = [];
+          }
+          (file as any).__xhrAbortCallbacks.push(() => {
             if (xhr.readyState !== XMLHttpRequest.DONE) {
               xhr.abort();
-              file.proxy.isCancel = true;
-              file.proxy.status = "cancelled";
             }
+          });
+          file.abort = () => {
+            const callbacks = (file as any).__xhrAbortCallbacks || [];
+            callbacks.forEach((fn: () => void) => {
+              try {
+                fn();
+              } catch (_) {}
+            });
+            (file as any).__xhrAbortCallbacks = [];
+            file.proxy.isCancel = true;
+            file.proxy.status = "cancelled";
           };
         },
 

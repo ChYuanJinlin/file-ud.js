@@ -366,6 +366,14 @@ export default class UploadFile<T = any> extends TransferFile<UploadFile, T> {
         );
         promise = axiosPromise.then((response) => response.data);
       } else {
+        // 🔑 函数 action：通过 XHR 拦截器机制处理取消，不暴露 signal 给用户
+        if (signal) {
+          signal.addEventListener(
+            "abort",
+            () => this.abort?.(),
+            { once: true },
+          );
+        }
         promise = this.up.config?.action(requestData, this);
       }
 
