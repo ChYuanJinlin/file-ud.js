@@ -1,7 +1,13 @@
 import ChunkManager from "../chunkManager";
 import { IFile, speedInfo, TimeInfo } from "../types/index";
 import Transfer from "./Transfer";
-import { computeTransferTime, formatFileSize, formatSpeed, generateFileId, logger } from "../utils";
+import {
+  computeTransferTime,
+  formatFileSize,
+  formatSpeed,
+  generateFileId,
+  logger,
+} from "../utils";
 import { FileUDError, ErrorCode } from "../fileUD/errors";
 import UploadFile from "../uploader/UploadFile";
 import Uploader from "../uploader";
@@ -429,6 +435,7 @@ export default class TransferFile<T extends TransferFile<T, any>, D = any> {
 
     // ✅ 修复：移除不存在的 this.up 和 this.context 引用
     // 错误处理应该由 transfer 实例来处理
+    this.status = "error";
     up.emit(
       "error",
       new FileUDError(
@@ -455,9 +462,10 @@ export default class TransferFile<T extends TransferFile<T, any>, D = any> {
 
           // 🔑 分片下载时，从队列 shift 取出当前 XHR 对应的 Range 头
           //     并发安全：每个 XHR 的 send() 消费一个 entry，不会互相覆盖
-          const chunkHeaders = file._chunkHeadersQueue?.length > 0
-            ? file._chunkHeadersQueue.shift()!
-            : {};
+          const chunkHeaders =
+            file._chunkHeadersQueue?.length > 0
+              ? file._chunkHeadersQueue.shift()!
+              : {};
 
           return { ...configHeaders, ...chunkHeaders };
         },

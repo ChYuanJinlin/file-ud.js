@@ -106,7 +106,9 @@ export default class DownloadFile<T = any> extends TransferFile<
   /**
    * 从回显数据初始化 downloadChunkManager 状态
    */
-  private async initChunkManagerFromRestore(file: IDownloadFile): Promise<void> {
+  private async initChunkManagerFromRestore(
+    file: IDownloadFile,
+  ): Promise<void> {
     if (!this.downloadChunkManager) {
       logger.warn(
         "DownloadFile",
@@ -136,7 +138,9 @@ export default class DownloadFile<T = any> extends TransferFile<
     }
 
     if (file.totalChunks !== undefined) {
-      this.downloadChunkManager.chunks = new Array(file.totalChunks).fill(false);
+      this.downloadChunkManager.chunks = new Array(file.totalChunks).fill(
+        false,
+      );
     }
 
     if (file.chunkIndexes && file.chunkIndexes.length > 0) {
@@ -149,7 +153,10 @@ export default class DownloadFile<T = any> extends TransferFile<
           this.downloadChunkManager.chunks[index] = true;
         }
       });
-    } else if (file.completedChunks !== undefined && this.downloadChunkManager) {
+    } else if (
+      file.completedChunks !== undefined &&
+      this.downloadChunkManager
+    ) {
       for (
         let i = 0;
         i < file.completedChunks && i < this.downloadChunkManager.totalChunks;
@@ -394,17 +401,15 @@ export default class DownloadFile<T = any> extends TransferFile<
         timeout: cfg.timeout,
         signal: overrides?.signal,
       });
+    } else if (typeof cfg.action === "function") {
+      const res = await cfg.action(this);
+      return { data: res };
+    } else {
+      // ======== 函数 action：始终调用户函数 ========
+      // 分片下载时 _chunkHeadersQueue 已由 downloadChunk() push，拦截器自动注入 Range
+      // 普通下载时无特殊 header，拦截器仅追踪进度
+      throw new Error("action 必须是字符串 URL 或函数");
     }
-
-    // ======== 函数 action：始终调用户函数 ========
-    // 分片下载时 _chunkHeadersQueue 已由 downloadChunk() push，拦截器自动注入 Range
-    // 普通下载时无特殊 header，拦截器仅追踪进度
-    if (typeof cfg.action === "function") {
-      const result = await cfg.action(this);
-      return { data: result };
-    }
-
-    throw new Error("action 必须是字符串 URL 或函数");
   }
 
   /**

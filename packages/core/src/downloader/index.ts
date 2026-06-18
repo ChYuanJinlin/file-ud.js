@@ -196,7 +196,7 @@ export default class Downloader<T = any> extends Transfer<DownloadFile, T> {
    */
   public cancelAll(): void {
     this.files.forEach((file) => {
-      file.cancel(undefined);
+      file.cancel();
     });
   }
 

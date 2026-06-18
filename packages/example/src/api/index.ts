@@ -1,7 +1,7 @@
 import Ajax from "@/utils/request";
 
-export const uploadFile = () => {
-  return Ajax.post("/upload-chunk");
+export const uploadFile = (data) => {
+  return Ajax.post("/upload-chunk",data);
 };
 
 export const upload = () => {
@@ -19,7 +19,6 @@ export const createUploadTask = (data) => {
 export const mergeChunks = (data) => {
   return Ajax.post("/merge-chunks", data);
 };
-
 
 
 

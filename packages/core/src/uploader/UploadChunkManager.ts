@@ -957,6 +957,7 @@ export default class UploadChunkManager extends ChunkManager {
    * ```
    */
   public cancelUpload(): void {
+
     logger.info(
       "uploadChunkManager",
       `开始取消文件 ${this.uploadFile.fileName} 的上传`,

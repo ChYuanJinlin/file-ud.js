@@ -1,7 +1,12 @@
 import PQueue from "p-queue";
 import { ChunkOptions } from "../types";
 import TransferFile from "../transfer/TransferFile";
-import { formatFileSize, formatSpeed, computeTransferTime, logger } from "../utils";
+import {
+  formatFileSize,
+  formatSpeed,
+  computeTransferTime,
+  logger,
+} from "../utils";
 
 /**
  * 分片管理器基类
@@ -111,7 +116,10 @@ export default abstract class ChunkManager<
   protected doAfterStartReset(): void {}
 
   /** 分片传输成功后保存结果数据（上传存 response，下载存 blob 到 Map / 流式写入磁盘） */
-  protected async doSaveChunkResult(_chunkIndex: number, _data: any): Promise<void> {}
+  protected async doSaveChunkResult(
+    _chunkIndex: number,
+    _data: any,
+  ): Promise<void> {}
 
   /** onSuccess 之前的额外操作，如下载场景调用 saveBlob */
   protected async doBeforeOnSuccess(_mergeResult: any): Promise<void> {}
@@ -143,7 +151,11 @@ export default abstract class ChunkManager<
   protected applyBreakpointResume(initResult: {
     chunks?: number[] | null;
   }): void {
-    if (!initResult.chunks || !Array.isArray(initResult.chunks) || initResult.chunks.length === 0) {
+    if (
+      !initResult.chunks ||
+      !Array.isArray(initResult.chunks) ||
+      initResult.chunks.length === 0
+    ) {
       return;
     }
 
@@ -232,10 +244,13 @@ export default abstract class ChunkManager<
     this.isCancelled = true;
 
     // 中止所有活跃的 HTTP 请求
+
     this.abortControllers.forEach((controller) => {
       try {
         controller.abort();
-      } catch (_error) {}
+      } catch (_error) {
+        console.log("🚀 ~ ChunkManager ~ cancel ~ _error:", _error);
+      }
     });
     this.abortControllers = [];
 
@@ -436,7 +451,10 @@ export default abstract class ChunkManager<
       }, this.timeout);
 
       try {
-        const result = await this.doChunkTransfer(chunkIndex, abortController.signal);
+        const result = await this.doChunkTransfer(
+          chunkIndex,
+          abortController.signal,
+        );
         clearTimeout(timeoutId);
         this.removeAbortController(abortController);
 
@@ -471,7 +489,9 @@ export default abstract class ChunkManager<
         if (retryCount > 0) {
           logger.warn(
             this.getTag(),
-            `分片 ${chunkIndex + 1}/${this.totalChunks} 第 ${retryCount} 次重试`,
+            `分片 ${chunkIndex + 1}/${
+              this.totalChunks
+            } 第 ${retryCount} 次重试`,
           );
         }
 
@@ -481,7 +501,9 @@ export default abstract class ChunkManager<
         if (retryCount > 0) {
           logger.info(
             this.getTag(),
-            `分片 ${chunkIndex + 1}/${this.totalChunks} 重试成功（共 ${retryCount} 次）`,
+            `分片 ${chunkIndex + 1}/${
+              this.totalChunks
+            } 重试成功（共 ${retryCount} 次）`,
           );
         }
         return;
@@ -494,7 +516,9 @@ export default abstract class ChunkManager<
           this.setFileStatusToFail();
           logger.error(
             this.getTag(),
-            `分片 ${chunkIndex + 1}/${this.totalChunks} 最终失败（已重试 ${maxRetries} 次）`,
+            `分片 ${chunkIndex + 1}/${
+              this.totalChunks
+            } 最终失败（已重试 ${maxRetries} 次）`,
           );
           return;
         }
@@ -579,6 +603,7 @@ export default abstract class ChunkManager<
       error: error instanceof Error ? error.message : String(error),
       file: file.proxy as any,
     });
+    throw new Error(error);
   }
 
   /**
@@ -695,7 +720,7 @@ export default abstract class ChunkManager<
       // 🔑 分片全部传输完成，进入合并阶段
       file.proxy.status = "merging";
       file.transfer.emit("merging", {
-        file: file.proxy,
+        file: file.proxy as any,
         completedChunks: this.completedChunks,
         totalChunks: this.totalChunks,
       });
@@ -789,7 +814,7 @@ export default abstract class ChunkManager<
     // 🔑 进入合并阶段
     file.proxy.status = "merging";
     file.transfer.emit("merging", {
-      file: file.proxy,
+      file: file.proxy as any,
       completedChunks: this.completedChunks,
       totalChunks: this.totalChunks,
     });
