@@ -402,7 +402,21 @@ export default class DownloadFile<T = any> extends TransferFile<
         signal: overrides?.signal,
       });
     } else if (typeof cfg.action === "function") {
+      // 🔑 函数 action：通过 XHR 拦截器机制处理取消，不暴露 signal 给用户
+      if (overrides?.signal) {
+        overrides.signal.addEventListener(
+          "abort",
+          () => this.abort?.(),
+          { once: true },
+        );
+      }
+      console.log(
+        `[DownloadFile] _doHttpRequest 调用 cfg.action, ` +
+          `headers=${JSON.stringify(overrides?.headers)}, ` +
+          `queueLen=${this._chunkHeadersQueue.length}`,
+      );
       const res = await cfg.action(this);
+      console.log(`[DownloadFile] _doHttpRequest cfg.action 返回, resType=${typeof res}`);
       return { data: res };
     } else {
       // ======== 函数 action：始终调用户函数 ========

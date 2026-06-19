@@ -56,114 +56,38 @@ export default class DownloadChunkManager extends ChunkManager {
       totalChunks: this.totalChunks,
     });
 
+    console.log(
+      `[DownloadChunkManager] doInit() 入口, fileName=${this.downloadFile.fileName},` +
+        ` completedChunks=${this.completedChunks}, totalChunks=${this.totalChunks}`,
+    );
+
     // 获取文件唯一标识
     const fileHash = await this.computeFileIdentifier();
 
     // ========== 断点续传 / 秒下检查 ==========
+    // 🔑 恢复顺序：IndexedDB（本地权威）→ 服务端回调（补数据）
+    //     IndexedDB 记录的是客户端实际写入磁盘的分片，是下载进度的唯一可信来源。
+    //     服务端 chunks 反映的是上传追踪状态，不等于客户端本地文件状态，不能作为
+    //     秒下或断点续传的判定依据。
     const downloader = this.downloadFile.transfer;
     let initResult: any = null;
     let isResuming = false;
 
-    if (downloader.onInitChunkCallback) {
+    // ========== Step 1: IndexedDB 恢复（本地权威，优先级最高） ==========
+    if (this.config.enableFileCache) {
       try {
-        logger.debug(this.getTag(), "调用 onInitChunk 回调检查秒下/断点续传", {
-          fileName: this.downloadFile.fileName,
-          fileHash,
-        });
-
-        initResult = await downloader.onInitChunkCallback(
-          this.downloadFile as any,
-          this.totalChunks,
-          fileHash,
+        console.log(
+          `[DownloadChunkManager] 🔍 尝试从 IndexedDB 恢复进度, fileHash=${fileHash}, enableFileCache=${this.config.enableFileCache}`,
         );
-
-        if (initResult?.fileHash) {
-          logger.info(this.getTag(), "初始化回调返回成功", {
-            fileName: this.downloadFile.fileName,
-          });
-
-          // ✅ 秒下：文件已在本地（全部下载完成）
-          if (
-            initResult.isInstantDownload === true ||
-            (initResult.chunks &&
-              Array.isArray(initResult.chunks) &&
-              initResult.chunks.length === this.totalChunks)
-          ) {
-            logger.info(this.getTag(), "⚡ 秒下，文件已在本地", {
-              fileName: this.downloadFile.fileName,
-            });
-
-            this.isInstantTransfer = true;
-            this.completedChunks = this.totalChunks;
-            this.totalChunkSize = this.downloadFile.getFileSize();
-            this.countedChunks = new Set(
-              Array.from({ length: this.totalChunks }, (_, i) => i),
-            );
-            this.chunks = new Array(this.totalChunks).fill(true);
-            this.downloadFile.proxy.percent = 100;
-            this.downloadFile.proxy.status = "success";
-
-            // 秒下文件设置速度（瞬时完成）
-            this.downloadFile.proxy.speed = {
-              currentSpeed: 0,
-              averageSpeed: 0,
-              currentSpeedFormatted: "0 B/s",
-              averageSpeedFormatted: "0 B/s",
-            };
-
-            const dl = this.downloadFile.transfer;
-            dl.updateGlobalStats();
-            dl.triggerUpdate();
-
-            return initResult;
-          }
-
-          // ✅ 断点续传：部分分片已在本地
-          if (
-            initResult.chunks &&
-            Array.isArray(initResult.chunks) &&
-            initResult.chunks.length > 0
-          ) {
-            this.completedChunks = 0;
-            initResult.chunks.forEach((index: number) => {
-              if (index >= 0 && index < this.totalChunks) {
-                this.chunks[index] = true;
-                this.completedChunks++;
-                this.countedChunks.add(index);
-                this.totalChunkSize += this.chunkSize;
-              }
-            });
-            this.updateProgress();
-            isResuming = true;
-
-            logger.info(this.getTag(), "✅ 断点续传，已恢复部分分片", {
-              completedChunks: this.completedChunks,
-              totalChunks: this.totalChunks,
-              percent: Math.round(
-                (this.completedChunks / this.totalChunks) * 100,
-              ),
-            });
-
-            const dl = this.downloadFile.transfer;
-            dl.updateGlobalStats();
-            dl.triggerUpdate();
-          }
-        }
-      } catch (error) {
-        // 回调失败不阻塞下载，回退到全新下载
-        logger.warn(this.getTag(), "断点续传检查失败，将全新下载", error);
-      }
-    }
-
-    // 🔑 如果启用了文件缓存且回调没有返回分片，尝试从 IndexedDB 恢复进度
-    if (
-      this.config.enableFileCache &&
-      !isResuming &&
-      this.completedChunks === 0
-    ) {
-      try {
         const { loadDownloadProgress } = await import("../utils/fileCache");
         const progress = await loadDownloadProgress(fileHash);
+
+        console.log(
+          `[DownloadChunkManager] 📦 IndexedDB 查询结果:`,
+          progress
+            ? `找到 ${progress.chunkIndexes.length}/${progress.totalChunks} 个已完成分片`
+            : "未找到进度记录",
+        );
 
         if (progress && progress.chunkIndexes.length > 0) {
           logger.info(this.getTag(), "✅ 从 IndexedDB 恢复下载进度", {
@@ -187,16 +111,118 @@ export default class DownloadChunkManager extends ChunkManager {
           const dl = this.downloadFile.transfer;
           dl.updateGlobalStats();
           dl.triggerUpdate();
+
+          // ✅ 秒下：IndexedDB 显示所有分片已下载 → 真正的本地秒下
+          if (this.completedChunks === this.totalChunks) {
+            console.log(
+              `[DownloadChunkManager] ⚡ IndexedDB 秒下, fileName=${this.downloadFile.fileName}`,
+            );
+            this.isInstantTransfer = true;
+            this.downloadFile.proxy.percent = 100;
+            this.downloadFile.proxy.status = "success";
+            this.downloadFile.proxy.speed = {
+              currentSpeed: 0,
+              averageSpeed: 0,
+              currentSpeedFormatted: "0 B/s",
+              averageSpeedFormatted: "0 B/s",
+            };
+            return initResult;
+          }
         }
       } catch (error) {
         logger.warn(this.getTag(), "从 IndexedDB 恢复进度失败", error);
       }
     }
 
+    // ========== Step 2: 服务端回调（仅 IndexedDB 无数据时，作为后备补数据） ==========
+    if (!isResuming && downloader.onInitChunkCallback) {
+      try {
+        logger.debug(this.getTag(), "IndexedDB 无数据，调用 onInitChunk 回调补数据", {
+          fileName: this.downloadFile.fileName,
+          fileHash,
+        });
+
+        initResult = await downloader.onInitChunkCallback(
+          this.downloadFile as any,
+          this.totalChunks,
+          fileHash,
+        );
+
+        if (initResult?.fileHash) {
+          logger.info(this.getTag(), "初始化回调返回成功", {
+            fileName: this.downloadFile.fileName,
+          });
+
+          // ✅ 秒下：仅当回调显式标记 isInstantDownload 时生效
+          if (initResult.isInstantDownload === true) {
+            logger.info(this.getTag(), "⚡ 秒下（回调标记），文件已在本地", {
+              fileName: this.downloadFile.fileName,
+            });
+            this.isInstantTransfer = true;
+            this.completedChunks = this.totalChunks;
+            this.totalChunkSize = this.downloadFile.getFileSize();
+            this.countedChunks = new Set(
+              Array.from({ length: this.totalChunks }, (_, i) => i),
+            );
+            this.chunks = new Array(this.totalChunks).fill(true);
+            this.downloadFile.proxy.percent = 100;
+            this.downloadFile.proxy.status = "success";
+            this.downloadFile.proxy.speed = {
+              currentSpeed: 0,
+              averageSpeed: 0,
+              currentSpeedFormatted: "0 B/s",
+              averageSpeedFormatted: "0 B/s",
+            };
+            const dl = this.downloadFile.transfer;
+            dl.updateGlobalStats();
+            dl.triggerUpdate();
+            return initResult;
+          }
+
+          // ✅ 断点续传：使用服务端回调返回的分片列表（仅 IndexedDB 无数据时作为后备）
+          if (
+            initResult.chunks &&
+            Array.isArray(initResult.chunks) &&
+            initResult.chunks.length > 0
+          ) {
+            this.completedChunks = 0;
+            initResult.chunks.forEach((index: number) => {
+              if (index >= 0 && index < this.totalChunks) {
+                this.chunks[index] = true;
+                this.completedChunks++;
+                this.countedChunks.add(index);
+                this.totalChunkSize += this.chunkSize;
+              }
+            });
+            this.updateProgress();
+            isResuming = true;
+
+            logger.info(this.getTag(), "✅ 服务端回调恢复分片（后备）", {
+              completedChunks: this.completedChunks,
+              totalChunks: this.totalChunks,
+              percent: Math.round(
+                (this.completedChunks / this.totalChunks) * 100,
+              ),
+            });
+
+            const dl = this.downloadFile.transfer;
+            dl.updateGlobalStats();
+            dl.triggerUpdate();
+          }
+        }
+      } catch (error) {
+        // 回调失败不阻塞下载，回退到全新下载
+        logger.warn(this.getTag(), "断点续传检查失败，将全新下载", error);
+      }
+    }
+
     // ========== 初始化流式写入或内存模式 ==========
+    // 🔑 如果 fileHandle 已存在（首次下载已选择或回显），直接复用
     if (this.downloadFile.fileHandle) {
       this.streamFileHandle = this.downloadFile.fileHandle;
     } else if (
+      // 🔑 重试时不弹出文件选择对话框（用户已在首次下载时选择或取消过）
+      !(this.downloadFile as any).isRetry &&
       typeof window !== "undefined" &&
       typeof (window as any).showSaveFilePicker === "function"
     ) {
@@ -222,6 +248,11 @@ export default class DownloadChunkManager extends ChunkManager {
     } else {
       logger.info(this.getTag(), "⚠️ 流式写入不可用，使用内存模式");
     }
+
+    console.log(
+      `[DownloadChunkManager] doInit() 完成, completedChunks=${this.completedChunks}, ` +
+        `isResuming=${isResuming}, hasWritable=${!!this.writable}`,
+    );
 
     return initResult || { chunks: [] };
   }
@@ -322,7 +353,12 @@ export default class DownloadChunkManager extends ChunkManager {
    * 将下载进度存入 IndexedDB（节流，最多每 2 秒写一次）
    */
   private async saveProgressToCacheSoft(chunkIndex: number): Promise<void> {
-    if (!this.config.enableFileCache) return;
+    if (!this.config.enableFileCache) {
+      console.log(
+        `[DownloadChunkManager] ⚠️ enableFileCache=false，跳过保存`,
+      );
+      return;
+    }
 
     // 节流：每 2 秒或最后一个分片时才写入
     const now = Date.now();
@@ -344,6 +380,10 @@ export default class DownloadChunkManager extends ChunkManager {
         chunkIndexes.push(chunkIndex);
       }
 
+      console.log(
+        `[DownloadChunkManager] 💾 保存下载进度到 IndexedDB: ${chunkIndexes.length}/${this.totalChunks} 分片, fileHash=${fileHash}`,
+      );
+
       const { saveDownloadProgress } = await import("../utils/fileCache");
       await saveDownloadProgress(
         fileHash,
@@ -355,6 +395,7 @@ export default class DownloadChunkManager extends ChunkManager {
     } catch (error) {
       // 缓存失败不阻塞下载
       logger.warn(this.getTag(), "保存下载进度失败", error);
+      console.error("[DownloadChunkManager] ❌ 保存下载进度失败:", error);
     }
   }
 
@@ -400,13 +441,57 @@ export default class DownloadChunkManager extends ChunkManager {
    */
   protected doAfterStartReset(): void {
     this.chunkBlobs.clear();
-    this.pendingWrites = [];
 
-    // 清理上次可能未关闭的写流
+    // 🔑 不在此处关闭 writable —— 它的关闭是异步的，必须 await 才能确保
+    //    文件锁已释放。关闭逻辑移到 ensureWritableClosed() 中统一处理。
+    this.streamFileHandle = null;
+
+    // 🔑 清理分片 headers 队列，避免上一次取消残留的 Range 头干扰
+    this.downloadFile._chunkHeadersQueue = [];
+
+    // 🔑 重置分片下载相关的状态，避免重试时使用旧数据
+    this._lastProgressSaveTime = 0;
+  }
+
+  /**
+   * 异步清理：等待所有 pending writes 完成 + 关闭上次的 writable
+   *
+   * ⚠️ 必须 await 调用，确保 writable 完全关闭、文件锁释放后，
+   *    doInit() 才能安全调用 createWritable()，否则会因锁冲突抛 InvalidStateError。
+   */
+  public async ensureWritableClosed(): Promise<void> {
+    console.log(
+      `[DownloadChunkManager] ensureWritableClosed() 入口, pendingWrites=${this.pendingWrites.length}, hasWritable=${!!this.writable}`,
+    );
+
+    // 1. 等待所有 fire-and-forget 写入完成（加超时防止永久挂起）
+    if (this.pendingWrites.length > 0) {
+      try {
+        // 🔑 加 5 秒超时，防止 pending writes 永远不 resolve
+        await Promise.race([
+          Promise.allSettled(this.pendingWrites),
+          new Promise<void>((_, reject) =>
+            setTimeout(() => reject(new Error("ensureWritableClosed: 等待写入超时")), 5000),
+          ),
+        ]);
+        console.log(`[DownloadChunkManager] pendingWrites 全部完成`);
+      } catch (e: any) {
+        console.warn(`[DownloadChunkManager] pendingWrites 超时或失败:`, e.message);
+      }
+      this.pendingWrites = [];
+    }
+
+    // 2. 🔑 关闭上次可能未关闭的写流并 await 其完成
     if (this.writable) {
-      this.writable.close().catch(() => {});
+      try {
+        await this.writable.close();
+        console.log(`[DownloadChunkManager] writable 已关闭`);
+      } catch (_) {
+        console.warn(`[DownloadChunkManager] writable.close() 失败:`, _);
+      }
       this.writable = null;
     }
-    this.streamFileHandle = null;
+
+    console.log(`[DownloadChunkManager] ensureWritableClosed() 完成`);
   }
 }

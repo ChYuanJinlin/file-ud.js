@@ -71,7 +71,7 @@ const statusTextMap: Record<string, string> = {
 const isChunkUpload = ref(true);
 
 const buildUploaderConfig = (): uploaderConfigs => ({
-  action(formData) {
+  action(formData, file) {
     return isChunkUpload.value ? uploadFile(formData) : upload();
   },
   multiple: true,
@@ -144,7 +144,14 @@ const buildDownloaderConfig = (): DownloaderConfig => ({
   action(downloadFile) {
     return downloadFileApi(downloadFile.fileName);
   },
-  chunkOptions: isChunkDownload.value ? { chunkSize: 20 * 1024 * 1024 } : null,
+  chunkOptions: isChunkDownload.value
+    ? {
+        chunkSize: 20 * 1024 * 1024,
+        // 🔑 启用 IndexedDB 缓存：下载进度保存到本地 + 重试时从本地恢复
+        //     服务端的 check-file 只追踪上传进度，下载断点续传必须靠客户端 IndexedDB
+        enableFileCache: true,
+      }
+    : null,
 });
 
 const downloader = FileUD.createDownloader(
@@ -153,13 +160,16 @@ const downloader = FileUD.createDownloader(
 );
 
 downloader.onInitChunk = async (downloadFile, totalChunks, fileHash) => {
-  // 分片下载时检查服务端文件状态（断点续传）
-  const { data } = await checkFile({
-    fileHash,
-    fileName: downloadFile.fileName,
-    totalChunks,
-  });
-  return { fileHash: data.fileHash || fileHash, chunks: data.chunks || [] };
+  // 分片下载时检查服务端文件状态（用于秒下检测，服务端不追踪下载进度）
+  const res = await checkFile({ fileHash, fileName: downloadFile.fileName, totalChunks });
+  // 🔑 Ajax 包装器返回的是 response.data，即服务器 JSON 的顶层
+  //    所以 API 实际返回在 res.data 里，不是 res 本身
+  const apiData = res?.data || res || {};
+  console.log(
+    `[App] onInitChunk 回调结果: fileHash=${fileHash}, serverChunks=`,
+    apiData.chunks,
+  );
+  return { fileHash: apiData.fileHash || fileHash, chunks: apiData.chunks || [] };
 };
 
 downloader.beforeTransferCallback = (file) => ({});
@@ -633,7 +643,7 @@ const handleDownload = async (row: any) => {
             row.hashPercent ? `${row.hashPercent}%` : "-"
           }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="240" fixed="right">
+        <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
             <el-button
               v-if="row.status === 'UDLoading'"
@@ -659,6 +669,15 @@ const handleDownload = async (row: any) => {
               >重试</el-button
             >
             <el-button
+              v-if="row.status === 'UDLoading' || row.status === 'paused'"
+              size="small"
+              :icon="CircleClose"
+              type="danger"
+              @click="row.cancel()"
+              >取消</el-button
+            >
+            <el-button
+              v-if="['success', 'error', 'fail', 'cancelled'].includes(row.status)"
               size="small"
               type="danger"
               :icon="Delete"
@@ -869,7 +888,7 @@ const handleDownload = async (row: any) => {
             row.hashPercent ? `${row.hashPercent}%` : "-"
           }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="240" fixed="right">
+        <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
             <el-button
               v-if="row.status === 'UDLoading'"
@@ -895,6 +914,15 @@ const handleDownload = async (row: any) => {
               >重试</el-button
             >
             <el-button
+              v-if="row.status === 'UDLoading' || row.status === 'paused'"
+              size="small"
+              :icon="CircleClose"
+              type="danger"
+              @click="row.cancel()"
+              >取消</el-button
+            >
+            <el-button
+              v-if="['success', 'error', 'fail', 'cancelled'].includes(row.status)"
               size="small"
               type="danger"
               :icon="Delete"

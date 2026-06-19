@@ -73,6 +73,9 @@ export default abstract class ChunkManager<
   public lastUpdateTime: number = 0;
   public lastChunkBytes: number = 0;
 
+  /** 每次 start() 递增的代数计数器，防止旧 run 的异步回调污染新 run 的状态 */
+  private _startGeneration = 0;
+
   public chunkStats: {
     averageTime: number;
     maxTime: number;
@@ -243,6 +246,12 @@ export default abstract class ChunkManager<
 
     this.isCancelled = true;
 
+    // 🔑 清空 PQueue 中所有排队任务，避免旧任务干扰新 run
+    if (this.queue) {
+      this.queue.clear();
+      this.queue = null;
+    }
+
     // 中止所有活跃的 HTTP 请求
 
     this.abortControllers.forEach((controller) => {
@@ -348,6 +357,15 @@ export default abstract class ChunkManager<
   public async start(): Promise<void> {
     const file = this.getTransferFile();
 
+    // 🔑 清除旧 PQueue 中的排队任务，避免干扰新 run
+    if (this.queue) {
+      this.queue.clear();
+    }
+
+    // 🔑 递增代数，使上一轮 cancel 残留的异步回调解散
+    //    避免旧的 handleChunkSuccess/handleChunkError 在 reset 后仍修改状态
+    const currentGen = ++this._startGeneration;
+
     // 触发开始事件（由子类覆写 getStartEventName 指定事件名）
     (file.transfer as any).emit(this.getStartEventName(), {
       file: file.proxy,
@@ -364,10 +382,30 @@ export default abstract class ChunkManager<
     this.lastChunkBytes = 0;
     this.isCancelled = false;
     this.isPaused = false;
+    // 🔑 清除取消后残留的失败分片记录（这些分片在 cancel 的异步清理中被标记为失败，
+    //    但并未经过真正的错误重试），避免 checkStatistics() 误判。
+    this.failedChunks = [];
+    this.retryCountMap.clear();
     this.doAfterStartReset();
 
+    // 🔑 等待上次的 writable 完全关闭（下载场景），避免 createWritable 文件锁冲突
+    //    若因锁冲突失败，错误会在 start() 的 catch 中被静默吞掉，导致重试无反应
+    if (typeof (this as any).ensureWritableClosed === "function") {
+      await (this as any).ensureWritableClosed();
+    }
+
+    // 🔑 doAfterStartReset 清空了 chunkBlobs 等数据，需同步重置分片完成状态
+    //    后续 doInit() 会从服务端 / IndexedDB 恢复真实的已完成分片
+    this.completedChunks = 0;
+    this.chunks = new Array(this.totalChunks).fill(false);
+
     // 重新创建 PQueue
-    this.queue = new PQueue({ concurrency: this.maxConcurrent });
+    // 🔑 必须标记 __v_skip=true，防止 Vue reactive() 包装 PQueue
+    //    否则 PQueue v9 的 ES2022 私有字段（#queue, #idAssigner）无法通过 Vue Proxy 访问
+    //    → TypeError: Cannot read private member from an object whose class did not declare it
+    const queue = new PQueue({ concurrency: this.maxConcurrent });
+    (queue as any).__v_skip = true;
+    this.queue = queue;
 
     // 初始化全局字节统计
     if (!(file as any).__hasCountedTotalBytes__) {
@@ -394,14 +432,17 @@ export default abstract class ChunkManager<
       // 标记文件状态为传输中（分片传输路径统一入口，普通传输由子类在 download/upload 方法中设置）
       file.proxy.status = "UDLoading";
 
-      await this.transferWithConcurrency();
+      await this.transferWithConcurrency(currentGen);
 
       await this.checkStatistics();
     } catch (error) {
       await this.checkStatistics();
       this.chunkEndTime = performance.now();
       this.totalChunkTime = this.chunkEndTime - this.chunkStartTime;
-      if (this.failedChunks.length > 0) throw error;
+      // 🔑 无论是否有 failedChunks，始终向上抛出错误
+      //    若没有 failedChunks（如 doInit 中 createWritable 失败），
+      //    之前的实现会静默吞掉错误 → retry() 的 .catch() 永不触发 → 用户看不出任何反应
+      throw error;
     } finally {
       // 🔑 finally 确保所有出口（正常返回 / 早期 return / 异常）都会记录结束时间
       computeTransferTime(file.proxy.transferTime).end();
@@ -485,6 +526,15 @@ export default abstract class ChunkManager<
 
     // 正常重试循环
     while (retryCount <= maxRetries) {
+      // 🔑 每次重试前检查取消状态，避免取消后继续重试成功
+      if (this.isCancelled) {
+        logger.info(
+          this.getTag(),
+          `分片 ${chunkIndex + 1}/${this.totalChunks} 取消重试（传输已取消）`,
+        );
+        throw new Error("Transfer cancelled");
+      }
+
       try {
         if (retryCount > 0) {
           logger.warn(
@@ -608,11 +658,14 @@ export default abstract class ChunkManager<
 
   /**
    * 并发传输所有分片
+   *
+   * @param startGen - 当前 start() 调用的代数，用于过滤上一轮残留的异步回调
    */
-  protected async transferWithConcurrency(): Promise<void> {
+  protected async transferWithConcurrency(startGen?: number): Promise<void> {
     const transferPromises: Promise<void>[] = [];
     const chunkStartTimes: number[] = [];
     const chunkDurations: number[] = [];
+    let queuedCount = 0;
 
     if (!this.queue) {
       throw new Error("PQueue not initialized. Call start() first.");
@@ -633,21 +686,28 @@ export default abstract class ChunkManager<
       }
 
       this.chunkIndex = chunkIndex + 1;
+      queuedCount++;
 
+      const capturedChunkIndex = chunkIndex;
       transferPromises.push(
         this.queue.add(async () => {
+          // 🔑 代数检查：如果 start() 被重新调用，跳过旧 run 的残留回调
+          if (startGen !== undefined && this._startGeneration !== startGen) {
+            return;
+          }
+
           await this.waitForResume();
 
-          chunkStartTimes[chunkIndex] = performance.now();
+          chunkStartTimes[capturedChunkIndex] = performance.now();
 
           try {
-            await this.chunkWithRetry(chunkIndex);
-            chunkDurations[chunkIndex] =
-              performance.now() - chunkStartTimes[chunkIndex];
+            await this.chunkWithRetry(capturedChunkIndex);
+            chunkDurations[capturedChunkIndex] =
+              performance.now() - chunkStartTimes[capturedChunkIndex];
           } catch (_error) {
-            if (chunkStartTimes[chunkIndex]) {
-              chunkDurations[chunkIndex] =
-                performance.now() - chunkStartTimes[chunkIndex];
+            if (chunkStartTimes[capturedChunkIndex]) {
+              chunkDurations[capturedChunkIndex] =
+                performance.now() - chunkStartTimes[capturedChunkIndex];
             }
             throw _error;
           }

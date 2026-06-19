@@ -213,21 +213,33 @@ export default class TransferFile<T extends TransferFile<T, any>, D = any> {
    * 取消当前传输
    */
   public cancel(fn: ((next: () => void) => void) | void): void {
+    console.log(
+      `[TransferFile] cancel() 被调用, fileName=${this.fileName}, proxyStatus=${this.proxy.status}`,
+    );
+
     if (this.proxy.status !== "UDLoading" && this.proxy.status !== "paused") {
       const type = this.isDownloader() ? "下载" : "上传";
-      console.warn(`没有需要取消的${type}`, this.fileName);
+      console.warn(`[TransferFile] 没有需要取消的${type}: ${this.fileName}, 当前状态=${this.proxy.status}`);
       return;
     }
+
+    console.log(`[TransferFile] ✅ 状态检查通过，执行取消: ${this.fileName}`);
+
+    // 🔑 标记取消状态，防止 onError() 中被 abort 触发的异步错误覆盖 proxy.status
+    this.isCancel = true;
 
     const next = () => {
       const cm = this.getChunkManager();
       if (cm) {
+        console.log(`[TransferFile] 调用 chunkManager.cancel(): ${this.fileName}`);
         cm.cancel();
       } else {
+        console.log(`[TransferFile] 无 chunkManager，调用 abort(): ${this.fileName}`);
         this.abort?.();
       }
       this.transfer.totalTransferredBytes -= this.getFileSize();
       this.transfer.emit("cancel", this.proxy as any);
+      console.log(`[TransferFile] cancel() 完成, proxyStatus=${this.proxy.status}`);
     };
 
     fn ? fn(next) : next();
@@ -277,45 +289,66 @@ export default class TransferFile<T extends TransferFile<T, any>, D = any> {
    * 重试传输
    */
   public async retry(): Promise<void> {
+    console.log(
+      `[TransferFile] retry() 被调用, fileName=${this.fileName}, proxyStatus=${this.proxy.status}`,
+    );
+
     if (!["cancelled", "fail", "error"].includes(this.proxy.status!)) {
       const type = this.isDownloader() ? "下载" : "上传";
-      console.warn(`没有需要重试的${type}`, this.fileName);
+      console.warn(
+        `[TransferFile] 没有需要重试的${type}: ${this.fileName}, 当前状态=${this.proxy.status}`,
+      );
       return;
     }
 
+    console.log(`[TransferFile] ✅ 状态检查通过，开始重试: ${this.fileName}`);
+
     const cm = this.getChunkManager();
+    console.log(`[TransferFile] getChunkManager() 返回:`, cm ? "有(分片模式)" : "null(普通模式)");
+
     if (cm) {
-      const hasFailedChunks = cm.getFailedChunksCount() > 0;
-      const allChunksCompleted = cm.completedChunks === cm.totalChunks;
+      try {
+        const hasFailedChunks = cm.getFailedChunksCount() > 0;
+        const allChunksCompleted = cm.completedChunks === cm.totalChunks;
 
-      logger.info(
-        this.isDownloader() ? "DownloadFile" : "UploadFile",
-        `文件 ${this.fileName} 开始重试`,
-        {
-          fileId: this.fileId,
-          fileName: this.fileName,
-          status: this.proxy.status,
-          completedChunks: cm.completedChunks,
-          totalChunks: cm.totalChunks,
-          hasFailedChunks,
-          allChunksCompleted,
-        },
-      );
+        console.log(
+          `[TransferFile] 重试详情: hasFailedChunks=${hasFailedChunks}, ` +
+          `allChunksCompleted=${allChunksCompleted}, ` +
+          `completedChunks=${cm.completedChunks}/${cm.totalChunks}, ` +
+          `isCancelled=${(cm as any).isCancelled}, isPaused=${(cm as any).isPaused}`,
+        );
 
-      this.proxy.isRetry = true;
-      this.proxy.status = "UDLoading";
+        logger.info(
+          this.isDownloader() ? "DownloadFile" : "UploadFile",
+          `文件 ${this.fileName} 开始重试`,
+          {
+            fileId: this.fileId,
+            fileName: this.fileName,
+            status: this.proxy.status,
+            completedChunks: cm.completedChunks,
+            totalChunks: cm.totalChunks,
+            hasFailedChunks,
+            allChunksCompleted,
+          },
+        );
 
-      if (hasFailedChunks) {
-        await (cm as any).retryFailedChunks().catch((err: any) => {
-          logger.error(
-            this.isDownloader() ? "DownloadFile" : "UploadFile",
-            `文件 ${this.fileName} 重试失败`,
-            err,
-          );
-          this.onError(err);
-        });
-      } else {
+        // 🔑 重置取消/重试标志，清除上一次 cancel 的残留状态
+        this.isCancel = false;
+        this.proxy.isCancel = false;
+        this.proxy.isRetry = true;
+        this.proxy.status = "UDLoading";
+
+        console.log(`[TransferFile] ✅ 已重置标志, proxyStatus=${this.proxy.status}`);
+
+        // 🔑 始终走 start() 路径，统一初始化入口
+        //   原因：取消后的异步清理可能残留 failedChunks，若走 retryFailedChunks()
+        //   会绕过 doAfterStartReset/doInit/writable 创建 → retry 完全无效。
+        //   retryAll 能工作正是因为调用时机更早，失败分片还没入队。
+        console.log(
+          `[TransferFile] 调用 chunkManager.start(), completedChunks=${cm.completedChunks}, totalChunks=${cm.totalChunks}`,
+        );
         await (cm as any).start().catch((err: any) => {
+          console.error(`[TransferFile] ❌ start() 抛出异常:`, err);
           logger.error(
             this.isDownloader() ? "DownloadFile" : "UploadFile",
             `文件 ${this.fileName} 重试失败`,
@@ -323,6 +356,10 @@ export default class TransferFile<T extends TransferFile<T, any>, D = any> {
           );
           this.onError(err);
         });
+        console.log(`[TransferFile] start() 完成, proxyStatus=${this.proxy.status}`);
+      } catch (syncErr: any) {
+        console.error(`[TransferFile] ❌ retry() 同步异常:`, syncErr);
+        this.onError(syncErr);
       }
     } else {
       logger.info(
