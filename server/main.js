@@ -42,7 +42,7 @@ app.use(cors());
 // ============================================
 // 1. 秒传检查接口（适配前端逻辑）
 // ============================================
-app.post("/check-file", (req, res) => {
+app.post("/check-file", async (req, res) => {
   const { fileHash, fileName, fileSize, totalChunks } = req.body;
 
   console.log("🔍 check-file 请求:", { fileHash, fileName, totalChunks });
@@ -81,6 +81,173 @@ app.post("/check-file", (req, res) => {
         totalChunks: totalChunks || 0,
       },
     });
+  }
+
+  // ===== 下载场景回退：按 fileName 查找 dedup 记录 =====
+  // 下载端首次调用时 fileHash = computeFileIdentifier() = fileName-fileSize（非真实 MD5），
+  // 需要按 fileName 匹配 dedup 记录，返回真实 MD5。之后客户端会缓存真实 MD5 到 this.fileHash
+  if (fileName && fs.existsSync(DEDUP_DIR)) {
+    try {
+      const dedupFiles = fs.readdirSync(DEDUP_DIR).filter((f) =>
+        f.endsWith(".json"),
+      );
+      console.log(
+        `🔍 fileName 回退扫描: DEDUP_DIR 中有 ${dedupFiles.length} 个 .json 文件`,
+        { dedupFiles, targetName: fileName },
+      );
+      for (const df of dedupFiles) {
+        const recordPath = path.join(DEDUP_DIR, df);
+        try {
+          const record = JSON.parse(fs.readFileSync(recordPath, "utf-8"));
+          console.log(
+            `   📄 检查 dedup 记录: ${df}, record.fileName="${record.fileName}", record.originalFileName="${record.originalFileName}"`,
+          );
+          if (
+            record.fileName === fileName ||
+            record.originalFileName === fileName
+          ) {
+            // 如果有 fileSize 参数，验证一致性
+            if (fileSize && record.fileSize !== parseInt(fileSize)) {
+              console.log(
+                `   ⚠️ fileSize 不匹配: record.fileSize=${record.fileSize} vs request.fileSize=${fileSize}`,
+              );
+              continue;
+            }
+            const realFileHash = record.fileHash || path.basename(df, ".json");
+            console.log(
+              `🔗 通过 fileName 匹配到 dedup 记录: ${fileName} → realHash=${realFileHash}`,
+            );
+
+            return res.json({
+              success: true,
+              data: {
+                exists: true,
+                isInstantUpload: true,
+                // ⚠️ 不设 isInstantDownload，由客户端做磁盘+哈希验证后自行判断秒下
+                canReuseChunks: false,
+                fileHash: realFileHash, // 🔑 返回真实 MD5，供客户端做哈希校验
+                fileInfo: {
+                  fileName: record.fileName,
+                  fileHash: record.fileHash,
+                  fileSize: record.fileSize,
+                  url: record.url,
+                },
+                chunks: totalChunks
+                  ? Array.from({ length: totalChunks }, (_, i) => i)
+                  : [],
+                totalChunks: totalChunks || 0,
+              },
+            });
+          }
+        } catch (_) {
+          // 单条记录读取失败，继续检查下一条
+        }
+      }
+      console.log(`   ❌ fileName 回退未匹配到任何 dedup 记录, target="${fileName}"`);
+    } catch (_) {
+      // dedup 目录扫描失败，继续原有逻辑
+      console.error("   ❌ DEDUP_DIR 扫描异常:", _);
+    }
+  } else {
+    console.log(
+      `🔍 跳过 fileName 回退: fileName="${fileName}", DEDUP_DIR exists=${fs.existsSync(DEDUP_DIR)}`,
+    );
+  }
+
+  // ===== 下载场景兜底：按磁盘文件直接查找 =====
+  // 如果 dedup 记录不存在（文件可能是直接放在 uploads 目录下的），
+  // 直接检查磁盘是否存在同名文件，存在则返回 exists: true
+  if (fileName) {
+    const fileOnDisk = path.join(UPLOAD_DIR, fileName);
+    if (fs.existsSync(fileOnDisk)) {
+      const diskStats = fs.statSync(fileOnDisk);
+      console.log(
+        `💾 磁盘文件兜底: 找到文件 ${fileName}, size=${diskStats.size} bytes`,
+      );
+
+      // 如果有 fileSize 参数，验证一致性（仅警告，不阻断返回）
+      if (fileSize && diskStats.size !== parseInt(fileSize)) {
+        console.log(
+          `   ⚠️ 磁盘文件大小不匹配: disk=${diskStats.size} vs request=${fileSize}，但仍返回 exists: true`,
+        );
+      }
+
+      // 🔑 尝试读取 dedup 记录获取真实 MD5（用于 IndexedDB key 一致性）
+      let realFileHash = fileHash;
+      let realMD5Found = false;
+      if (fs.existsSync(DEDUP_DIR)) {
+        try {
+          const dedupFiles = fs.readdirSync(DEDUP_DIR).filter((f) => f.endsWith(".json"));
+          for (const df of dedupFiles) {
+            try {
+              const record = JSON.parse(fs.readFileSync(path.join(DEDUP_DIR, df), "utf-8"));
+              if (record.fileName === fileName && record.fileHash && /^[a-f0-9]{32}$/i.test(record.fileHash)) {
+                realFileHash = record.fileHash;
+                realMD5Found = true;
+                console.log(`   🔑 从 dedup 记录获取真实 MD5: ${realFileHash}`);
+                break;
+              }
+            } catch (_) {}
+          }
+        } catch (_) {}
+      }
+
+      // 🔑 如无 dedup 记录中包含真实 MD5，则计算并缓存（仅首次，之后复用 dedup 记录）
+      if (!realMD5Found) {
+        try {
+          const crypto = require("crypto");
+          const hash = crypto.createHash("md5");
+          const stream = fs.createReadStream(fileOnDisk);
+          await new Promise((resolve, reject) => {
+            stream.on("data", (chunk) => hash.update(chunk));
+            stream.on("end", resolve);
+            stream.on("error", reject);
+          });
+          realFileHash = hash.digest("hex");
+          realMD5Found = true;
+          console.log(`   🔑 计算磁盘文件真实 MD5: ${realFileHash}`);
+
+          // 缓存为 dedup 记录，后续请求直接复用
+          const dedupRecord = {
+            fileName: fileName,
+            originalFileName: fileName,
+            fileHash: realFileHash,
+            fileSize: diskStats.size,
+            url: `/uploads/${encodeURIComponent(fileName)}`,
+            createdAt: Date.now(),
+          };
+          fs.writeFileSync(
+            path.join(DEDUP_DIR, `${realFileHash}.json`),
+            JSON.stringify(dedupRecord, null, 2),
+          );
+          console.log(`   💾 已缓存 dedup 记录: ${realFileHash}`);
+        } catch (md5Err) {
+          console.log(`   ⚠️ 计算磁盘文件 MD5 失败: ${md5Err.message}，使用请求中的 fileHash 兜底`);
+        }
+      }
+
+      return res.json({
+        success: true,
+        data: {
+          exists: true,
+          isInstantUpload: false,
+          isInstantDownload: false,
+          canReuseChunks: false,
+          // 🔑 优先返回真实 MD5（可以匹配 dedup 记录），兜底用请求 hash
+          fileHash: realFileHash,
+          fileInfo: {
+            fileName: fileName,
+            fileHash: realFileHash,
+            fileSize: diskStats.size,
+            url: `/uploads/${encodeURIComponent(fileName)}`,
+          },
+          chunks: totalChunks
+            ? Array.from({ length: totalChunks }, (_, i) => i)
+            : [],
+          totalChunks: totalChunks || 0,
+        },
+      });
+    }
   }
 
   // 2. 检查是否有未完成的上传任务（分片可复用）

@@ -7,9 +7,10 @@ import { formatFileSize } from '.';
 import { logger } from './logger';
 
 const DB_NAME = 'file-ud-cache';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE_NAME = 'files';
 const DOWNLOAD_PROGRESS_STORE = 'download-progress';
+const FILE_HANDLE_STORE = 'file-handles';
 
 /**
  * 文件缓存记录结构
@@ -101,6 +102,14 @@ function openDB(): Promise<IDBDatabase> {
         progressStore.createIndex('updatedAt', 'updatedAt', { unique: false });
 
         logger.info('FileCache', 'IndexedDB 下载进度存储初始化成功');
+      }
+
+      // 🔑 创建文件句柄存储空间（跨会话复用 File Handle）
+      if (!db.objectStoreNames.contains(FILE_HANDLE_STORE)) {
+        const handleStore = db.createObjectStore(FILE_HANDLE_STORE, { keyPath: 'fileName' });
+        handleStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+
+        logger.info('FileCache', 'IndexedDB 文件句柄存储初始化成功');
       }
     };
   });
@@ -628,5 +637,153 @@ export async function removeDownloadProgress(fileHash: string): Promise<void> {
     });
   } catch (error) {
     logger.warn('FileCache', '删除下载进度异常', error);
+  }
+}
+
+// ==================== 文件句柄持久化（跨会话复用 File System Access Handle） ====================
+
+/**
+ * 文件句柄缓存记录结构
+ */
+interface FileHandleRecord {
+  fileName: string;           // 文件名（主键）
+  fileHandle: FileSystemFileHandle;  // 文件系统句柄（IndexedDB 可序列化）
+  updatedAt: number;
+}
+
+/**
+ * 将 FileSystemFileHandle 持久化到 IndexedDB（跨页面刷新复用）
+ *
+ * 关键是避免重复调用 showSaveFilePicker() 导致 Chrome 截断已有文件为 0 字节。
+ */
+export async function saveFileHandle(
+  fileName: string,
+  fileHandle: FileSystemFileHandle,
+): Promise<void> {
+  try {
+    const record: FileHandleRecord = {
+      fileName,
+      fileHandle,
+      updatedAt: Date.now(),
+    };
+
+    await executeTransaction(async (db) => {
+      return new Promise<void>((resolve, reject) => {
+        const transaction = db.transaction([FILE_HANDLE_STORE], 'readwrite');
+        const store = transaction.objectStore(FILE_HANDLE_STORE);
+        const request = store.put(record);
+
+        request.onsuccess = () => {
+          logger.debug('FileCache', `文件句柄已持久化: ${fileName}`);
+          resolve();
+        };
+
+        request.onerror = () => {
+          logger.warn('FileCache', '保存文件句柄失败', request.error);
+          reject(request.error);
+        };
+
+        transaction.onerror = () => {
+          logger.warn('FileCache', '事务执行失败', transaction.error);
+          reject(transaction.error);
+        };
+      });
+    });
+  } catch (error) {
+    logger.warn('FileCache', '保存文件句柄异常', error);
+  }
+}
+
+/**
+ * 从 IndexedDB 加载持久化的 FileSystemFileHandle
+ * @returns FileSystemFileHandle（未找到或已失效则返回 null）
+ */
+export async function loadFileHandle(
+  fileName: string,
+): Promise<FileSystemFileHandle | null> {
+  try {
+    return await executeTransaction(async (db) => {
+      return new Promise((resolve, reject) => {
+        const transaction = db.transaction([FILE_HANDLE_STORE], 'readonly');
+        const store = transaction.objectStore(FILE_HANDLE_STORE);
+        const request = store.get(fileName);
+
+        request.onsuccess = () => {
+          const record: FileHandleRecord | undefined = request.result;
+
+          if (!record) {
+            logger.debug('FileCache', `未找到持久化文件句柄: ${fileName}`);
+            resolve(null);
+            return;
+          }
+
+          // 🔑 验证句柄仍有效
+          try {
+            // 简单的权限检查：尝试获取文件信息
+            record.fileHandle.getFile().then(
+              () => {
+                logger.debug('FileCache', `文件句柄有效: ${fileName}`);
+                resolve(record.fileHandle);
+              },
+              () => {
+                logger.warn('FileCache', `文件句柄已失效（权限撤销）: ${fileName}`);
+                // 异步清理失效句柄
+                removeFileHandle(fileName);
+                resolve(null);
+              },
+            );
+          } catch {
+            // 同步方式失败
+            removeFileHandle(fileName);
+            resolve(null);
+          }
+        };
+
+        request.onerror = () => {
+          logger.warn('FileCache', '加载文件句柄失败', request.error);
+          reject(request.error);
+        };
+
+        transaction.onerror = () => {
+          logger.warn('FileCache', '事务执行失败', transaction.error);
+          reject(transaction.error);
+        };
+      });
+    });
+  } catch (error) {
+    logger.warn('FileCache', '加载文件句柄异常', error);
+    return null;
+  }
+}
+
+/**
+ * 删除指定文件的句柄记录
+ */
+export async function removeFileHandle(fileName: string): Promise<void> {
+  try {
+    await executeTransaction(async (db) => {
+      return new Promise<void>((resolve, reject) => {
+        const transaction = db.transaction([FILE_HANDLE_STORE], 'readwrite');
+        const store = transaction.objectStore(FILE_HANDLE_STORE);
+        const request = store.delete(fileName);
+
+        request.onsuccess = () => {
+          logger.debug('FileCache', `已删除文件句柄: ${fileName}`);
+          resolve();
+        };
+
+        request.onerror = () => {
+          logger.warn('FileCache', '删除文件句柄失败', request.error);
+          reject(request.error);
+        };
+
+        transaction.onerror = () => {
+          logger.warn('FileCache', '事务执行失败', transaction.error);
+          reject(transaction.error);
+        };
+      });
+    });
+  } catch (error) {
+    logger.warn('FileCache', '删除文件句柄异常', error);
   }
 }

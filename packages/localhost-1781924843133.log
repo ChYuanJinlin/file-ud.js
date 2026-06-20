@@ -1,0 +1,873 @@
+index.ts:46 [XHRInterceptor] 创建拦截器: Downloader
+index.ts:222 ✅ 全局 XHR 拦截器已安装: Downloader
+index.ts:307 [INFO] [DownloadFile] ✅ 开始分片下载: test6.mp4 {fileId: 'file_mqlrzbiy_t5ecnmuh', fileName: 'test6.mp4'} 
+    at http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/transfer/TransferFile.ts?t=1781924569714:88:14
+DownloadChunkManager.ts:662 [DownloadChunkManager] ensureWritableClosed() 入口, pendingWrites=0, hasWritable=false
+DownloadChunkManager.ts:694 [DownloadChunkManager] ensureWritableClosed() 完成
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 初始化下载任务 {fileName: 'test6.mp4', totalChunks: 92} 
+    at DownloadChunkManager.doInit (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/downloader/DownloadChunkManager.ts?t=1781924569714:43:10)
+DownloadChunkManager.ts:68 [DownloadChunkManager] doInit() 入口, fileName=test6.mp4, completedChunks=0, totalChunks=92
+App.vue:177 [App] onInitChunk 回调: requestHash=test6.mp4-1924753074, serverHash=5f146d9d094c1834738c6efa9fd1e30a, isMD5=true, exists=true, url=http://localhost:3000/uploads/test6.mp4
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 已获取服务端真实文件哈希 {fileName: 'test6.mp4', fileHash: '5f146d9d094c1834738c6efa9fd1e30a'} 
+    at DownloadChunkManager.doInit (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/downloader/DownloadChunkManager.ts?t=1781924569714:67:14)
+index.ts:127 [Monitor Debug] 收到日志: {module: 'DownloadChunkManager', message: '✅ 已获取服务端真实文件哈希', args: Array(1), timestamp: 1781924738393}
+DownloadChunkManager.ts:153 [DownloadChunkManager] 🔍 尝试从 IndexedDB 恢复进度, fileHash=5f146d9d094c1834738c6efa9fd1e30a, enableFileCache=true
+index.ts:307 [INFO] [FileCache] ✅ 加载下载进度: test6.mp4 (92/92) 
+    at request.onsuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/utils/fileCache.ts:457:13)
+DownloadChunkManager.ts:159 [DownloadChunkManager] 📦 IndexedDB 查询结果: 找到 92/92 个已完成分片
+index.ts:307 [INFO] [DownloadChunkManager] ✅ ✅ 从 IndexedDB 恢复下载进度 {fileName: 'test6.mp4', completedChunks: 92, totalChunks: 92} 
+    at DownloadChunkManager.doInit (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/downloader/DownloadChunkManager.ts?t=1781924569714:114:13)
+DownloadChunkManager.ts:208 [DownloadChunkManager] 🗑️ 磁盘文件为空（用户可能删了或选了新位置），清理 IndexedDB 并重新下载
+index.ts:310 [WARN] [DownloadChunkManager] ⚠️ IndexedDB 记录显示全部下载完成，但磁盘文件哈希不匹配，将清除缓存并重新下载 {fileHandleExists: true} 
+    at DownloadChunkManager.doInit (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/downloader/DownloadChunkManager.ts?t=1781924569714:201:15)
+log @ index.ts:310
+warn @ index.ts:384
+doInit @ DownloadChunkManager.ts:273
+await in doInit
+start @ index.ts:425
+await in start
+（匿名） @ TransferFile.ts:178
+（匿名） @ TransferFile.ts:204
+start @ TransferFile.ts:163
+downloadFile @ index.ts:215
+handleDownload @ App.vue:473
+await in handleDownload
+onClick @ App.vue:758
+callWithErrorHandling @ runtime-dom.esm-bundler-DcqTl-gn.js?v=edaaa39c:1864
+callWithAsyncErrorHandling @ runtime-dom.esm-bundler-DcqTl-gn.js?v=edaaa39c:1871
+emit @ runtime-dom.esm-bundler-DcqTl-gn.js?v=edaaa39c:4584
+（匿名） @ runtime-dom.esm-bundler-DcqTl-gn.js?v=edaaa39c:6753
+handleClick @ element-plus.js?v=edaaa39c:15838
+callWithErrorHandling @ runtime-dom.esm-bundler-DcqTl-gn.js?v=edaaa39c:1864
+callWithAsyncErrorHandling @ runtime-dom.esm-bundler-DcqTl-gn.js?v=edaaa39c:1871
+invoker @ runtime-dom.esm-bundler-DcqTl-gn.js?v=edaaa39c:7545
+index.ts:127 [Monitor Debug] 收到日志: {module: 'DownloadChunkManager', message: '⚠️ IndexedDB 记录显示全部下载完成，但磁盘文件哈希不匹配，将清除缓存并重新下载', args: Array(1), timestamp: 1781924738412}
+index.ts:307 [INFO] [DownloadChunkManager] ✅ ✅ 启用流式写入磁盘 {fileName: 'test6.mp4', keepExistingData: false} 
+    at DownloadChunkManager.doInit (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/downloader/DownloadChunkManager.ts?t=1781924569714:312:11)
+DownloadChunkManager.ts:440 [DownloadChunkManager] doInit() 完成, completedChunks=0, isResuming=false, hasWritable=true
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=0-20971519"}, queueLen=1
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=20971520-41943039"}, queueLen=2
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=41943040-62914559"}, queueLen=3
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=62914560-83886079"}, queueLen=4
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=83886080-104857599"}, queueLen=5
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+DownloadChunkManager.ts:572 [DownloadChunkManager] 💾 保存下载进度到 IndexedDB: 1/92 分片, fileHash=5f146d9d094c1834738c6efa9fd1e30a
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 1/92 传输成功 {chunkIndex: 0, completedChunks: 1, totalChunks: 92, percent: 1, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=104857600-125829119"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 2/92 传输成功 {chunkIndex: 1, completedChunks: 2, totalChunks: 92, percent: 2, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=125829120-146800639"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 3/92 传输成功 {chunkIndex: 2, completedChunks: 3, totalChunks: 92, percent: 3, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=146800640-167772159"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 4/92 传输成功 {chunkIndex: 3, completedChunks: 4, totalChunks: 92, percent: 4, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=167772160-188743679"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 5/92 传输成功 {chunkIndex: 4, completedChunks: 5, totalChunks: 92, percent: 5, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=188743680-209715199"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 6/92 传输成功 {chunkIndex: 5, completedChunks: 6, totalChunks: 92, percent: 6, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=209715200-230686719"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 7/92 传输成功 {chunkIndex: 6, completedChunks: 7, totalChunks: 92, percent: 7, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=230686720-251658239"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 8/92 传输成功 {chunkIndex: 7, completedChunks: 8, totalChunks: 92, percent: 8, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=251658240-272629759"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 9/92 传输成功 {chunkIndex: 8, completedChunks: 9, totalChunks: 92, percent: 9, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=272629760-293601279"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 10/92 传输成功 {chunkIndex: 9, completedChunks: 10, totalChunks: 92, percent: 10, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=293601280-314572799"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 11/92 传输成功 {chunkIndex: 10, completedChunks: 11, totalChunks: 92, percent: 11, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=314572800-335544319"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+DownloadChunkManager.ts:572 [DownloadChunkManager] 💾 保存下载进度到 IndexedDB: 12/92 分片, fileHash=5f146d9d094c1834738c6efa9fd1e30a
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 13/92 传输成功 {chunkIndex: 12, completedChunks: 12, totalChunks: 92, percent: 13, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=335544320-356515839"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 12/92 传输成功 {chunkIndex: 11, completedChunks: 13, totalChunks: 92, percent: 14, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=356515840-377487359"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 14/92 传输成功 {chunkIndex: 13, completedChunks: 14, totalChunks: 92, percent: 15, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=377487360-398458879"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 15/92 传输成功 {chunkIndex: 14, completedChunks: 15, totalChunks: 92, percent: 16, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=398458880-419430399"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 16/92 传输成功 {chunkIndex: 15, completedChunks: 16, totalChunks: 92, percent: 17, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=419430400-440401919"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 17/92 传输成功 {chunkIndex: 16, completedChunks: 17, totalChunks: 92, percent: 18, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=440401920-461373439"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 18/92 传输成功 {chunkIndex: 17, completedChunks: 18, totalChunks: 92, percent: 19, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=461373440-482344959"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 19/92 传输成功 {chunkIndex: 18, completedChunks: 19, totalChunks: 92, percent: 20, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=482344960-503316479"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 20/92 传输成功 {chunkIndex: 19, completedChunks: 20, totalChunks: 92, percent: 21, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=503316480-524287999"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 21/92 传输成功 {chunkIndex: 20, completedChunks: 21, totalChunks: 92, percent: 22, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=524288000-545259519"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+DownloadChunkManager.ts:572 [DownloadChunkManager] 💾 保存下载进度到 IndexedDB: 22/92 分片, fileHash=5f146d9d094c1834738c6efa9fd1e30a
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 22/92 传输成功 {chunkIndex: 21, completedChunks: 22, totalChunks: 92, percent: 23, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=545259520-566231039"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 23/92 传输成功 {chunkIndex: 22, completedChunks: 23, totalChunks: 92, percent: 25, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=566231040-587202559"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 24/92 传输成功 {chunkIndex: 23, completedChunks: 24, totalChunks: 92, percent: 26, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=587202560-608174079"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 25/92 传输成功 {chunkIndex: 24, completedChunks: 25, totalChunks: 92, percent: 27, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=608174080-629145599"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 26/92 传输成功 {chunkIndex: 25, completedChunks: 26, totalChunks: 92, percent: 28, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=629145600-650117119"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 27/92 传输成功 {chunkIndex: 26, completedChunks: 27, totalChunks: 92, percent: 29, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=650117120-671088639"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 28/92 传输成功 {chunkIndex: 27, completedChunks: 28, totalChunks: 92, percent: 30, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=671088640-692060159"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+DownloadChunkManager.ts:572 [DownloadChunkManager] 💾 保存下载进度到 IndexedDB: 29/92 分片, fileHash=5f146d9d094c1834738c6efa9fd1e30a
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 29/92 传输成功 {chunkIndex: 28, completedChunks: 29, totalChunks: 92, percent: 31, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=692060160-713031679"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 30/92 传输成功 {chunkIndex: 29, completedChunks: 30, totalChunks: 92, percent: 32, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=713031680-734003199"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 31/92 传输成功 {chunkIndex: 30, completedChunks: 31, totalChunks: 92, percent: 33, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=734003200-754974719"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 32/92 传输成功 {chunkIndex: 31, completedChunks: 32, totalChunks: 92, percent: 34, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=754974720-775946239"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 33/92 传输成功 {chunkIndex: 32, completedChunks: 33, totalChunks: 92, percent: 35, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=775946240-796917759"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 34/92 传输成功 {chunkIndex: 33, completedChunks: 34, totalChunks: 92, percent: 36, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=796917760-817889279"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 35/92 传输成功 {chunkIndex: 34, completedChunks: 35, totalChunks: 92, percent: 38, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=817889280-838860799"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+DownloadChunkManager.ts:572 [DownloadChunkManager] 💾 保存下载进度到 IndexedDB: 36/92 分片, fileHash=5f146d9d094c1834738c6efa9fd1e30a
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 36/92 传输成功 {chunkIndex: 35, completedChunks: 36, totalChunks: 92, percent: 39, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=838860800-859832319"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 37/92 传输成功 {chunkIndex: 36, completedChunks: 37, totalChunks: 92, percent: 40, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=859832320-880803839"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 38/92 传输成功 {chunkIndex: 37, completedChunks: 38, totalChunks: 92, percent: 41, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=880803840-901775359"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 39/92 传输成功 {chunkIndex: 38, completedChunks: 39, totalChunks: 92, percent: 42, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=901775360-922746879"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 40/92 传输成功 {chunkIndex: 39, completedChunks: 40, totalChunks: 92, percent: 43, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=922746880-943718399"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 41/92 传输成功 {chunkIndex: 40, completedChunks: 41, totalChunks: 92, percent: 44, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=943718400-964689919"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 42/92 传输成功 {chunkIndex: 41, completedChunks: 42, totalChunks: 92, percent: 45, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=964689920-985661439"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+DownloadChunkManager.ts:572 [DownloadChunkManager] 💾 保存下载进度到 IndexedDB: 43/92 分片, fileHash=5f146d9d094c1834738c6efa9fd1e30a
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 43/92 传输成功 {chunkIndex: 42, completedChunks: 43, totalChunks: 92, percent: 46, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=985661440-1006632959"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 44/92 传输成功 {chunkIndex: 43, completedChunks: 44, totalChunks: 92, percent: 47, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1006632960-1027604479"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 45/92 传输成功 {chunkIndex: 44, completedChunks: 45, totalChunks: 92, percent: 48, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1027604480-1048575999"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 46/92 传输成功 {chunkIndex: 45, completedChunks: 46, totalChunks: 92, percent: 50, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1048576000-1069547519"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 47/92 传输成功 {chunkIndex: 46, completedChunks: 47, totalChunks: 92, percent: 51, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1069547520-1090519039"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 48/92 传输成功 {chunkIndex: 47, completedChunks: 48, totalChunks: 92, percent: 52, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1090519040-1111490559"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 49/92 传输成功 {chunkIndex: 48, completedChunks: 49, totalChunks: 92, percent: 53, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1111490560-1132462079"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+DownloadChunkManager.ts:572 [DownloadChunkManager] 💾 保存下载进度到 IndexedDB: 50/92 分片, fileHash=5f146d9d094c1834738c6efa9fd1e30a
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 50/92 传输成功 {chunkIndex: 49, completedChunks: 50, totalChunks: 92, percent: 54, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1132462080-1153433599"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 51/92 传输成功 {chunkIndex: 50, completedChunks: 51, totalChunks: 92, percent: 55, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1153433600-1174405119"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 52/92 传输成功 {chunkIndex: 51, completedChunks: 52, totalChunks: 92, percent: 56, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1174405120-1195376639"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 53/92 传输成功 {chunkIndex: 52, completedChunks: 53, totalChunks: 92, percent: 57, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1195376640-1216348159"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 54/92 传输成功 {chunkIndex: 53, completedChunks: 54, totalChunks: 92, percent: 58, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1216348160-1237319679"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 55/92 传输成功 {chunkIndex: 54, completedChunks: 55, totalChunks: 92, percent: 59, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1237319680-1258291199"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 56/92 传输成功 {chunkIndex: 55, completedChunks: 56, totalChunks: 92, percent: 60, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1258291200-1279262719"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+DownloadChunkManager.ts:572 [DownloadChunkManager] 💾 保存下载进度到 IndexedDB: 57/92 分片, fileHash=5f146d9d094c1834738c6efa9fd1e30a
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 57/92 传输成功 {chunkIndex: 56, completedChunks: 57, totalChunks: 92, percent: 61, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1279262720-1300234239"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 58/92 传输成功 {chunkIndex: 57, completedChunks: 58, totalChunks: 92, percent: 63, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1300234240-1321205759"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 59/92 传输成功 {chunkIndex: 58, completedChunks: 59, totalChunks: 92, percent: 64, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1321205760-1342177279"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 60/92 传输成功 {chunkIndex: 59, completedChunks: 60, totalChunks: 92, percent: 65, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1342177280-1363148799"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 61/92 传输成功 {chunkIndex: 60, completedChunks: 61, totalChunks: 92, percent: 66, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1363148800-1384120319"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 62/92 传输成功 {chunkIndex: 61, completedChunks: 62, totalChunks: 92, percent: 67, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1384120320-1405091839"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 63/92 传输成功 {chunkIndex: 62, completedChunks: 63, totalChunks: 92, percent: 68, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1405091840-1426063359"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+DownloadChunkManager.ts:572 [DownloadChunkManager] 💾 保存下载进度到 IndexedDB: 64/92 分片, fileHash=5f146d9d094c1834738c6efa9fd1e30a
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 64/92 传输成功 {chunkIndex: 63, completedChunks: 64, totalChunks: 92, percent: 69, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1426063360-1447034879"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 65/92 传输成功 {chunkIndex: 64, completedChunks: 65, totalChunks: 92, percent: 70, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1447034880-1468006399"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 66/92 传输成功 {chunkIndex: 65, completedChunks: 66, totalChunks: 92, percent: 71, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1468006400-1488977919"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 67/92 传输成功 {chunkIndex: 66, completedChunks: 67, totalChunks: 92, percent: 72, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1488977920-1509949439"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 68/92 传输成功 {chunkIndex: 67, completedChunks: 68, totalChunks: 92, percent: 73, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1509949440-1530920959"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 69/92 传输成功 {chunkIndex: 68, completedChunks: 69, totalChunks: 92, percent: 75, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1530920960-1551892479"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 70/92 传输成功 {chunkIndex: 69, completedChunks: 70, totalChunks: 92, percent: 76, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1551892480-1572863999"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+DownloadChunkManager.ts:572 [DownloadChunkManager] 💾 保存下载进度到 IndexedDB: 71/92 分片, fileHash=5f146d9d094c1834738c6efa9fd1e30a
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 71/92 传输成功 {chunkIndex: 70, completedChunks: 71, totalChunks: 92, percent: 77, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1572864000-1593835519"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 72/92 传输成功 {chunkIndex: 71, completedChunks: 72, totalChunks: 92, percent: 78, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1593835520-1614807039"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 73/92 传输成功 {chunkIndex: 72, completedChunks: 73, totalChunks: 92, percent: 79, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1614807040-1635778559"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 74/92 传输成功 {chunkIndex: 73, completedChunks: 74, totalChunks: 92, percent: 80, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1635778560-1656750079"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 75/92 传输成功 {chunkIndex: 74, completedChunks: 75, totalChunks: 92, percent: 81, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1656750080-1677721599"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 76/92 传输成功 {chunkIndex: 75, completedChunks: 76, totalChunks: 92, percent: 82, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1677721600-1698693119"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 77/92 传输成功 {chunkIndex: 76, completedChunks: 77, totalChunks: 92, percent: 83, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1698693120-1719664639"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+DownloadChunkManager.ts:572 [DownloadChunkManager] 💾 保存下载进度到 IndexedDB: 78/92 分片, fileHash=5f146d9d094c1834738c6efa9fd1e30a
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 78/92 传输成功 {chunkIndex: 77, completedChunks: 78, totalChunks: 92, percent: 84, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1719664640-1740636159"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 79/92 传输成功 {chunkIndex: 78, completedChunks: 79, totalChunks: 92, percent: 85, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1740636160-1761607679"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 80/92 传输成功 {chunkIndex: 79, completedChunks: 80, totalChunks: 92, percent: 86, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1761607680-1782579199"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 81/92 传输成功 {chunkIndex: 80, completedChunks: 81, totalChunks: 92, percent: 88, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1782579200-1803550719"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 82/92 传输成功 {chunkIndex: 81, completedChunks: 82, totalChunks: 92, percent: 89, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1803550720-1824522239"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 83/92 传输成功 {chunkIndex: 82, completedChunks: 83, totalChunks: 92, percent: 90, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1824522240-1845493759"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 84/92 传输成功 {chunkIndex: 83, completedChunks: 84, totalChunks: 92, percent: 91, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1845493760-1866465279"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+DownloadChunkManager.ts:572 [DownloadChunkManager] 💾 保存下载进度到 IndexedDB: 85/92 分片, fileHash=5f146d9d094c1834738c6efa9fd1e30a
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 85/92 传输成功 {chunkIndex: 84, completedChunks: 85, totalChunks: 92, percent: 92, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1866465280-1887436799"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 86/92 传输成功 {chunkIndex: 85, completedChunks: 86, totalChunks: 92, percent: 93, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1887436800-1908408319"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 87/92 传输成功 {chunkIndex: 86, completedChunks: 87, totalChunks: 92, percent: 94, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1908408320-1924753073"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 88/92 传输成功 {chunkIndex: 87, completedChunks: 88, totalChunks: 92, percent: 95, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 89/92 传输成功 {chunkIndex: 88, completedChunks: 89, totalChunks: 92, percent: 96, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 90/92 传输成功 {chunkIndex: 89, completedChunks: 90, totalChunks: 92, percent: 97, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 91/92 传输成功 {chunkIndex: 90, completedChunks: 91, totalChunks: 92, percent: 98, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+DownloadChunkManager.ts:572 [DownloadChunkManager] 💾 保存下载进度到 IndexedDB: 92/92 分片, fileHash=5f146d9d094c1834738c6efa9fd1e30a
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 92/92 传输成功 {chunkIndex: 91, completedChunks: 92, totalChunks: 92, percent: 99, size: 16344754} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+index.ts:307 [INFO] [DownloadChunkManager] ✅ ✅ 流式写入完成，文件已落盘 {fileName: 'test6.mp4'} 
+    at DownloadChunkManager.doMergeChunks (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/downloader/DownloadChunkManager.ts?t=1781924569714:351:12)
+index.ts:127 [Monitor Debug] 收到日志: {module: 'DownloadChunkManager', message: '✅ ✅ 流式写入完成，文件已落盘', args: Array(1), timestamp: 1781924777332}
+App.vue:261 下载成功: FileSystemFileHandle {kind: 'file', name: 'test6.mp4'}
+index.ts:307 [INFO] [DownloadFile] ✅ 文件传输成功: test6.mp4 {fileId: 'file_mqlrzbiy_t5ecnmuh', fileName: 'test6.mp4', fileSize: 1924753074} 
+    at DownloadFile.onSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/transfer/TransferFile.ts?t=1781924569714:260:10)
+index.ts:127 [Monitor Debug] 收到日志: {module: 'DownloadFile', message: '✅ 文件传输成功: test6.mp4', args: Array(1), timestamp: 1781924777333}
+index.ts:157 [Monitor Debug] 匹配到上传成功: {fileId: 'file_mqlrzbiy_t5ecnmuh', hasFileId: true}
+TransferFile.ts:430 所有文件传输完成
+index.ts:222 ✅ 全局 XHR 拦截器已安装: Downloader
+index.ts:307 [INFO] [DownloadFile] ✅ 开始分片下载: test6.mp4 {fileId: 'file_mqls0bqa_1y8dam9x', fileName: 'test6.mp4'} 
+    at http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/transfer/TransferFile.ts?t=1781924569714:88:14
+DownloadChunkManager.ts:662 [DownloadChunkManager] ensureWritableClosed() 入口, pendingWrites=0, hasWritable=false
+DownloadChunkManager.ts:694 [DownloadChunkManager] ensureWritableClosed() 完成
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 初始化下载任务 {fileName: 'test6.mp4', totalChunks: 92} 
+    at DownloadChunkManager.doInit (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/downloader/DownloadChunkManager.ts?t=1781924569714:43:10)
+DownloadChunkManager.ts:68 [DownloadChunkManager] doInit() 入口, fileName=test6.mp4, completedChunks=0, totalChunks=92
+App.vue:177 [App] onInitChunk 回调: requestHash=test6.mp4-1924753074, serverHash=5f146d9d094c1834738c6efa9fd1e30a, isMD5=true, exists=true, url=http://localhost:3000/uploads/test6.mp4
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 已获取服务端真实文件哈希 {fileName: 'test6.mp4', fileHash: '5f146d9d094c1834738c6efa9fd1e30a'}fileHash: "5f146d9d094c1834738c6efa9fd1e30a"fileName: "test6.mp4"[[Prototype]]: Object 
+    at DownloadChunkManager.doInit (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/downloader/DownloadChunkManager.ts?t=1781924569714:67:14)
+index.ts:127 [Monitor Debug] 收到日志: {module: 'DownloadChunkManager', message: '✅ 已获取服务端真实文件哈希', args: Array(1), timestamp: 1781924785318}
+DownloadChunkManager.ts:153 [DownloadChunkManager] 🔍 尝试从 IndexedDB 恢复进度, fileHash=5f146d9d094c1834738c6efa9fd1e30a, enableFileCache=true
+index.ts:307 [INFO] [FileCache] ✅ 加载下载进度: test6.mp4 (92/92) 
+    at request.onsuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/utils/fileCache.ts:457:13)
+DownloadChunkManager.ts:159 [DownloadChunkManager] 📦 IndexedDB 查询结果: 找到 92/92 个已完成分片
+index.ts:307 [INFO] [DownloadChunkManager] ✅ ✅ 从 IndexedDB 恢复下载进度 {fileName: 'test6.mp4', completedChunks: 92, totalChunks: 92} 
+    at DownloadChunkManager.doInit (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/downloader/DownloadChunkManager.ts?t=1781924569714:114:13)
+DownloadChunkManager.ts:208 [DownloadChunkManager] 🗑️ 磁盘文件为空（用户可能删了或选了新位置），清理 IndexedDB 并重新下载
+index.ts:310 [WARN] [DownloadChunkManager] ⚠️ IndexedDB 记录显示全部下载完成，但磁盘文件哈希不匹配，将清除缓存并重新下载 {fileHandleExists: true} 
+    at DownloadChunkManager.doInit (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/downloader/DownloadChunkManager.ts?t=1781924569714:201:15)
+log @ index.ts:310
+warn @ index.ts:384
+doInit @ DownloadChunkManager.ts:273
+await in doInit
+start @ index.ts:425
+await in start
+（匿名） @ TransferFile.ts:178
+（匿名） @ TransferFile.ts:204
+start @ TransferFile.ts:163
+downloadFile @ index.ts:215
+handleDownload @ App.vue:473
+await in handleDownload
+onClick @ App.vue:758
+callWithErrorHandling @ runtime-dom.esm-bundler-DcqTl-gn.js?v=edaaa39c:1864
+callWithAsyncErrorHandling @ runtime-dom.esm-bundler-DcqTl-gn.js?v=edaaa39c:1871
+emit @ runtime-dom.esm-bundler-DcqTl-gn.js?v=edaaa39c:4584
+（匿名） @ runtime-dom.esm-bundler-DcqTl-gn.js?v=edaaa39c:6753
+handleClick @ element-plus.js?v=edaaa39c:15838
+callWithErrorHandling @ runtime-dom.esm-bundler-DcqTl-gn.js?v=edaaa39c:1864
+callWithAsyncErrorHandling @ runtime-dom.esm-bundler-DcqTl-gn.js?v=edaaa39c:1871
+invoker @ runtime-dom.esm-bundler-DcqTl-gn.js?v=edaaa39c:7545
+index.ts:127 [Monitor Debug] 收到日志: {module: 'DownloadChunkManager', message: '⚠️ IndexedDB 记录显示全部下载完成，但磁盘文件哈希不匹配，将清除缓存并重新下载', args: Array(1), timestamp: 1781924785321}
+index.ts:307 [INFO] [DownloadChunkManager] ✅ ✅ 启用流式写入磁盘 {fileName: 'test6.mp4', keepExistingData: false} 
+    at DownloadChunkManager.doInit (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/downloader/DownloadChunkManager.ts?t=1781924569714:312:11)
+DownloadChunkManager.ts:440 [DownloadChunkManager] doInit() 完成, completedChunks=0, isResuming=false, hasWritable=true
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=0-20971519"}, queueLen=1
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=20971520-41943039"}, queueLen=2
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=41943040-62914559"}, queueLen=3
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=62914560-83886079"}, queueLen=4
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=83886080-104857599"}, queueLen=5
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+DownloadChunkManager.ts:572 [DownloadChunkManager] 💾 保存下载进度到 IndexedDB: 1/92 分片, fileHash=5f146d9d094c1834738c6efa9fd1e30a
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 1/92 传输成功 {chunkIndex: 0, completedChunks: 1, totalChunks: 92, percent: 1, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=104857600-125829119"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 2/92 传输成功 {chunkIndex: 1, completedChunks: 2, totalChunks: 92, percent: 2, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=125829120-146800639"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 4/92 传输成功 {chunkIndex: 3, completedChunks: 3, totalChunks: 92, percent: 3, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=146800640-167772159"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 3/92 传输成功 {chunkIndex: 2, completedChunks: 4, totalChunks: 92, percent: 4, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=167772160-188743679"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 5/92 传输成功 {chunkIndex: 4, completedChunks: 5, totalChunks: 92, percent: 5, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=188743680-209715199"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 6/92 传输成功 {chunkIndex: 5, completedChunks: 6, totalChunks: 92, percent: 6, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=209715200-230686719"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 7/92 传输成功 {chunkIndex: 6, completedChunks: 7, totalChunks: 92, percent: 7, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=230686720-251658239"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 8/92 传输成功 {chunkIndex: 7, completedChunks: 8, totalChunks: 92, percent: 8, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=251658240-272629759"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 9/92 传输成功 {chunkIndex: 8, completedChunks: 9, totalChunks: 92, percent: 9, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=272629760-293601279"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 10/92 传输成功 {chunkIndex: 9, completedChunks: 10, totalChunks: 92, percent: 10, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=293601280-314572799"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 11/92 传输成功 {chunkIndex: 10, completedChunks: 11, totalChunks: 92, percent: 11, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=314572800-335544319"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 12/92 传输成功 {chunkIndex: 11, completedChunks: 12, totalChunks: 92, percent: 13, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=335544320-356515839"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+DownloadChunkManager.ts:572 [DownloadChunkManager] 💾 保存下载进度到 IndexedDB: 13/92 分片, fileHash=5f146d9d094c1834738c6efa9fd1e30a
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 14/92 传输成功 {chunkIndex: 13, completedChunks: 13, totalChunks: 92, percent: 14, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=356515840-377487359"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 15/92 传输成功 {chunkIndex: 14, completedChunks: 14, totalChunks: 92, percent: 15, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=377487360-398458879"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 13/92 传输成功 {chunkIndex: 12, completedChunks: 15, totalChunks: 92, percent: 16, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=398458880-419430399"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 17/92 传输成功 {chunkIndex: 16, completedChunks: 16, totalChunks: 92, percent: 17, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=419430400-440401919"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 16/92 传输成功 {chunkIndex: 15, completedChunks: 17, totalChunks: 92, percent: 18, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=440401920-461373439"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 18/92 传输成功 {chunkIndex: 17, completedChunks: 18, totalChunks: 92, percent: 19, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=461373440-482344959"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 19/92 传输成功 {chunkIndex: 18, completedChunks: 19, totalChunks: 92, percent: 20, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=482344960-503316479"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 20/92 传输成功 {chunkIndex: 19, completedChunks: 20, totalChunks: 92, percent: 21, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=503316480-524287999"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 21/92 传输成功 {chunkIndex: 20, completedChunks: 21, totalChunks: 92, percent: 22, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=524288000-545259519"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 22/92 传输成功 {chunkIndex: 21, completedChunks: 22, totalChunks: 92, percent: 23, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=545259520-566231039"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+DownloadChunkManager.ts:572 [DownloadChunkManager] 💾 保存下载进度到 IndexedDB: 23/92 分片, fileHash=5f146d9d094c1834738c6efa9fd1e30a
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 23/92 传输成功 {chunkIndex: 22, completedChunks: 23, totalChunks: 92, percent: 25, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=566231040-587202559"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 24/92 传输成功 {chunkIndex: 23, completedChunks: 24, totalChunks: 92, percent: 26, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=587202560-608174079"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 25/92 传输成功 {chunkIndex: 24, completedChunks: 25, totalChunks: 92, percent: 27, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=608174080-629145599"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 26/92 传输成功 {chunkIndex: 25, completedChunks: 26, totalChunks: 92, percent: 28, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=629145600-650117119"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 27/92 传输成功 {chunkIndex: 26, completedChunks: 27, totalChunks: 92, percent: 29, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=650117120-671088639"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 28/92 传输成功 {chunkIndex: 27, completedChunks: 28, totalChunks: 92, percent: 30, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=671088640-692060159"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+DownloadChunkManager.ts:572 [DownloadChunkManager] 💾 保存下载进度到 IndexedDB: 29/92 分片, fileHash=5f146d9d094c1834738c6efa9fd1e30a
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 29/92 传输成功 {chunkIndex: 28, completedChunks: 29, totalChunks: 92, percent: 31, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=692060160-713031679"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 30/92 传输成功 {chunkIndex: 29, completedChunks: 30, totalChunks: 92, percent: 32, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=713031680-734003199"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 31/92 传输成功 {chunkIndex: 30, completedChunks: 31, totalChunks: 92, percent: 33, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=734003200-754974719"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 32/92 传输成功 {chunkIndex: 31, completedChunks: 32, totalChunks: 92, percent: 34, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=754974720-775946239"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 33/92 传输成功 {chunkIndex: 32, completedChunks: 33, totalChunks: 92, percent: 35, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=775946240-796917759"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 34/92 传输成功 {chunkIndex: 33, completedChunks: 34, totalChunks: 92, percent: 36, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=796917760-817889279"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 35/92 传输成功 {chunkIndex: 34, completedChunks: 35, totalChunks: 92, percent: 38, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=817889280-838860799"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+DownloadChunkManager.ts:572 [DownloadChunkManager] 💾 保存下载进度到 IndexedDB: 36/92 分片, fileHash=5f146d9d094c1834738c6efa9fd1e30a
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 36/92 传输成功 {chunkIndex: 35, completedChunks: 36, totalChunks: 92, percent: 39, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=838860800-859832319"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 37/92 传输成功 {chunkIndex: 36, completedChunks: 37, totalChunks: 92, percent: 40, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=859832320-880803839"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 38/92 传输成功 {chunkIndex: 37, completedChunks: 38, totalChunks: 92, percent: 41, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=880803840-901775359"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 39/92 传输成功 {chunkIndex: 38, completedChunks: 39, totalChunks: 92, percent: 42, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=901775360-922746879"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 40/92 传输成功 {chunkIndex: 39, completedChunks: 40, totalChunks: 92, percent: 43, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=922746880-943718399"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 41/92 传输成功 {chunkIndex: 40, completedChunks: 41, totalChunks: 92, percent: 44, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=943718400-964689919"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 42/92 传输成功 {chunkIndex: 41, completedChunks: 42, totalChunks: 92, percent: 45, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=964689920-985661439"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+DownloadChunkManager.ts:572 [DownloadChunkManager] 💾 保存下载进度到 IndexedDB: 43/92 分片, fileHash=5f146d9d094c1834738c6efa9fd1e30a
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 43/92 传输成功 {chunkIndex: 42, completedChunks: 43, totalChunks: 92, percent: 46, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=985661440-1006632959"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 44/92 传输成功 {chunkIndex: 43, completedChunks: 44, totalChunks: 92, percent: 47, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1006632960-1027604479"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 45/92 传输成功 {chunkIndex: 44, completedChunks: 45, totalChunks: 92, percent: 48, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1027604480-1048575999"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 46/92 传输成功 {chunkIndex: 45, completedChunks: 46, totalChunks: 92, percent: 50, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1048576000-1069547519"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 47/92 传输成功 {chunkIndex: 46, completedChunks: 47, totalChunks: 92, percent: 51, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1069547520-1090519039"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 48/92 传输成功 {chunkIndex: 47, completedChunks: 48, totalChunks: 92, percent: 52, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1090519040-1111490559"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 49/92 传输成功 {chunkIndex: 48, completedChunks: 49, totalChunks: 92, percent: 53, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1111490560-1132462079"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+DownloadChunkManager.ts:572 [DownloadChunkManager] 💾 保存下载进度到 IndexedDB: 50/92 分片, fileHash=5f146d9d094c1834738c6efa9fd1e30a
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 50/92 传输成功 {chunkIndex: 49, completedChunks: 50, totalChunks: 92, percent: 54, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1132462080-1153433599"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 51/92 传输成功 {chunkIndex: 50, completedChunks: 51, totalChunks: 92, percent: 55, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1153433600-1174405119"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 52/92 传输成功 {chunkIndex: 51, completedChunks: 52, totalChunks: 92, percent: 56, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1174405120-1195376639"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 53/92 传输成功 {chunkIndex: 52, completedChunks: 53, totalChunks: 92, percent: 57, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1195376640-1216348159"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 54/92 传输成功 {chunkIndex: 53, completedChunks: 54, totalChunks: 92, percent: 58, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1216348160-1237319679"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 55/92 传输成功 {chunkIndex: 54, completedChunks: 55, totalChunks: 92, percent: 59, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1237319680-1258291199"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 56/92 传输成功 {chunkIndex: 55, completedChunks: 56, totalChunks: 92, percent: 60, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1258291200-1279262719"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+DownloadChunkManager.ts:572 [DownloadChunkManager] 💾 保存下载进度到 IndexedDB: 57/92 分片, fileHash=5f146d9d094c1834738c6efa9fd1e30a
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 57/92 传输成功 {chunkIndex: 56, completedChunks: 57, totalChunks: 92, percent: 61, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1279262720-1300234239"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 58/92 传输成功 {chunkIndex: 57, completedChunks: 58, totalChunks: 92, percent: 63, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1300234240-1321205759"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 59/92 传输成功 {chunkIndex: 58, completedChunks: 59, totalChunks: 92, percent: 64, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1321205760-1342177279"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 60/92 传输成功 {chunkIndex: 59, completedChunks: 60, totalChunks: 92, percent: 65, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1342177280-1363148799"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 61/92 传输成功 {chunkIndex: 60, completedChunks: 61, totalChunks: 92, percent: 66, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1363148800-1384120319"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 62/92 传输成功 {chunkIndex: 61, completedChunks: 62, totalChunks: 92, percent: 67, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1384120320-1405091839"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 63/92 传输成功 {chunkIndex: 62, completedChunks: 63, totalChunks: 92, percent: 68, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1405091840-1426063359"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+DownloadChunkManager.ts:572 [DownloadChunkManager] 💾 保存下载进度到 IndexedDB: 64/92 分片, fileHash=5f146d9d094c1834738c6efa9fd1e30a
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 64/92 传输成功 {chunkIndex: 63, completedChunks: 64, totalChunks: 92, percent: 69, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1426063360-1447034879"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 65/92 传输成功 {chunkIndex: 64, completedChunks: 65, totalChunks: 92, percent: 70, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1447034880-1468006399"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 66/92 传输成功 {chunkIndex: 65, completedChunks: 66, totalChunks: 92, percent: 71, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1468006400-1488977919"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 67/92 传输成功 {chunkIndex: 66, completedChunks: 67, totalChunks: 92, percent: 72, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1488977920-1509949439"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 68/92 传输成功 {chunkIndex: 67, completedChunks: 68, totalChunks: 92, percent: 73, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1509949440-1530920959"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 69/92 传输成功 {chunkIndex: 68, completedChunks: 69, totalChunks: 92, percent: 75, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1530920960-1551892479"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 70/92 传输成功 {chunkIndex: 69, completedChunks: 70, totalChunks: 92, percent: 76, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1551892480-1572863999"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+DownloadChunkManager.ts:572 [DownloadChunkManager] 💾 保存下载进度到 IndexedDB: 71/92 分片, fileHash=5f146d9d094c1834738c6efa9fd1e30a
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 71/92 传输成功 {chunkIndex: 70, completedChunks: 71, totalChunks: 92, percent: 77, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1572864000-1593835519"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 72/92 传输成功 {chunkIndex: 71, completedChunks: 72, totalChunks: 92, percent: 78, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1593835520-1614807039"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 73/92 传输成功 {chunkIndex: 72, completedChunks: 73, totalChunks: 92, percent: 79, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1614807040-1635778559"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 74/92 传输成功 {chunkIndex: 73, completedChunks: 74, totalChunks: 92, percent: 80, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1635778560-1656750079"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 75/92 传输成功 {chunkIndex: 74, completedChunks: 75, totalChunks: 92, percent: 81, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1656750080-1677721599"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 76/92 传输成功 {chunkIndex: 75, completedChunks: 76, totalChunks: 92, percent: 82, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1677721600-1698693119"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 77/92 传输成功 {chunkIndex: 76, completedChunks: 77, totalChunks: 92, percent: 83, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1698693120-1719664639"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+DownloadChunkManager.ts:572 [DownloadChunkManager] 💾 保存下载进度到 IndexedDB: 78/92 分片, fileHash=5f146d9d094c1834738c6efa9fd1e30a
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 78/92 传输成功 {chunkIndex: 77, completedChunks: 78, totalChunks: 92, percent: 84, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1719664640-1740636159"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 79/92 传输成功 {chunkIndex: 78, completedChunks: 79, totalChunks: 92, percent: 85, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1740636160-1761607679"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 80/92 传输成功 {chunkIndex: 79, completedChunks: 80, totalChunks: 92, percent: 86, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1761607680-1782579199"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 81/92 传输成功 {chunkIndex: 80, completedChunks: 81, totalChunks: 92, percent: 88, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1782579200-1803550719"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 82/92 传输成功 {chunkIndex: 81, completedChunks: 82, totalChunks: 92, percent: 89, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1803550720-1824522239"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 83/92 传输成功 {chunkIndex: 82, completedChunks: 83, totalChunks: 92, percent: 90, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1824522240-1845493759"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 84/92 传输成功 {chunkIndex: 83, completedChunks: 84, totalChunks: 92, percent: 91, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1845493760-1866465279"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+DownloadChunkManager.ts:572 [DownloadChunkManager] 💾 保存下载进度到 IndexedDB: 85/92 分片, fileHash=5f146d9d094c1834738c6efa9fd1e30a
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 85/92 传输成功 {chunkIndex: 84, completedChunks: 85, totalChunks: 92, percent: 92, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1866465280-1887436799"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 86/92 传输成功 {chunkIndex: 85, completedChunks: 86, totalChunks: 92, percent: 93, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1887436800-1908408319"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 87/92 传输成功 {chunkIndex: 86, completedChunks: 87, totalChunks: 92, percent: 94, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:413 [DownloadFile] _doHttpRequest 调用 cfg.action, headers={"Range":"bytes=1908408320-1924753073"}, queueLen=1
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 88/92 传输成功 {chunkIndex: 87, completedChunks: 88, totalChunks: 92, percent: 95, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 89/92 传输成功 {chunkIndex: 88, completedChunks: 89, totalChunks: 92, percent: 96, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 90/92 传输成功 {chunkIndex: 89, completedChunks: 90, totalChunks: 92, percent: 97, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 91/92 传输成功 {chunkIndex: 90, completedChunks: 91, totalChunks: 92, percent: 98, size: 20971520} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+DownloadFile.ts:419 [DownloadFile] _doHttpRequest cfg.action 返回, resType=object
+DownloadChunkManager.ts:572 [DownloadChunkManager] 💾 保存下载进度到 IndexedDB: 92/92 分片, fileHash=5f146d9d094c1834738c6efa9fd1e30a
+index.ts:307 [INFO] [DownloadChunkManager] ✅ 分片 92/92 传输成功 {chunkIndex: 91, completedChunks: 92, totalChunks: 92, percent: 99, size: 16344754} 
+    at DownloadChunkManager.handleChunkSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/chunkManager/index.ts:437:11)
+ [INFO] [DownloadChunkManager] ✅ ✅ 流式写入完成，文件已落盘 {fileName: 'test6.mp4'} 
+    at DownloadChunkManager.doMergeChunks (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/downloader/DownloadChunkManager.ts?t=1781924569714:351:12)
+ [Monitor Debug] 收到日志: {module: 'DownloadChunkManager', message: '✅ ✅ 流式写入完成，文件已落盘', args: Array(1), timestamp: 1781924826351}
+ 下载成功: FileSystemFileHandle {kind: 'file', name: 'test6.mp4'}
+ [INFO] [DownloadFile] ✅ 文件传输成功: test6.mp4 {fileId: 'file_mqls0bqa_1y8dam9x', fileName: 'test6.mp4', fileSize: 1924753074} 
+    at DownloadFile.onSuccess (http://localhost:6677/@fs/D:/yjl/file-UD/packages/core/src/transfer/TransferFile.ts?t=1781924569714:260:10)
+ [Monitor Debug] 收到日志: {module: 'DownloadFile', message: '✅ 文件传输成功: test6.mp4', args: Array(1), timestamp: 1781924826352}
+ [Monitor Debug] 匹配到上传成功: {fileId: 'file_mqls0bqa_1y8dam9x', hasFileId: true}
+ 所有文件传输完成

@@ -25,6 +25,10 @@ export {
   clearAllFileCache,
   getCacheStats,
   cleanExpiredCache,
+  // 🔑 文件句柄持久化（跨会话复用）
+  saveFileHandle,
+  loadFileHandle,
+  removeFileHandle,
 } from "./fileCache";
 
 // 导出上传监控工具

@@ -10,6 +10,8 @@ import {
   formatFileSize,
   logger,
   getFileExtension,
+  saveFileHandle,
+  loadFileHandle,
 } from "../utils";
 
 import DownloadFile from "./DownloadFile";
@@ -103,10 +105,32 @@ export default class Downloader<T = any> extends Transfer<DownloadFile, T> {
   // ==================== 流式保存（File System Access API） ====================
 
   /**
+   * 🔑 文件名 → FileSystemFileHandle 缓存
+   *
+   * 用途：避免重复调用 showSaveFilePicker() 截断已存在的文件。
+   * Chrome 的 showSaveFilePicker() 在用户选择覆盖同名文件时会直接截断文件为 0 字节，
+   * 导致"秒下"检测失败。缓存句柄后，二次下载同一文件直接复用句柄。
+   *
+   * ⚠️ 挂载在 window 上而非 static Map：Vite HMR 会重置模块级静态变量，
+   *    但 window 上的属性不受影响，保证开发模式下缓存不丢失。
+   *    页面全量刷新后缓存自然清空，功能不受影响（回退到正常下载）。
+   */
+  private static get fileHandleCache(): Map<string, FileSystemFileHandle> {
+    const key = "__UD_FILE_HANDLE_CACHE__";
+    if (!(window as any)[key]) {
+      (window as any)[key] = new Map<string, FileSystemFileHandle>();
+    }
+    return (window as any)[key];
+  }
+
+  /**
    * 静态方法：打开系统"另存为"对话框，获取流式写入 FileHandle
    *
    * 使用 File System Access API（Chrome 86+, Edge 86+）。
    * 如果 API 不可用，返回 undefined（调用方应回退到 Blob 下载模式）。
+   *
+   * 🔑 如果当前会话中已下载过同名文件，直接复用缓存的 handle，
+   *    避免 showSaveFilePicker() 截断已有文件。
    *
    * @param suggestedName 建议的文件名
    * @returns FileHandle（用户选择后），null（用户取消），undefined（API 不可用）
@@ -116,12 +140,74 @@ export default class Downloader<T = any> extends Transfer<DownloadFile, T> {
   ): Promise<FileSystemFileHandle | null | undefined> {
     try {
       if (typeof window === "undefined" || !window.showSaveFilePicker) {
-        logger.warn("Downloader", "File System Access API 不可用，回退到 Blob 模式");
+        console.log("[pickSaveFile] API 不可用");
         return undefined;
       }
+
+      // 🔑 多层缓存策略（按优先级）：
+      //    L1: 内存 Map（window 挂载，同会话最快）
+      //    L2: IndexedDB（跨页面刷新，持久化 FileSystemFileHandle）
+
+      // ---- L1: 内存缓存 ----
+      if (suggestedName && Downloader.fileHandleCache.has(suggestedName)) {
+        console.log(`[pickSaveFile] ✅ L1 内存缓存命中: "${suggestedName}"`);
+        const cachedHandle = Downloader.fileHandleCache.get(suggestedName)!;
+        try {
+          const diskFile = await cachedHandle.getFile();
+          if (diskFile.size > 0) {
+            console.log(`[pickSaveFile] ♻️ 复用 L1 缓存的句柄: ${suggestedName} (${diskFile.size} bytes)`);
+            return cachedHandle;
+          }
+          console.log(`[pickSaveFile] ⚠️ L1 缓存句柄指向的文件已为空: ${suggestedName}`);
+          Downloader.fileHandleCache.delete(suggestedName);
+        } catch (e) {
+          console.log(`[pickSaveFile] ⚠️ L1 缓存句柄失效: ${suggestedName}`, e);
+          Downloader.fileHandleCache.delete(suggestedName);
+        }
+      }
+
+      // ---- L2: IndexedDB 持久化句柄（跨页面刷新） ----
+      if (suggestedName) {
+        console.log(`[pickSaveFile] 🔍 L2 IndexedDB 查找: "${suggestedName}"`);
+        try {
+          const indexedHandle = await loadFileHandle(suggestedName);
+          if (indexedHandle) {
+            console.log(`[pickSaveFile] ✅ L2 IndexedDB 命中: "${suggestedName}"`);
+            // 验证句柄仍有效（文件未被手动删除）
+            try {
+              const diskFile = await indexedHandle.getFile();
+              if (diskFile.size > 0) {
+                console.log(`[pickSaveFile] ♻️ 复用 IndexedDB 持久化句柄: ${suggestedName} (${diskFile.size} bytes)`);
+                // 🔄 回填到 L1 内存缓存，下次更快
+                Downloader.fileHandleCache.set(suggestedName, indexedHandle);
+                return indexedHandle;
+              }
+              console.log(`[pickSaveFile] ⚠️ IndexedDB 句柄指向的文件已为空: ${suggestedName}`);
+            } catch (verifyErr) {
+              console.log(`[pickSaveFile] ⚠️ IndexedDB 句柄验证失败: ${suggestedName}`, verifyErr);
+            }
+          } else {
+            console.log(`[pickSaveFile] ❌ L2 IndexedDB 未命中: "${suggestedName}"`);
+          }
+        } catch (loadErr) {
+          console.log(`[pickSaveFile] ⚠️ IndexedDB 查询失败，跳过 L2 缓存:`, loadErr);
+        }
+      }
+
+      // ---- L3: 无缓存 → 弹出系统"另存为"对话框 ----
+      console.log(`[pickSaveFile] 📂 触发 showSaveFilePicker: "${suggestedName}"`);
       const handle = await window.showSaveFilePicker({
         suggestedName,
       });
+
+      // 🔑 新选择的句柄 → 回填到 L1（拿到句柄就缓存，不等下载完成）
+      //    ⚠️ 不在此处写 L2 IndexedDB：此时 showSaveFilePicker 刚截断文件为 0 字节，
+      //      写 L2 会导致下次刷新后 loadFileHandle 拿到"空文件句柄"。
+      //      L2 持久化放在 downloadFile.then() 中（下载完成后）。
+      if (suggestedName && handle) {
+        Downloader.fileHandleCache.set(suggestedName, handle);
+      }
+
       return handle;
     } catch (err: any) {
       // 用户取消保存对话框 → DOMException: The user aborted a request
@@ -170,6 +256,21 @@ export default class Downloader<T = any> extends Transfer<DownloadFile, T> {
 
     // 再开始下载，进度会通过 TransferFile 的监听实时更新
     downloadFile.start(downloadFile.downloadChunkManager).then(() => {
+      console.log(`[downloadFile.then] start() promise 已 resolve, fileHandle=${!!downloadFile.fileHandle}, fileName=${downloadFile.fileName}`);
+
+      // 🔑 下载成功后缓存文件句柄（L1 内存 + L2 IndexedDB）
+      const fh = downloadFile.fileHandle;
+      if (fh) {
+        const name = file.fileName || file.url;
+        // L1: 内存缓存（最快，但页面刷新后丢失）
+        Downloader.fileHandleCache.set(name, fh);
+        // L2: IndexedDB 持久化（跨页面刷新）
+        saveFileHandle(name, fh).catch(() => {});
+        console.log(`[downloadFile.then] 💾 缓存文件句柄: "${name}" (L1 + L2)`);
+      } else {
+        console.log(`[downloadFile.then] ⚠️ fileHandle 为空，无法缓存`);
+      }
+
       // 下载完成后触发一次最终更新
       this.updateGlobalStats();
       this.triggerUpdate();

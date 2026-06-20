@@ -160,16 +160,56 @@ const downloader = FileUD.createDownloader(
 );
 
 downloader.onInitChunk = async (downloadFile, totalChunks, fileHash) => {
-  // 分片下载时检查服务端文件状态（用于秒下检测，服务端不追踪下载进度）
-  const res = await checkFile({ fileHash, fileName: downloadFile.fileName, totalChunks });
+  // 🔑 下载场景：向服务端查询文件是否存在 + 获取真实 MD5
+  //    - downloadFile.fileHandle：用户通过 showSaveFilePicker 选择的本地保存位置
+  //    - 服务端 chunks 是上传状态，不代表客户端下载进度
+  //    - 下载进度/秒下由客户端 IndexedDB + 磁盘验证 自行管理
+  const res = await checkFile({
+    fileHash,
+    fileName: downloadFile.fileName,
+    totalChunks,
+    fileSize: downloadFile.getFileSize(),
+  });
   // 🔑 Ajax 包装器返回的是 response.data，即服务器 JSON 的顶层
-  //    所以 API 实际返回在 res.data 里，不是 res 本身
   const apiData = res?.data || res || {};
+  const realHash = apiData.fileHash || fileHash;
+  const isRealMD5 = /^[a-f0-9]{32}$/i.test(realHash);
   console.log(
-    `[App] onInitChunk 回调结果: fileHash=${fileHash}, serverChunks=`,
-    apiData.chunks,
+    `[App] onInitChunk 回调: requestHash=${fileHash}, serverHash=${realHash}, isMD5=${isRealMD5}, exists=${apiData.exists}, url=${apiData.fileInfo?.url || "无"}`,
   );
-  return { fileHash: apiData.fileHash || fileHash, chunks: apiData.chunks || [] };
+
+  // 🔑 秒下检查：服务端文件存在 + 本地磁盘文件大小一致 → 跳过下载
+  //    ⚠️ 不在此处计算 MD5（1.9GB 文件会卡死 30-60s），
+  //       文件大小匹配 + 服务端确认 exists 即足够。
+  //       如果内容确实有变，doInit() 的 IndexedDB 磁盘验证会兜底检测。
+  if (apiData.exists && downloadFile.fileHandle) {
+    try {
+      const diskFile = await downloadFile.fileHandle.getFile();
+      if (diskFile.size === downloadFile.getFileSize()) {
+        console.log(
+          `[App] ⚡ 秒下：磁盘文件大小与服务器一致 (${diskFile.size} bytes)，跳过下载`,
+        );
+        return {
+          fileHash: realHash,
+          fileUrl: apiData.fileInfo?.url || null,
+          isInstantDownload: true,
+          chunks: [],
+        };
+      }
+      console.log(
+        `[App] ⚠️ 磁盘文件大小不匹配: disk=${diskFile.size}, expected=${downloadFile.getFileSize()}`,
+      );
+    } catch (e) {
+      console.log(`[App] 💡 磁盘文件检查失败（可能不存在），走正常下载流程`, e);
+    }
+  }
+
+  return {
+    fileHash: realHash,
+    fileUrl: apiData.fileInfo?.url || null,
+    // 🔑 下载场景不返回服务端 chunks（那是上传进度，不代表客户端下载进度）
+    chunks: [],
+  };
 };
 
 downloader.beforeTransferCallback = (file) => ({});
@@ -447,10 +487,14 @@ const batchDelete = () => {
 const handleDownload = async (row: any) => {
   const name = row.fileName || row.name || "";
 
+  console.log(`[handleDownload] 开始下载: "${name}", isStreamSave=${isStreamSave.value}`);
+
   // 🚀 流式保存：内部处理了兼容性检测 + 用户取消 + 错误回退
   const fileHandle = isStreamSave.value
     ? await Downloader.pickSaveFile(name)
     : undefined;
+
+  console.log(`[handleDownload] pickSaveFile 返回:`, fileHandle ? `FileHandle(${fileHandle.name})` : fileHandle);
 
   // null = 用户取消；undefined = API 不可用，回退到普通模式
   if (fileHandle === null) {
