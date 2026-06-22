@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref, computed, onUnmounted } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   Upload,
@@ -14,7 +14,12 @@ import {
   Headset,
   Files,
 } from "@element-plus/icons-vue";
-import { Downloader, FileUD, Uploader } from "@file-ud.js/core";
+import {
+  Downloader,
+  FileUD,
+  Uploader,
+} from "@file-ud.js/core";
+import { disposeMD5Worker } from "@file-ud.js/core/utils";
 import {
   uploadFile,
   upload,
@@ -294,6 +299,19 @@ const bindDownloaderEvents = (dl: any) => {
 
 bindDownloaderEvents(downloader);
 bindDownloaderEvents(excelDownloader);
+
+// 🔑 组件卸载时清理事件监听器，防止 SPA 路由切换时内存泄漏
+onUnmounted(() => {
+  (downloader as any).onUpdate = undefined;
+  (downloader as any).onSuccess = undefined;
+  (excelDownloader as any).onUpdate = undefined;
+  (excelDownloader as any).onSuccess = undefined;
+  (uploader as any).onUpdate = undefined;
+  (uploader as any).onSuccess = undefined;
+
+  // 释放 MD5 Worker 的 Blob URL，防止内存泄漏
+  disposeMD5Worker();
+});
 
 // ==================== 获取服务端文件列表 ====================
 

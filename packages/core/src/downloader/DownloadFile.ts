@@ -418,12 +418,9 @@ export default class DownloadFile<T = any> extends TransferFile<
       const res = await cfg.action(this);
       console.log(`[DownloadFile] _doHttpRequest cfg.action 返回, resType=${typeof res}`);
       return { data: res };
-    } else {
-      // ======== 函数 action：始终调用户函数 ========
-      // 分片下载时 _chunkHeadersQueue 已由 downloadChunk() push，拦截器自动注入 Range
-      // 普通下载时无特殊 header，拦截器仅追踪进度
-      throw new Error("action 必须是字符串 URL 或函数");
     }
+    // action 既不是字符串也不是函数 → 配置错误
+    throw new Error("action 必须是字符串 URL 或函数");
   }
 
   /**

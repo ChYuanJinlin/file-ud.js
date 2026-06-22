@@ -116,7 +116,7 @@ export default abstract class ChunkManager<
   // ==================== 可选钩子（子类覆写） ====================
 
   /** start() 重置后的额外清理，如下载场景清空 downloadedChunks */
-  protected doAfterStartReset(): void {}
+  protected async doAfterStartReset(): Promise<void> {}
 
   /** 分片传输成功后保存结果数据（上传存 response，下载存 blob 到 Map / 流式写入磁盘） */
   protected async doSaveChunkResult(
@@ -386,7 +386,7 @@ export default abstract class ChunkManager<
     //    但并未经过真正的错误重试），避免 checkStatistics() 误判。
     this.failedChunks = [];
     this.retryCountMap.clear();
-    this.doAfterStartReset();
+    await this.doAfterStartReset();
 
     // 🔑 等待上次的 writable 完全关闭（下载场景），避免 createWritable 文件锁冲突
     //    若因锁冲突失败，错误会在 start() 的 catch 中被静默吞掉，导致重试无反应
@@ -458,6 +458,8 @@ export default abstract class ChunkManager<
    * 重试失败的分片
    */
   public async retryFailedChunks(): Promise<void> {
+    // 🔑 递增代数，防止并发 start() 调用污染当前重试的状态变更
+    const retryGen = ++this._startGeneration;
     this.isCancelled = false;
     this.isPaused = false;
 
@@ -465,15 +467,22 @@ export default abstract class ChunkManager<
     this.failedChunks = [];
 
     for (const chunkIndex of failedChunksCopy) {
+      // 🔑 代数检查：如果 start() 在此期间被重新调用，立即停止重试
+      if (this._startGeneration !== retryGen) break;
+
       this.retryCountMap.set(chunkIndex, 0);
       try {
         await this.chunkWithRetry(chunkIndex);
       } catch (_error) {
+        if (this._startGeneration !== retryGen) break;
         this.failedChunks.push(chunkIndex);
       }
     }
 
-    await this.checkStatistics();
+    // 🔑 仅当代数仍然匹配时才触发统计检查（避免污染新 run）
+    if (this._startGeneration === retryGen) {
+      await this.checkStatistics();
+    }
   }
 
   /**

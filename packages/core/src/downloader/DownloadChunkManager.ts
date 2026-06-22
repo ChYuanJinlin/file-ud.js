@@ -20,6 +20,15 @@ export default class DownloadChunkManager extends ChunkManager {
   /** 待完成写入的 Promise 列表（fire-and-forget，不阻塞 PQueue worker） */
   private pendingWrites: Promise<void>[] = [];
 
+  /** 🔑 已确认落盘的分片索引（仅流式模式使用，内存模式不写此 Set） */
+  private _diskWrittenChunks: Set<number> = new Set();
+
+  /** 🔑 doAfterStartReset() 保存 IndexedDB 时的安全快照。
+   *    ensureWritableClosed() 的 pending writes 会追加新分片到 _diskWrittenChunks，
+   *    若 close() 失败 → abort() → 磁盘数据丢失，需要回滚 IndexedDB 到这个安全状态，
+   *    而不是全量删除。已 settle 的 writes 在磁盘上是安全的。 */
+  private _safeDiskChunks: Set<number> = new Set();
+
   /** 上次写入 IndexedDB 进度的时间戳（节流用） */
   private _lastProgressSaveTime: number = 0;
 
@@ -73,6 +82,7 @@ export default class DownloadChunkManager extends ChunkManager {
     const downloader = this.downloadFile.transfer;
     let initResult: any = null;
     let isResuming = false;
+    const isRetry = !!(this.downloadFile.proxy as any).isRetry;
 
     // ========== Step 1: 服务端回调 → 获取真实 MD5（优先，为 IndexedDB 提供正确 key） ==========
     // 🔑 下载端没有本地 File 对象，无法调用 calculateFileMD5()。
@@ -148,6 +158,9 @@ export default class DownloadChunkManager extends ChunkManager {
     }
 
     // ========== Step 2: IndexedDB 恢复（用 this.fileHash 作为 key） ==========
+    // 🔑 saveProgressToCacheSoft 仅当 writable.write() 确认落盘后才保存 IndexedDB
+    //    (流式模式)，或 chunkBlobs 已在内存（内存模式）。若 close() 失败回退 abort(),
+    //    ensureWritableClosed() 已同步清理 IndexedDB。因此这里恢复的所有进度都是可信的。
     if (this.config.enableFileCache && this.fileHash) {
       try {
         console.log(
@@ -218,20 +231,29 @@ export default class DownloadChunkManager extends ChunkManager {
                   fileVerified = false;
                   shouldDeleteCache = false;
                 } else {
-                  // 🔑 大小一致 → 进一步校验 MD5 哈希
+                  // 🔑 大小一致 → 进一步校验 MD5 哈希（仅对中小文件，大文件跳过避免卡死 UI）
                   if (this.fileHash && /^[a-f0-9]{32}$/i.test(this.fileHash)) {
-                    try {
-                      const computedHash = await calculateFileMD5(diskFile);
-                      fileVerified = computedHash === this.fileHash;
-                      if (!fileVerified) {
-                        logger.warn(
-                          this.getTag(),
-                          `磁盘文件大小一致但 MD5 不匹配 → 内容已变更, expected=${this.fileHash.slice(0, 8)}..., computed=${computedHash.slice(0, 8)}...`,
-                        );
-                        shouldDeleteCache = true; // 文件确实损坏，清理缓存
+                    const MAX_MD5_SIZE = 50 * 1024 * 1024; // >50MB 跳过 MD5
+                    if (diskSize <= MAX_MD5_SIZE) {
+                      try {
+                        const computedHash = await calculateFileMD5(diskFile);
+                        fileVerified = computedHash === this.fileHash;
+                        if (!fileVerified) {
+                          logger.warn(
+                            this.getTag(),
+                            `磁盘文件大小一致但 MD5 不匹配 → 内容已变更, expected=${this.fileHash.slice(0, 8)}..., computed=${computedHash.slice(0, 8)}...`,
+                          );
+                          shouldDeleteCache = true; // 文件确实损坏，清理缓存
+                        }
+                      } catch {
+                        // 哈希计算失败，回退到大小校验
+                        fileVerified = true;
                       }
-                    } catch {
-                      // 哈希计算失败，回退到大小校验
+                    } else {
+                      // 大文件仅靠大小校验，避免 MD5 计算阻塞 UI 30-60s
+                      console.log(
+                        `[DownloadChunkManager] 💡 文件>50MB (${(diskSize / 1024 / 1024).toFixed(0)}MB)，跳过 MD5 校验，仅信任文件大小`,
+                      );
                       fileVerified = true;
                     }
                   } else {
@@ -313,7 +335,9 @@ export default class DownloadChunkManager extends ChunkManager {
     }
 
     // ========== Step 3: 服务端断点续传（用已有 chunks 列表恢复） ==========
-    if (!isResuming && initResult) {
+    // 🔑 重试时跳过服务端断点续传：与 Step 2 同理，doAfterStartReset() 已清空本地分片数据，
+    //    服务端返回的 chunks（对下载场景通常是全量列表）会标记分片为"已完成"但无实际数据。
+    if (!isResuming && initResult && !isRetry) {
       if (
         initResult.chunks &&
         Array.isArray(initResult.chunks) &&
@@ -359,6 +383,9 @@ export default class DownloadChunkManager extends ChunkManager {
         this.streamFileHandle = await (window as any).showSaveFilePicker({
           suggestedName: this.downloadFile.fileName,
         });
+        // 🔑 回写到 downloadFile.fileHandle，确保重试时可复用同一句柄
+        //    （doAfterStartReset() 会清空 streamFileHandle，但 downloadFile.fileHandle 不受影响）
+        this.downloadFile.fileHandle = this.streamFileHandle;
       } catch (_e: any) {
         // 用户取消文件选择 → 回退到内存模式
         logger.info(this.getTag(), "用户取消文件选择，回退到内存模式");
@@ -421,6 +448,44 @@ export default class DownloadChunkManager extends ChunkManager {
         }
       } catch {
         // 文件不存在或无法访问 → 继续正常下载
+      }
+    }
+
+    // 🔑 磁盘验证：若 IndexedDB 声称有已完成分片（isResuming=true），但磁盘文件
+    //    为空或大小为 0，说明上一次 ensureWritableClosed() 的 close() 失败导致
+    //    abort 重置了文件。此时 IndexedDB 进度不可信，必须清理并全新下载。
+    //    防止 createWritable({ keepExistingData: true }) 在空文件上打开 →
+    //    已恢复的分片被跳过 → 文件出现空洞损坏。
+    if (this.streamFileHandle && isResuming) {
+      try {
+        const diskFile = await this.streamFileHandle.getFile();
+        const minExpectedSize = this.completedChunks * this.chunkSize;
+        if (diskFile.size === 0) {
+          console.log(
+            `[DownloadChunkManager] 🗑️ 磁盘文件为空（abort 重置），清理 IndexedDB 并全新下载`,
+          );
+          this.completedChunks = 0;
+          this.chunks = new Array(this.totalChunks).fill(false);
+          this.countedChunks.clear();
+          this.totalChunkSize = 0;
+          isResuming = false;
+          if (this.config.enableFileCache && this.fileHash) {
+            try {
+              const { removeDownloadProgress } =
+                await import("../utils/fileCache");
+              await removeDownloadProgress(this.fileHash);
+            } catch {}
+          }
+        } else if (diskFile.size < minExpectedSize) {
+          console.log(
+            `[DownloadChunkManager] ⚠️ 磁盘文件过小 (disk=${diskFile.size}, expected>=${minExpectedSize})，IndexedDB 进度可能落后`,
+          );
+        }
+      } catch (diskErr) {
+        console.log(
+          `[DownloadChunkManager] 💡 磁盘文件检查失败（文件不可访问），继续正常下载`,
+          diskErr,
+        );
       }
     }
 
@@ -524,6 +589,10 @@ export default class DownloadChunkManager extends ChunkManager {
    *
    * - 流式模式：fire-and-forget 写入（不 await，PQueue worker 立即继续下载下一个分片）
    * - 内存模式：存储到 chunkBlobs Map 中，待合并时一次性拼接
+   *
+   * 🔑 IndexedDB 安全性：仅当磁盘写入确认完成后才保存进度。避免 cancel 时
+   *    write 尚未 flush → close() 未保住数据 → abort() 丢弃 → IndexedDB 却标记"已完成"
+   *    → 重试时跳过这些分片 → 文件出现空洞损坏。
    */
   protected async doSaveChunkResult(chunkIndex: number, data: any): Promise<void> {
     if (!(data instanceof Blob)) return;
@@ -531,28 +600,39 @@ export default class DownloadChunkManager extends ChunkManager {
     // 🔑 流式模式：fire-and-forget 写盘，不阻塞 PQueue worker 获取下一个分片
     if (this.writable) {
       const position = chunkIndex * this.chunkSize;
-      this.pendingWrites.push(
-        this.writable.write({ type: "write", position, data }),
-      );
+      const writeP = this.writable
+        .write({ type: "write", position, data })
+        .then(async () => {
+          // ✅ 磁盘写入完成 → 标记落盘 → 才允许存 IndexedDB
+          this._diskWrittenChunks.add(chunkIndex);
+          // 🔑 必须 return IndexedDB 保存的 Promise，让 writeP 链正确等待
+          //    否则 ensureWritableClosed() 的 allSettled 不等 IndexedDB 写完就认为完成
+          await this.saveProgressToCacheSoft(chunkIndex);
+        })
+        .catch((err) => {
+          console.error(
+            `[DownloadChunkManager] ❌ 分片 ${chunkIndex} 写入磁盘失败:`,
+            err,
+          );
+        });
+      this.pendingWrites.push(writeP);
     } else {
-      // 内存兜底模式
+      // 内存兜底模式：Blob 已在 chunkBlobs Map 中，100% 可恢复
       this.chunkBlobs.set(chunkIndex, data);
+      // 内存模式数据不会因 cancel 丢失，直接保存 IndexedDB
+      this.saveProgressToCacheSoft(chunkIndex);
     }
-
-    // 🔑 如果启用了文件缓存，保存下载进度到 IndexedDB
-    this.saveProgressToCacheSoft(chunkIndex);
   }
 
   /**
    * 将下载进度存入 IndexedDB（节流，最多每 2 秒写一次）
+   *
+   * 🔑 流式模式：仅保存 _diskWrittenChunks 中已确认落盘的分片，防止
+   *    cancel→abort 丢弃数据后 IndexedDB 仍标记"已完成"→重试跳过→文件损坏。
+   *    内存模式：chunkBlobs Map 存于内存，cancel 不丢数据，直接用 this.chunks[]。
    */
   private async saveProgressToCacheSoft(chunkIndex: number): Promise<void> {
-    if (!this.config.enableFileCache) {
-      console.log(
-        `[DownloadChunkManager] ⚠️ enableFileCache=false，跳过保存`,
-      );
-      return;
-    }
+    if (!this.config.enableFileCache) return;
 
     // 节流：每 2 秒或最后一个分片时才写入
     const now = Date.now();
@@ -561,22 +641,28 @@ export default class DownloadChunkManager extends ChunkManager {
     this._lastProgressSaveTime = now;
 
     try {
-      // 🔑 使用 this.fileHash（真实 MD5，已在 doInit 中从服务端获取）
       const fileHash = this.fileHash || await this.computeFileIdentifier();
 
-      // 收集所有已完成分片（含当前正在保存的）
+      // 🔑 合并 _diskWrittenChunks（本轮写入）+ this.chunks[]（从 IndexedDB 恢复的历史完成分片）。
+      //    重试后 doInit() 恢复的历史分片被跳过（不再写入磁盘），不在 _diskWrittenChunks 中。
+      //    若只存 _diskWrittenChunks 会覆盖 IndexedDB 丢失历史进度 → 下次重试倒退 ❌。
       const chunkIndexes: number[] = [];
+      const merged = new Set<number>(this._diskWrittenChunks);
       for (let i = 0; i < this.totalChunks; i++) {
-        if (this.chunks[i]) {
-          chunkIndexes.push(i);
-        }
+        if (this.chunks[i]) merged.add(i);
       }
-      if (!chunkIndexes.includes(chunkIndex)) {
-        chunkIndexes.push(chunkIndex);
+      // 确保当前分片也包含在内（可能在 .then() 回调时序中还未标记为 completed）
+      merged.add(chunkIndex);
+      for (const idx of merged) {
+        chunkIndexes.push(idx);
       }
+      const useDiskSet = this._diskWrittenChunks.size > 0;
+
+      chunkIndexes.sort((a, b) => a - b);
 
       console.log(
-        `[DownloadChunkManager] 💾 保存下载进度到 IndexedDB: ${chunkIndexes.length}/${this.totalChunks} 分片, fileHash=${fileHash}`,
+        `[DownloadChunkManager] 💾 保存下载进度到 IndexedDB: ${chunkIndexes.length}/${this.totalChunks} 分片` +
+          ` (${useDiskSet ? "磁盘模式" : "内存模式"}, fileHash=${fileHash})`,
       );
 
       const { saveDownloadProgress } = await import("../utils/fileCache");
@@ -588,7 +674,6 @@ export default class DownloadChunkManager extends ChunkManager {
         chunkIndexes,
       );
     } catch (error) {
-      // 缓存失败不阻塞下载
       logger.warn(this.getTag(), "保存下载进度失败", error);
       console.error("[DownloadChunkManager] ❌ 保存下载进度失败:", error);
     }
@@ -643,9 +728,79 @@ export default class DownloadChunkManager extends ChunkManager {
 
   /**
    * start() 重置后清理之前的 Blob 缓存和流式写入状态
+   *
+   * 🔑 在此处将 _diskWrittenChunks 保存到 IndexedDB，但 NOT clear()。
+   *    clear() 推迟到 ensureWritableClosed() 的最终保存完成后执行：
+   *    - doAfterStartReset() 保存时，_diskWrittenChunks 含已 settle 的分片
+   *    - ensureWritableClosed() 等待 pending writes → 新 settle 的分片被
+   *      .then() 加入 _diskWrittenChunks → 最终保存含完整集合 → 覆盖写入 ✅
+   *    - 如果 doAfterStartReset() 就 clear()，最终保存只剩几个零碎分片 → 覆盖掉
+   *      刚刚保存的完整记录 → 进度倒退 ❌
    */
-  protected doAfterStartReset(): void {
-    this.chunkBlobs.clear();
+  protected async doAfterStartReset(): Promise<void> {
+    // 🔑 保留已完成分片的数据，重试时避免全部重新下载：
+    //    - 内存模式：chunkBlobs Map 中已存有已完成分片的 Blob 数据
+    //    - 流式模式：ensureWritableClosed() 改用 close() 保留磁盘上已写入的分片数据
+    //    doInit() 从 IndexedDB 恢复进度 → transferWithConcurrency 跳过已完成分片
+    //    → 只需下载缺失分片，不用从 0% 重新开始。
+    if (this.chunkBlobs.size === 0) {
+      this.chunkBlobs.clear();
+    }
+
+    // 🔑 清除上一轮可能残留的安全快照（如果 ensureWritableClosed 没执行到清理）
+    this._safeDiskChunks.clear();
+
+    // 🔑 合并 _diskWrittenChunks（本轮写入）+ this.chunks[]（从 IndexedDB 恢复的历史完成分片）
+    //    保存到 IndexedDB，避免覆盖丢失历史进度。
+    //    重试时 doInit() 从 IndexedDB 恢复分片 → transferWithConcurrency 跳过它们 →
+    //    不再写入磁盘 → 不在 _diskWrittenChunks 中。若只存 _diskWrittenChunks 会覆盖
+    //    IndexedDB 丢失历史进度 → 下次重试进度倒退 ❌。
+    if (this.config.enableFileCache) {
+      const allCompleted = new Set<number>(this._diskWrittenChunks);
+      for (let i = 0; i < this.totalChunks; i++) {
+        if (this.chunks[i]) allCompleted.add(i);
+      }
+      if (allCompleted.size > 0) {
+        try {
+          const chunkIndexes = Array.from(allCompleted).sort((a, b) => a - b);
+          console.log(
+            `[DownloadChunkManager] 💾 doAfterStartReset: 合并保存 ${chunkIndexes.length}/${this.totalChunks} 分片` +
+              ` (本轮写入=${this._diskWrittenChunks.size}, 历史恢复=${allCompleted.size - this._diskWrittenChunks.size})`,
+          );
+          const fileHash =
+            this.fileHash || (await this.computeFileIdentifier());
+          const { saveDownloadProgress } = await import("../utils/fileCache");
+          await saveDownloadProgress(
+            fileHash,
+            this.downloadFile.fileName,
+            this.downloadFile.getFileSize(),
+            this.totalChunks,
+            chunkIndexes,
+          );
+          // 🔑 保存安全快照：这些分片的 write 已 settle，磁盘上数据是安全的。
+          //    ensureWritableClosed() 等待 pending writes 追加新分片后，
+          //    若 close() 失败，用此快照回滚 IndexedDB（而非全量删除）。
+          this._safeDiskChunks = new Set(this._diskWrittenChunks);
+        } catch (_err) {
+          console.warn(
+            `[DownloadChunkManager] doAfterStartReset 保存 IndexedDB 失败:`,
+            _err,
+          );
+        }
+      } else {
+        this._safeDiskChunks.clear();
+      }
+    }
+
+    // 🔑 不在此处清理 _diskWrittenChunks！如果立即 clear()，ensureWritableClosed()
+    //    等待 pending writes 时 .then() 回调只能添加新 settle 的零散分片，
+    //    最终保存的 IndexedDB 记录会覆盖掉上面刚存的完整记录，只剩少数分片。
+    //    _diskWrittenChunks 的清理由 ensureWritableClosed() 在最终保存后统一执行。
+    //    原因：最终保存会把新增 settle 的分片合并写入 IndexedDB，完整度 >= 上面那次。
+    //
+    //    旧标记指向的上次 writable 已关闭，数据或在磁盘（close 成功）或已丢失（abort）。
+    //    重试的 doInit() 会从 IndexedDB 恢复进度 —— 若 IndexedDB 已被 abort 路径清理，
+    //    会从零重新下载，_diskWrittenChunks 也将重新填充。
 
     // 🔑 不在此处关闭 writable —— 它的关闭是异步的，必须 await 才能确保
     //    文件锁已释放。关闭逻辑移到 ensureWritableClosed() 中统一处理。
@@ -659,42 +814,147 @@ export default class DownloadChunkManager extends ChunkManager {
   }
 
   /**
-   * 异步清理：等待所有 pending writes 完成 + 关闭上次的 writable
+   * 异步清理：关闭上次的 writable，释放文件锁。
    *
    * ⚠️ 必须 await 调用，确保 writable 完全关闭、文件锁释放后，
    *    doInit() 才能安全调用 createWritable()，否则会因锁冲突抛 InvalidStateError。
+   *
+   * 🔑 竞态修复：先置 null this.writable，再异步 close。
+   *    否则旧 PQueue 残留的 doSaveChunkResult 回调会在 close() 进行中
+   *    检查 if (this.writable) → 仍为非 null → writable.write() 写入正在关闭的流
+   *    → 浏览器抛出 "Cannot write to a closing writable stream"。
+   *
+   * 🔑 数据安全：先等待 pendingWrites 全部 settle → write.then() 中会更新
+   *    _diskWrittenChunks → 再 close() flush 缓冲区 → 磁盘数据完整。
+   *    若 close() 失败退化为 abort()，磁盘数据丢失，必须同步清理 IndexedDB。
    */
   public async ensureWritableClosed(): Promise<void> {
     console.log(
       `[DownloadChunkManager] ensureWritableClosed() 入口, pendingWrites=${this.pendingWrites.length}, hasWritable=${!!this.writable}`,
     );
 
-    // 1. 等待所有 fire-and-forget 写入完成（加超时防止永久挂起）
-    if (this.pendingWrites.length > 0) {
-      try {
-        // 🔑 加 5 秒超时，防止 pending writes 永远不 resolve
-        await Promise.race([
-          Promise.allSettled(this.pendingWrites),
-          new Promise<void>((_, reject) =>
-            setTimeout(() => reject(new Error("ensureWritableClosed: 等待写入超时")), 5000),
-          ),
-        ]);
-        console.log(`[DownloadChunkManager] pendingWrites 全部完成`);
-      } catch (e: any) {
-        console.warn(`[DownloadChunkManager] pendingWrites 超时或失败:`, e.message);
-      }
-      this.pendingWrites = [];
-    }
+    // 🔑 关键：先把 writable 引用取出并立即置 null，阻止 doSaveChunkResult 继续写入
+    const oldWritable = this.writable;
+    this.writable = null;
 
-    // 2. 🔑 关闭上次可能未关闭的写流并 await 其完成
-    if (this.writable) {
+    // 🔑 等待所有 fire-and-forget 写入 settle（含 .then() 中的 IndexedDB 更新）
+    //    不等待的话，close() 期间 .then() 回调可能还在执行 → 竞态
+    if (this.pendingWrites.length > 0) {
+      console.log(
+        `[DownloadChunkManager] ⏳ 等待 ${this.pendingWrites.length} 个 pending writes...`,
+      );
+      await Promise.allSettled(this.pendingWrites);
+      console.log(`[DownloadChunkManager] ✅ 所有 pending writes 已 settle`);
+    }
+    this.pendingWrites = [];
+
+    // 🔑 优先 close 而不是 abort：保留已写入磁盘的分片数据，重试时可断点续传。
+    //    close() 会等待所有正在进行的写操作完成并刷新到磁盘，再释放文件锁。
+    //    只有 close 失败时才 abort 兜底（如流已损坏无法正常关闭）。
+    if (oldWritable) {
       try {
-        await this.writable.close();
-        console.log(`[DownloadChunkManager] writable 已关闭`);
-      } catch (_) {
-        console.warn(`[DownloadChunkManager] writable.close() 失败:`, _);
+        await oldWritable.close();
+        console.log(
+          `[DownloadChunkManager] writable 已 close（保留 ${this._diskWrittenChunks.size} 个已落盘分片）`,
+        );
+
+        // 🔑 close 成功后做一次最终 IndexedDB 保存（绕过节流），
+        //    合并 _diskWrittenChunks + this.chunks[]，避免覆盖丢失历史进度。
+        if (this.config.enableFileCache) {
+          const allCompleted = new Set<number>(this._diskWrittenChunks);
+          for (let i = 0; i < this.totalChunks; i++) {
+            if (this.chunks[i]) allCompleted.add(i);
+          }
+          if (allCompleted.size > 0) {
+            try {
+              const fileHash =
+                this.fileHash || (await this.computeFileIdentifier());
+              const chunkIndexes = Array.from(allCompleted).sort((a, b) => a - b);
+              console.log(
+                `[DownloadChunkManager] 💾 最终合并保存 ${chunkIndexes.length}/${this.totalChunks} 分片`,
+              );
+              const { saveDownloadProgress } = await import(
+                "../utils/fileCache"
+              );
+              await saveDownloadProgress(
+                fileHash,
+                this.downloadFile.fileName,
+                this.downloadFile.getFileSize(),
+                this.totalChunks,
+                chunkIndexes,
+              );
+            } catch (_finalSaveErr) {
+              console.warn(
+                `[DownloadChunkManager] 最终保存进度失败:`,
+                _finalSaveErr,
+              );
+            }
+          }
+        }
+
+        // 🔑 最终保存已完成，清理 _diskWrittenChunks 供下一轮 doInit() 重新填充。
+        //    必须在此处（而非 doAfterStartReset）clear，确保 pending writes 的
+        //    .then() 回调有机会将额外分片加入集合，最终保存才能有完整数据。
+        this._diskWrittenChunks.clear();
+        this._safeDiskChunks.clear();
+      } catch (_closeErr) {
+        // 🔑 close 失败 → 回退 abort → 未 flush 的写入数据可能丢失
+        console.warn(
+          `[DownloadChunkManager] ⚠️ close() 失败，回退 abort(), err=`,
+          _closeErr,
+        );
+        try {
+          await oldWritable.abort();
+          console.log(`[DownloadChunkManager] writable 已 abort`);
+        } catch (__) {
+          console.warn(`[DownloadChunkManager] writable abort 也失败了:`, __);
+        }
+
+        // 🔑 abort 路径：合并 _safeDiskChunks + this.chunks[]（历史已完成分片）。
+        //    abort 可能只丢弃未 flush 的本轮数据，历史分片在磁盘上仍然安全。
+        //    doInit() 的磁盘验证会兜底：若文件真被清空，会清理 IndexedDB 重新下载。
+        if (this.config.enableFileCache && this.fileHash) {
+          try {
+            const allSafe = new Set<number>(this._safeDiskChunks);
+            for (let i = 0; i < this.totalChunks; i++) {
+              if (this.chunks[i]) allSafe.add(i);
+            }
+            if (allSafe.size > 0) {
+              const safeIndexes = Array.from(allSafe).sort((a, b) => a - b);
+              console.log(
+                `[DownloadChunkManager] 🔄 abort 后合并回滚 IndexedDB: ${safeIndexes.length}/${this.totalChunks} 分片` +
+                  ` (安全快照=${this._safeDiskChunks.size}, 历史恢复=${allSafe.size - this._safeDiskChunks.size})`,
+              );
+              const { saveDownloadProgress } = await import(
+                "../utils/fileCache"
+              );
+              await saveDownloadProgress(
+                this.fileHash,
+                this.downloadFile.fileName,
+                this.downloadFile.getFileSize(),
+                this.totalChunks,
+                safeIndexes,
+              );
+            } else {
+              // 没有任何进度 → 删除
+              console.log(
+                `[DownloadChunkManager] 🧹 无任何进度，清理 IndexedDB`,
+              );
+              const { removeDownloadProgress } =
+                await import("../utils/fileCache");
+              await removeDownloadProgress(this.fileHash);
+            }
+          } catch (_cacheErr) {
+            console.warn(
+              `[DownloadChunkManager] abort 路径 IndexedDB 操作失败:`,
+              _cacheErr,
+            );
+          }
+        }
+        // 清理已失效的落盘标记 + 安全快照
+        this._diskWrittenChunks.clear();
+        this._safeDiskChunks.clear();
       }
-      this.writable = null;
     }
 
     console.log(`[DownloadChunkManager] ensureWritableClosed() 完成`);

@@ -359,8 +359,24 @@ export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// 🔧 Worker 模式的 MD5 计算（内部导入，避免循环引用）
+let _md5WorkerModule: typeof import("./md5Worker") | null = null;
+async function getMD5WorkerModule() {
+  if (!_md5WorkerModule) {
+    _md5WorkerModule = await import("./md5Worker");
+  }
+  return _md5WorkerModule;
+}
+
 /**
  * 计算文件的 MD5 哈希值
+ *
+ * 策略（自动选择最优路径）：
+ *  - 文件 > 50MB：Worker 路径（完整读取至 Worker 计算，主线程零阻塞）
+ *  - 文件 5~50MB：Worker 路径，无进度回调时优先
+ *  - 文件 ≤ 5MB 或有 onProgress 回调：主线程 SparkMD5 流式计算
+ *  - Worker 不可用：回退到主线程 SparkMD5
+ *
  * @param file 文件对象
  * @param onProgress 可选的进度回调函数，接收当前进度百分比 (0-100)
  * @returns MD5 哈希字符串
@@ -368,8 +384,25 @@ export function sleep(ms: number): Promise<void> {
 export async function calculateFileMD5(
   file: File,
   onProgress?: (percent: number) => void,
-  signal?: AbortSignal, // ✅ 新增：支持中断信号
+  signal?: AbortSignal,
 ): Promise<string> {
+  const WORKER_MIN_SIZE = 5 * 1024 * 1024; // 5MB 以上才启用 Worker（省去小文件创建开销）
+  const useWorker =
+    !onProgress && // 有进度回调时不用 Worker（Worker 不提供分片进度）
+    typeof Worker !== "undefined" &&
+    file.size >= WORKER_MIN_SIZE;
+
+  if (useWorker) {
+    try {
+      const { calculateFileMD5InWorker } = await getMD5WorkerModule();
+      return await calculateFileMD5InWorker(file, signal);
+    } catch (workerErr) {
+      // Worker 创建/计算失败 → 静默回退到主线程
+      console.warn("[calculateFileMD5] Worker 路径失败，回退到主线程:", workerErr);
+    }
+  }
+
+  // ---- 主线程 SparkMD5 流式回退 ----
   return new Promise(async (resolve, reject) => {
     try {
       const chunkSize = 2 * 1024 * 1024; // 2MB 分片读取
@@ -379,16 +412,14 @@ export async function calculateFileMD5(
       const spark = new SparkMD5.ArrayBuffer();
       const fileReader = new FileReader();
 
-      // ✅ 监听中断信号
       if (signal) {
         signal.addEventListener("abort", () => {
-          fileReader.abort(); // 中止文件读取
+          fileReader.abort();
           reject(new Error("MD5 计算已取消"));
         });
       }
 
       fileReader.onload = (e) => {
-        // ✅ 每次读取前检查是否已取消
         if (signal?.aborted) {
           fileReader.abort();
           reject(new Error("MD5 计算已取消"));
@@ -399,7 +430,6 @@ export async function calculateFileMD5(
           spark.append(e.target.result as ArrayBuffer);
           currentChunk++;
 
-          // 触发进度回调
           if (onProgress) {
             const percent = Math.round((currentChunk / chunks) * 100);
             onProgress(percent);
@@ -418,7 +448,6 @@ export async function calculateFileMD5(
       };
 
       function loadNext() {
-        // ✅ 加载下一个分片前检查是否已取消
         if (signal?.aborted) {
           reject(new Error("MD5 计算已取消"));
           return;
@@ -436,3 +465,6 @@ export async function calculateFileMD5(
     }
   });
 }
+
+// 导出 Worker 相关工具（供 App 层清理资源）
+export { calculateFileMD5InWorker, disposeMD5Worker } from "./md5Worker";

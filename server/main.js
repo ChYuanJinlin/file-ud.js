@@ -2,6 +2,7 @@ const express = require("express");
 const fs = require("fs");
 const path = require("path");
 const multer = require("multer");
+const { Worker } = require("worker_threads");
 const app = express();
 const cors = require("cors");
 
@@ -35,6 +36,56 @@ const DEDUP_DIR = path.join(UPLOAD_DIR, "dedup");
     fs.mkdirSync(dir, { recursive: true });
   }
 });
+
+// 🔧 动态构建完整 URL（避免硬编码 localhost:3000）
+function buildUrl(req, path) {
+  const protocol = req.protocol || "http";
+  const host = req.get("host") || "localhost:3000";
+  return `${protocol}://${host}${path}`;
+}
+
+// 🔧 使用 Worker Thread 异步计算文件 MD5，避免阻塞事件循环
+const WORKER_TIMEOUT_MS = 120_000; // 2 分钟超时（大文件 MD5 可能较长）
+function calculateFileMD5(filePath) {
+  return new Promise((resolve, reject) => {
+    const workerPath = path.join(__dirname, "worker", "md5Worker.js");
+
+    // Worker Thread 模块文件不存在 → 回退到主线程计算
+    if (!fs.existsSync(workerPath)) {
+      const crypto = require("crypto");
+      const hash = crypto.createHash("md5");
+      const stream = fs.createReadStream(filePath);
+      stream.on("data", (chunk) => hash.update(chunk));
+      stream.on("end", () => resolve(hash.digest("hex")));
+      stream.on("error", (err) => reject(err));
+      return;
+    }
+
+    const worker = new Worker(workerPath);
+    const timeout = setTimeout(() => {
+      worker.terminate();
+      reject(new Error("MD5 Worker 计算超时"));
+    }, WORKER_TIMEOUT_MS);
+
+    worker.on("message", ({ error, hash }) => {
+      clearTimeout(timeout);
+      worker.terminate();
+      if (error) {
+        reject(new Error(error));
+      } else {
+        resolve(hash);
+      }
+    });
+
+    worker.on("error", (err) => {
+      clearTimeout(timeout);
+      worker.terminate();
+      reject(err);
+    });
+
+    worker.postMessage({ filePath });
+  });
+}
 
 app.use(express.json());
 app.use(cors());
@@ -192,37 +243,34 @@ app.post("/check-file", async (req, res) => {
         } catch (_) {}
       }
 
-      // 🔑 如无 dedup 记录中包含真实 MD5，则计算并缓存（仅首次，之后复用 dedup 记录）
+      // 🔑 如无 dedup 记录中包含真实 MD5，使用 Worker Thread 异步计算并缓存
       if (!realMD5Found) {
-        try {
-          const crypto = require("crypto");
-          const hash = crypto.createHash("md5");
-          const stream = fs.createReadStream(fileOnDisk);
-          await new Promise((resolve, reject) => {
-            stream.on("data", (chunk) => hash.update(chunk));
-            stream.on("end", resolve);
-            stream.on("error", reject);
-          });
-          realFileHash = hash.digest("hex");
-          realMD5Found = true;
-          console.log(`   🔑 计算磁盘文件真实 MD5: ${realFileHash}`);
+        const MAX_MD5_SIZE = 100 * 1024 * 1024; // >100MB 跳过 MD5
+        if (diskStats.size <= MAX_MD5_SIZE) {
+          try {
+            realFileHash = await calculateFileMD5(fileOnDisk);
+            realMD5Found = true;
+            console.log(`   🔑 计算磁盘文件真实 MD5: ${realFileHash}`);
 
-          // 缓存为 dedup 记录，后续请求直接复用
-          const dedupRecord = {
-            fileName: fileName,
-            originalFileName: fileName,
-            fileHash: realFileHash,
-            fileSize: diskStats.size,
-            url: `/uploads/${encodeURIComponent(fileName)}`,
-            createdAt: Date.now(),
-          };
-          fs.writeFileSync(
-            path.join(DEDUP_DIR, `${realFileHash}.json`),
-            JSON.stringify(dedupRecord, null, 2),
-          );
-          console.log(`   💾 已缓存 dedup 记录: ${realFileHash}`);
-        } catch (md5Err) {
-          console.log(`   ⚠️ 计算磁盘文件 MD5 失败: ${md5Err.message}，使用请求中的 fileHash 兜底`);
+            // 缓存为 dedup 记录，后续请求直接复用
+            const dedupRecord = {
+              fileName: fileName,
+              originalFileName: fileName,
+              fileHash: realFileHash,
+              fileSize: diskStats.size,
+              url: `/uploads/${encodeURIComponent(fileName)}`,
+              createdAt: Date.now(),
+            };
+            fs.writeFileSync(
+              path.join(DEDUP_DIR, `${realFileHash}.json`),
+              JSON.stringify(dedupRecord, null, 2),
+            );
+            console.log(`   💾 已缓存 dedup 记录: ${realFileHash}`);
+          } catch (md5Err) {
+            console.log(`   ⚠️ 计算磁盘文件 MD5 失败: ${md5Err.message}，使用请求中的 fileHash 兜底`);
+          }
+        } else {
+          console.log(`   ⚠️ 文件过大(${(diskStats.size / 1024 / 1024).toFixed(0)}MB)，跳过 MD5 计算，使用请求中的 fileHash 兜底`);
         }
       }
 
@@ -503,8 +551,22 @@ app.post("/upload-chunk", upload.single("file"), (req, res) => {
     });
   }
 
-  // 保存新分片
-  fs.rename(req.file.path, chunkPath, (err) => {
+  // 保存新分片（处理跨分区 rename 失败 EXDEV 错误）
+  const saveChunk = (srcPath, destPath, cb) => {
+    fs.rename(srcPath, destPath, (renameErr) => {
+      if (!renameErr) return cb(null);
+      // EXDEV: 跨分区 rename 不允许，改用 copy + delete
+      if (renameErr.code === "EXDEV") {
+        fs.copyFile(srcPath, destPath, (copyErr) => {
+          if (copyErr) return cb(copyErr);
+          fs.unlink(srcPath, () => cb(null));
+        });
+      } else {
+        cb(renameErr);
+      }
+    });
+  };
+  saveChunk(req.file.path, chunkPath, (err) => {
     if (err) {
       console.error("保存分片失败:", err);
       return res.status(500).json({ success: false, message: "保存分片失败" });
@@ -623,10 +685,14 @@ app.post("/merge-chunks", async (req, res) => {
     // 创建写入流
     const writeStream = fs.createWriteStream(filePath);
 
-    // 按顺序写入所有分片
+    // 按顺序流式写入所有分片（避免 readFileSync 阻塞事件循环 + 内存溢出）
     for (const chunkPath of chunks) {
-      const chunkData = fs.readFileSync(chunkPath);
-      writeStream.write(chunkData);
+      await new Promise((resolve, reject) => {
+        const readStream = fs.createReadStream(chunkPath);
+        readStream.pipe(writeStream, { end: false });
+        readStream.on("end", resolve);
+        readStream.on("error", reject);
+      });
     }
 
     writeStream.end();
@@ -651,7 +717,7 @@ app.post("/merge-chunks", async (req, res) => {
       originalFileName: originalName || fileName,
       fileHash: fileHash,
       fileSize: actualSize,
-      url: `http://localhost:3000/uploads/${encodeURIComponent(finalFileName)}`,
+      url: `/uploads/${encodeURIComponent(finalFileName)}`,
       uploadedAt: Date.now(),
     };
 
@@ -677,9 +743,7 @@ app.post("/merge-chunks", async (req, res) => {
       data: {
         filename: finalFileName,
         path: filePath,
-        url: `http://localhost:3000/uploads/${encodeURIComponent(
-          finalFileName,
-        )}`,
+        url: buildUrl(req, `/uploads/${encodeURIComponent(finalFileName)}`),
         fileHash: fileHash,
         fileSize: actualSize,
       },
@@ -714,7 +778,7 @@ app.post("/upload", uploadSingle.single("file"), (req, res) => {
       size: req.file.size,
       mimetype: req.file.mimetype,
       path: req.file.path,
-      url: `http://localhost:3000/uploads/${req.file.filename}`,
+      url: buildUrl(req, `/uploads/${req.file.filename}`),
     },
   };
 
@@ -741,7 +805,7 @@ app.post("/upload-multiple", uploadSingle.array("files", 10), (req, res) => {
     size: file.size,
     mimetype: file.mimetype,
     path: file.path,
-    url: `http://localhost:3000/uploads/${file.filename}`,
+    url: buildUrl(req, `/uploads/${file.filename}`),
   }));
 
   console.log(`✅ 多文件传输成功: ${filesInfo.length} 个文件`);
@@ -812,7 +876,7 @@ app.get("/files", (req, res) => {
 
       return {
         fileName: file,
-        url: `http://localhost:3000/uploads/${encodeURIComponent(file)}`,
+        url: buildUrl(req, `/uploads/${encodeURIComponent(file)}`),
         size: stats.size,
         type,
         extension: ext,
