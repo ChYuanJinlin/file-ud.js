@@ -410,13 +410,7 @@ export default class DownloadFile<T = any> extends TransferFile<
           { once: true },
         );
       }
-      console.log(
-        `[DownloadFile] _doHttpRequest 调用 cfg.action, ` +
-          `headers=${JSON.stringify(overrides?.headers)}, ` +
-          `queueLen=${this._chunkHeadersQueue.length}`,
-      );
       const res = await cfg.action(this);
-      console.log(`[DownloadFile] _doHttpRequest cfg.action 返回, resType=${typeof res}`);
       return { data: res };
     }
     // action 既不是字符串也不是函数 → 配置错误

@@ -74,11 +74,6 @@ export default class DownloadChunkManager extends ChunkManager {
       totalChunks: this.totalChunks,
     });
 
-    console.log(
-      `[DownloadChunkManager] doInit() 入口, fileName=${this.downloadFile.fileName},` +
-        ` completedChunks=${this.completedChunks}, totalChunks=${this.totalChunks}`,
-    );
-
     const downloader = this.downloadFile.transfer;
     let initResult: any = null;
     let isResuming = false;
@@ -112,9 +107,7 @@ export default class DownloadChunkManager extends ChunkManager {
               fileHash: this.fileHash,
             });
           } else {
-            console.log(
-              `[DownloadChunkManager] ⚠️ onInitChunk 返回的 fileHash 不是有效 MD5: "${initResult.fileHash}", 将继续用 computeFileIdentifier 兜底`,
-            );
+            // onInitChunk 返回的 fileHash 不是有效 MD5，将继续用 computeFileIdentifier 兜底
           }
 
           // ✅ 秒下：仅当回调显式标记 isInstantDownload 时生效
@@ -152,9 +145,6 @@ export default class DownloadChunkManager extends ChunkManager {
     // 🔑 兜底：如果 onInitChunk 未返回有效 MD5（fileHash 未设置），用computeFileIdentifier 生成
     if (!this.fileHash) {
       this.fileHash = await this.computeFileIdentifier();
-      console.log(
-        `[DownloadChunkManager] 💡 fileHash 兜底值: ${this.fileHash} (非 MD5，将用于 IndexedDB key)`,
-      );
     }
 
     // ========== Step 2: IndexedDB 恢复（用 this.fileHash 作为 key） ==========
@@ -163,18 +153,8 @@ export default class DownloadChunkManager extends ChunkManager {
     //    ensureWritableClosed() 已同步清理 IndexedDB。因此这里恢复的所有进度都是可信的。
     if (this.config.enableFileCache && this.fileHash) {
       try {
-        console.log(
-          `[DownloadChunkManager] 🔍 尝试从 IndexedDB 恢复进度, fileHash=${this.fileHash}, enableFileCache=${this.config.enableFileCache}`,
-        );
         const { loadDownloadProgress } = await import("../utils/fileCache");
         const progress = await loadDownloadProgress(this.fileHash);
-
-        console.log(
-          `[DownloadChunkManager] 📦 IndexedDB 查询结果:`,
-          progress
-            ? `找到 ${progress.chunkIndexes.length}/${progress.totalChunks} 个已完成分片`
-            : "未找到进度记录",
-        );
 
         if (progress && progress.chunkIndexes.length > 0) {
           logger.info(this.getTag(), "✅ 从 IndexedDB 恢复下载进度", {
@@ -214,20 +194,9 @@ export default class DownloadChunkManager extends ChunkManager {
 
                 if (diskSize === 0) {
                   // 🔑 磁盘文件大小为 0 → 不可能是一个已完成的有效下载
-                  //    无论新下载还是重试，都清理 IndexedDB 并重新下载
-                  //    - 重试：用户可能手动删除了文件
-                  //    - 新下载：showSaveFilePicker 创建的空文件，旧 IndexedDB 记录
-                  //      指向的是之前其他位置的下载，chunk 数据无法复用
-                  console.log(
-                    `[DownloadChunkManager] 🗑️ 磁盘文件为空（用户可能删了或选了新位置），清理 IndexedDB 并重新下载`,
-                  );
                   shouldDeleteCache = true;
                   fileVerified = false;
                 } else if (diskSize !== expectedSize) {
-                  // 文件大小不匹配 → 可能是其他文件，IndexedDB 记录仍有效（旧文件可能在别处）
-                  console.log(
-                    `[DownloadChunkManager] ⚠️ 磁盘文件大小不匹配: disk=${diskSize}, expected=${expectedSize}, IndexedDB 记录保留`,
-                  );
                   fileVerified = false;
                   shouldDeleteCache = false;
                 } else {
@@ -251,9 +220,6 @@ export default class DownloadChunkManager extends ChunkManager {
                       }
                     } else {
                       // 大文件仅靠大小校验，避免 MD5 计算阻塞 UI 30-60s
-                      console.log(
-                        `[DownloadChunkManager] 💡 文件>50MB (${(diskSize / 1024 / 1024).toFixed(0)}MB)，跳过 MD5 校验，仅信任文件大小`,
-                      );
                       fileVerified = true;
                     }
                   } else {
@@ -262,21 +228,13 @@ export default class DownloadChunkManager extends ChunkManager {
                   }
                 }
               } catch (getFileErr) {
-                // getFile() 失败：文件不存在 / 被删除 / 权限被撤销
-                // 无论何种场景，文件都不可用，清理 IndexedDB 并重新下载
-                console.log(
-                  `[DownloadChunkManager] 🗑️ fileHandle.getFile() 失败（文件不可用），清理 IndexedDB 并重新下载, err=`,
-                  getFileErr,
-                );
+                // getFile() 失败：文件被删除 / 权限被撤销
                 shouldDeleteCache = true;
                 fileVerified = false;
               }
             }
 
             if (fileVerified) {
-              console.log(
-                `[DownloadChunkManager] ⚡ 秒下，文件已通过磁盘+哈希双验证, fileName=${this.downloadFile.fileName}`,
-              );
               this.isInstantTransfer = true;
               this.downloadFile.proxy.percent = 100;
               this.downloadFile.proxy.status = "success";
@@ -461,9 +419,6 @@ export default class DownloadChunkManager extends ChunkManager {
         const diskFile = await this.streamFileHandle.getFile();
         const minExpectedSize = this.completedChunks * this.chunkSize;
         if (diskFile.size === 0) {
-          console.log(
-            `[DownloadChunkManager] 🗑️ 磁盘文件为空（abort 重置），清理 IndexedDB 并全新下载`,
-          );
           this.completedChunks = 0;
           this.chunks = new Array(this.totalChunks).fill(false);
           this.countedChunks.clear();
@@ -477,15 +432,9 @@ export default class DownloadChunkManager extends ChunkManager {
             } catch {}
           }
         } else if (diskFile.size < minExpectedSize) {
-          console.log(
-            `[DownloadChunkManager] ⚠️ 磁盘文件过小 (disk=${diskFile.size}, expected>=${minExpectedSize})，IndexedDB 进度可能落后`,
-          );
+          // 磁盘文件过小，IndexedDB 进度可能落后
         }
-      } catch (diskErr) {
-        console.log(
-          `[DownloadChunkManager] 💡 磁盘文件检查失败（文件不可访问），继续正常下载`,
-          diskErr,
-        );
+      } catch (diskErr: any) {
       }
     }
 
@@ -501,11 +450,6 @@ export default class DownloadChunkManager extends ChunkManager {
     } else {
       logger.info(this.getTag(), "⚠️ 流式写入不可用，使用内存模式");
     }
-
-    console.log(
-      `[DownloadChunkManager] doInit() 完成, completedChunks=${this.completedChunks}, ` +
-        `isResuming=${isResuming}, hasWritable=${!!this.writable}`,
-    );
 
     return initResult || { chunks: [] };
   }
@@ -656,14 +600,8 @@ export default class DownloadChunkManager extends ChunkManager {
       for (const idx of merged) {
         chunkIndexes.push(idx);
       }
-      const useDiskSet = this._diskWrittenChunks.size > 0;
 
       chunkIndexes.sort((a, b) => a - b);
-
-      console.log(
-        `[DownloadChunkManager] 💾 保存下载进度到 IndexedDB: ${chunkIndexes.length}/${this.totalChunks} 分片` +
-          ` (${useDiskSet ? "磁盘模式" : "内存模式"}, fileHash=${fileHash})`,
-      );
 
       const { saveDownloadProgress } = await import("../utils/fileCache");
       await saveDownloadProgress(
@@ -763,10 +701,6 @@ export default class DownloadChunkManager extends ChunkManager {
       if (allCompleted.size > 0) {
         try {
           const chunkIndexes = Array.from(allCompleted).sort((a, b) => a - b);
-          console.log(
-            `[DownloadChunkManager] 💾 doAfterStartReset: 合并保存 ${chunkIndexes.length}/${this.totalChunks} 分片` +
-              ` (本轮写入=${this._diskWrittenChunks.size}, 历史恢复=${allCompleted.size - this._diskWrittenChunks.size})`,
-          );
           const fileHash =
             this.fileHash || (await this.computeFileIdentifier());
           const { saveDownloadProgress } = await import("../utils/fileCache");
@@ -829,37 +763,18 @@ export default class DownloadChunkManager extends ChunkManager {
    *    若 close() 失败退化为 abort()，磁盘数据丢失，必须同步清理 IndexedDB。
    */
   public async ensureWritableClosed(): Promise<void> {
-    console.log(
-      `[DownloadChunkManager] ensureWritableClosed() 入口, pendingWrites=${this.pendingWrites.length}, hasWritable=${!!this.writable}`,
-    );
-
-    // 🔑 关键：先把 writable 引用取出并立即置 null，阻止 doSaveChunkResult 继续写入
     const oldWritable = this.writable;
     this.writable = null;
 
-    // 🔑 等待所有 fire-and-forget 写入 settle（含 .then() 中的 IndexedDB 更新）
-    //    不等待的话，close() 期间 .then() 回调可能还在执行 → 竞态
     if (this.pendingWrites.length > 0) {
-      console.log(
-        `[DownloadChunkManager] ⏳ 等待 ${this.pendingWrites.length} 个 pending writes...`,
-      );
       await Promise.allSettled(this.pendingWrites);
-      console.log(`[DownloadChunkManager] ✅ 所有 pending writes 已 settle`);
     }
     this.pendingWrites = [];
 
-    // 🔑 优先 close 而不是 abort：保留已写入磁盘的分片数据，重试时可断点续传。
-    //    close() 会等待所有正在进行的写操作完成并刷新到磁盘，再释放文件锁。
-    //    只有 close 失败时才 abort 兜底（如流已损坏无法正常关闭）。
     if (oldWritable) {
       try {
         await oldWritable.close();
-        console.log(
-          `[DownloadChunkManager] writable 已 close（保留 ${this._diskWrittenChunks.size} 个已落盘分片）`,
-        );
 
-        // 🔑 close 成功后做一次最终 IndexedDB 保存（绕过节流），
-        //    合并 _diskWrittenChunks + this.chunks[]，避免覆盖丢失历史进度。
         if (this.config.enableFileCache) {
           const allCompleted = new Set<number>(this._diskWrittenChunks);
           for (let i = 0; i < this.totalChunks; i++) {
@@ -870,9 +785,6 @@ export default class DownloadChunkManager extends ChunkManager {
               const fileHash =
                 this.fileHash || (await this.computeFileIdentifier());
               const chunkIndexes = Array.from(allCompleted).sort((a, b) => a - b);
-              console.log(
-                `[DownloadChunkManager] 💾 最终合并保存 ${chunkIndexes.length}/${this.totalChunks} 分片`,
-              );
               const { saveDownloadProgress } = await import(
                 "../utils/fileCache"
               );
@@ -892,20 +804,15 @@ export default class DownloadChunkManager extends ChunkManager {
           }
         }
 
-        // 🔑 最终保存已完成，清理 _diskWrittenChunks 供下一轮 doInit() 重新填充。
-        //    必须在此处（而非 doAfterStartReset）clear，确保 pending writes 的
-        //    .then() 回调有机会将额外分片加入集合，最终保存才能有完整数据。
         this._diskWrittenChunks.clear();
         this._safeDiskChunks.clear();
       } catch (_closeErr) {
-        // 🔑 close 失败 → 回退 abort → 未 flush 的写入数据可能丢失
         console.warn(
           `[DownloadChunkManager] ⚠️ close() 失败，回退 abort(), err=`,
           _closeErr,
         );
         try {
           await oldWritable.abort();
-          console.log(`[DownloadChunkManager] writable 已 abort`);
         } catch (__) {
           console.warn(`[DownloadChunkManager] writable abort 也失败了:`, __);
         }
@@ -921,10 +828,6 @@ export default class DownloadChunkManager extends ChunkManager {
             }
             if (allSafe.size > 0) {
               const safeIndexes = Array.from(allSafe).sort((a, b) => a - b);
-              console.log(
-                `[DownloadChunkManager] 🔄 abort 后合并回滚 IndexedDB: ${safeIndexes.length}/${this.totalChunks} 分片` +
-                  ` (安全快照=${this._safeDiskChunks.size}, 历史恢复=${allSafe.size - this._safeDiskChunks.size})`,
-              );
               const { saveDownloadProgress } = await import(
                 "../utils/fileCache"
               );
@@ -936,10 +839,6 @@ export default class DownloadChunkManager extends ChunkManager {
                 safeIndexes,
               );
             } else {
-              // 没有任何进度 → 删除
-              console.log(
-                `[DownloadChunkManager] 🧹 无任何进度，清理 IndexedDB`,
-              );
               const { removeDownloadProgress } =
                 await import("../utils/fileCache");
               await removeDownloadProgress(this.fileHash);
@@ -951,12 +850,8 @@ export default class DownloadChunkManager extends ChunkManager {
             );
           }
         }
-        // 清理已失效的落盘标记 + 安全快照
-        this._diskWrittenChunks.clear();
         this._safeDiskChunks.clear();
       }
     }
-
-    console.log(`[DownloadChunkManager] ensureWritableClosed() 完成`);
   }
 }

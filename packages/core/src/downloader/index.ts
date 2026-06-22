@@ -140,7 +140,6 @@ export default class Downloader<T = any> extends Transfer<DownloadFile, T> {
   ): Promise<FileSystemFileHandle | null | undefined> {
     try {
       if (typeof window === "undefined" || !window.showSaveFilePicker) {
-        console.log("[pickSaveFile] API 不可用");
         return undefined;
       }
 
@@ -150,52 +149,41 @@ export default class Downloader<T = any> extends Transfer<DownloadFile, T> {
 
       // ---- L1: 内存缓存 ----
       if (suggestedName && Downloader.fileHandleCache.has(suggestedName)) {
-        console.log(`[pickSaveFile] ✅ L1 内存缓存命中: "${suggestedName}"`);
         const cachedHandle = Downloader.fileHandleCache.get(suggestedName)!;
         try {
           const diskFile = await cachedHandle.getFile();
           if (diskFile.size > 0) {
-            console.log(`[pickSaveFile] ♻️ 复用 L1 缓存的句柄: ${suggestedName} (${diskFile.size} bytes)`);
             return cachedHandle;
           }
-          console.log(`[pickSaveFile] ⚠️ L1 缓存句柄指向的文件已为空: ${suggestedName}`);
           Downloader.fileHandleCache.delete(suggestedName);
         } catch (e) {
-          console.log(`[pickSaveFile] ⚠️ L1 缓存句柄失效: ${suggestedName}`, e);
           Downloader.fileHandleCache.delete(suggestedName);
         }
       }
 
       // ---- L2: IndexedDB 持久化句柄（跨页面刷新） ----
       if (suggestedName) {
-        console.log(`[pickSaveFile] 🔍 L2 IndexedDB 查找: "${suggestedName}"`);
         try {
           const indexedHandle = await loadFileHandle(suggestedName);
           if (indexedHandle) {
-            console.log(`[pickSaveFile] ✅ L2 IndexedDB 命中: "${suggestedName}"`);
             // 验证句柄仍有效（文件未被手动删除）
             try {
               const diskFile = await indexedHandle.getFile();
               if (diskFile.size > 0) {
-                console.log(`[pickSaveFile] ♻️ 复用 IndexedDB 持久化句柄: ${suggestedName} (${diskFile.size} bytes)`);
                 // 🔄 回填到 L1 内存缓存，下次更快
                 Downloader.fileHandleCache.set(suggestedName, indexedHandle);
                 return indexedHandle;
               }
-              console.log(`[pickSaveFile] ⚠️ IndexedDB 句柄指向的文件已为空: ${suggestedName}`);
             } catch (verifyErr) {
-              console.log(`[pickSaveFile] ⚠️ IndexedDB 句柄验证失败: ${suggestedName}`, verifyErr);
+              // 句柄验证失败，跳过
             }
-          } else {
-            console.log(`[pickSaveFile] ❌ L2 IndexedDB 未命中: "${suggestedName}"`);
           }
         } catch (loadErr) {
-          console.log(`[pickSaveFile] ⚠️ IndexedDB 查询失败，跳过 L2 缓存:`, loadErr);
+          // IndexedDB 查询失败，跳过 L2 缓存
         }
       }
 
       // ---- L3: 无缓存 → 弹出系统"另存为"对话框 ----
-      console.log(`[pickSaveFile] 📂 触发 showSaveFilePicker: "${suggestedName}"`);
       const handle = await window.showSaveFilePicker({
         suggestedName,
       });
@@ -256,8 +244,6 @@ export default class Downloader<T = any> extends Transfer<DownloadFile, T> {
 
     // 再开始下载，进度会通过 TransferFile 的监听实时更新
     downloadFile.start(downloadFile.downloadChunkManager).then(() => {
-      console.log(`[downloadFile.then] start() promise 已 resolve, fileHandle=${!!downloadFile.fileHandle}, fileName=${downloadFile.fileName}`);
-
       // 🔑 下载成功后缓存文件句柄（L1 内存 + L2 IndexedDB）
       const fh = downloadFile.fileHandle;
       if (fh) {
@@ -266,9 +252,6 @@ export default class Downloader<T = any> extends Transfer<DownloadFile, T> {
         Downloader.fileHandleCache.set(name, fh);
         // L2: IndexedDB 持久化（跨页面刷新）
         saveFileHandle(name, fh).catch(() => {});
-        console.log(`[downloadFile.then] 💾 缓存文件句柄: "${name}" (L1 + L2)`);
-      } else {
-        console.log(`[downloadFile.then] ⚠️ fileHandle 为空，无法缓存`);
       }
 
       // 下载完成后触发一次最终更新
