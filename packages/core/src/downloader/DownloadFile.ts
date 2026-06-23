@@ -199,6 +199,11 @@ export default class DownloadFile<T = any> extends TransferFile<
    */
   public async download(): Promise<T> {
     this.proxy.loading = true;
+    // 🔑 重试场景：cancel 的 finally 块已将文件移出 currentQueue，
+    //    拦截器需要在队列中找到文件才能匹配 XHR 并绑定进度回调
+    if (!DownloadFile.currentQueue.includes(this as any)) {
+      DownloadFile.currentQueue.push(this as any);
+    }
     return new Promise<T>((resolve, reject) => {
       this.resolve = resolve;
       this.reject = reject;
@@ -241,16 +246,18 @@ export default class DownloadFile<T = any> extends TransferFile<
             data: isPlainObject(result) ? result : undefined,
           });
           const res = response.data;
-          // 下载成功：触发 onSuccess 钩子、保存文件、设置完成状态
-          this.onSuccess(res);
-          // 🚀 流式保存：如果有 fileHandle，写入文件系统；否则使用浏览器下载
+          // 🚀 流式保存：先确保文件成功落盘，再触发 onSuccess → 避免保存失败时
+          //    status 已是 "success" 但 percent 未到 100 的状态不一致
           if (this.fileHandle) {
             await DownloadFile.writeToFileHandle(this.fileHandle, res);
           } else {
             Downloader.saveBlob(this.fileName, res as Blob);
           }
-          this.proxy.status = "success";
           this.proxy.percent = 100;
+          this.onSuccess(res);
+          // 🔑 双重保险：绕开 proxy，直接写原始对象上的 status，
+          //    确保无论 proxy setter 链路如何，底层值一定正确
+          (this as any).status = "success";
 
           resolve(res);
         } catch (err: any) {
@@ -268,13 +275,16 @@ export default class DownloadFile<T = any> extends TransferFile<
           this.transfer.loading = false;
 
           // 清理队列和活跃文件列表（防止内存泄漏）
-          const queueIdx = DownloadFile.currentQueue.indexOf(this);
+          const queueIdx = DownloadFile.currentQueue.indexOf(this as any);
           if (queueIdx !== -1) {
             DownloadFile.currentQueue.splice(queueIdx, 1);
           }
-          DownloadFile.assignedFiles.delete(this);
+          DownloadFile.assignedFiles.delete(this as any);
+          // 🔑 同步清理拦截器内部的 assignedFiles 集合，
+          //    否则重试时文件被标记为"已分配"会绕过主匹配逻辑（仅靠 fallback 兜底）
+          DownloadFile.interceptor?.cleanupFile(this as any);
 
-          // onSuccess 已移除过,此处做兜底（取消/失败场景）
+          // 🔑 兜底移除（取消/失败场景），带 indexOf 保护避免 splice(-1, 1) 误删
           const activeIdx = this.transfer.activeFiles.indexOf(this);
           if (activeIdx !== -1) {
             this.transfer.activeFiles.splice(activeIdx, 1);
@@ -299,8 +309,14 @@ export default class DownloadFile<T = any> extends TransferFile<
       const fileSize = this.File?.size || this.size || 0;
 
       if (event.lengthComputable && event.total > 0) {
-        // 已知总大小：精确计算百分比
-        this.proxy.percent = Math.floor((event.loaded * 100) / event.total);
+        // 已知总大小：精确计算百分比，但上限卡在 99%
+        // 🔑 最后一个 progress 事件 loaded===total 时，响应体可能还在传输中，
+        //    此时 status 仍是 "UDLoading"，若 percent=100 会造成视觉不一致
+        //    100% 只在 onSuccess 之后显式设置
+        this.proxy.percent = Math.min(
+          99,
+          Math.floor((event.loaded * 100) / event.total),
+        );
         this.__transferBytes__ = Math.floor(
           fileSize * (this.proxy.percent / 100),
         );

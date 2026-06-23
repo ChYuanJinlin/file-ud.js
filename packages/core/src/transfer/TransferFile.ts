@@ -366,9 +366,18 @@ export default class TransferFile<T extends TransferFile<T, any>, D = any> {
         this.isDownloader() ? "DownloadFile" : "UploadFile",
         `文件 ${this.fileName} 开始普通重试`,
       );
+      // 🔑 重置取消标志，与分片路径保持一致。否则 download() 内保存文件失败时
+      //    isCancel 仍为 true → onError 被跳过 → status 残留 "success" 但 percent 未到 100
+      this.isCancel = false;
+      this.proxy.isCancel = false;
       this.proxy.isRetry = true;
       this.proxy.percent = 0;
       this.proxy.status = "UDLoading";
+      // 🔑 cancel 的 finally 清理已将文件移出 activeFiles，
+      //    重试时需要重新加入，否则 onSuccess 中统计和 files-complete 事件会错乱
+      if (!this.transfer.activeFiles.includes(this as any)) {
+        this.transfer.activeFiles.push(this as any);
+      }
 
       await this.doRetryTransfer().catch((err: any) => {
         logger.error(
@@ -402,10 +411,11 @@ export default class TransferFile<T extends TransferFile<T, any>, D = any> {
 
     this.transfer.successCallback?.(res, this.proxy);
 
-    this.transfer.activeFiles.splice(
-      this.transfer.activeFiles.indexOf(this),
-      1,
-    );
+    // 🔑 只在文件确实在 activeFiles 中时才移除，避免 splice(-1, 1) 误删其他文件
+    const afIdx = this.transfer.activeFiles.indexOf(this);
+    if (afIdx !== -1) {
+      this.transfer.activeFiles.splice(afIdx, 1);
+    }
     if (!isDownload) {
       (this.transfer as unknown as Uploader<T>)?.remObjectUrls?.(this.url);
     }

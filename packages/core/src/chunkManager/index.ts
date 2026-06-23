@@ -382,6 +382,9 @@ export default abstract class ChunkManager<
     this.lastChunkBytes = 0;
     this.isCancelled = false;
     this.isPaused = false;
+    // 🔑 重置秒下/秒传标志，避免上一次 run 的 markInstantDownload() 残留影响
+    //    新的 doInit() 会重新判断是否需要走秒下流程
+    this.isInstantTransfer = false;
     // 🔑 清除取消后残留的失败分片记录（这些分片在 cancel 的异步清理中被标记为失败，
     //    但并未经过真正的错误重试），避免 checkStatistics() 误判。
     this.failedChunks = [];
@@ -894,6 +897,20 @@ export default abstract class ChunkManager<
       this.chunkEndTime = performance.now();
       this.totalChunkTime = this.chunkEndTime - this.chunkStartTime;
       this.calculateStats();
+
+      // 🔑 同步更新 proxy.speed（与 handleAllChunksSuccess 一致），修复秒下路径中
+      //    markInstantDownload() 将 speed 置零后 completeMerge() 只算 chunkStatsInfos
+      //    却不更新 proxy.speed → UI 显示陈旧/错误的速率
+      const fileSize = file.getFileSize();
+      const totalTime = this.totalChunkTime / 1000;
+      const averageSpeed = totalTime > 0 ? fileSize / totalTime : 0;
+      file.proxy.speed = {
+        currentSpeed: 0,
+        averageSpeed,
+        currentSpeedFormatted: "0 B/s",
+        averageSpeedFormatted: formatSpeed(averageSpeed),
+      };
+
       await this.doBeforeOnSuccess(mergeResult);
 
       // 🔑 合并 + 保存全部完成后才推到 100%
