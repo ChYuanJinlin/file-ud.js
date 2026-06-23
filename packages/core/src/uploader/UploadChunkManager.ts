@@ -200,10 +200,10 @@ export default class UploadChunkManager extends ChunkManager {
     return hash;
   }
   /**
-   * 初始化上传（获取uploadId或检查已上传分片）
+   * 初始化上传
    */
   private async initUpload(): Promise<
-    ReturnType<onInitChunkCallback> | undefined
+    ReturnType<onInitChunkCallback<any>> | undefined
   > {
     const up = this.uploadFile.transfer;
     this.fileHash = await this.getFileHash(this.uploadFile.File);
@@ -957,7 +957,6 @@ export default class UploadChunkManager extends ChunkManager {
    * ```
    */
   public cancelUpload(): void {
-
     logger.info(
       "uploadChunkManager",
       `开始取消文件 ${this.uploadFile.fileName} 的上传`,
@@ -1355,36 +1354,38 @@ export default class UploadChunkManager extends ChunkManager {
 
       // 在每个分片上传前检查暂停状态
       uploadPromises.push(
-        this.queue.add(async () => {
-          // ✅ 在真正开始上传前检查是否暂停或取消
-          await this.waitForResume();
+        this.queue
+          .add(async () => {
+            // ✅ 在真正开始上传前检查是否暂停或取消
+            await this.waitForResume();
 
-          // 记录分片开始时间
-          chunkStartTimes[chunkIndex] = performance.now();
+            // 记录分片开始时间
+            chunkStartTimes[chunkIndex] = performance.now();
 
-          try {
-            await this.uploadChunkWithRetry(chunkIndex);
-            // 记录分片耗时
-            chunkDurations[chunkIndex] =
-              performance.now() - chunkStartTimes[chunkIndex];
-          } catch (error) {
-            // 记录失败分片的耗时（如果有）
-            if (chunkStartTimes[chunkIndex]) {
+            try {
+              await this.uploadChunkWithRetry(chunkIndex);
+              // 记录分片耗时
               chunkDurations[chunkIndex] =
                 performance.now() - chunkStartTimes[chunkIndex];
+            } catch (error) {
+              // 记录失败分片的耗时（如果有）
+              if (chunkStartTimes[chunkIndex]) {
+                chunkDurations[chunkIndex] =
+                  performance.now() - chunkStartTimes[chunkIndex];
+              }
+              throw error;
             }
-            throw error;
-          }
-        }).catch((_error) => {
-          if (
-            _error instanceof Error &&
-            (_error.message === "Upload cancelled" ||
-              _error.message === "Transfer cancelled")
-          ) {
-            this.failedChunks.push(chunkIndex);
-          }
-          throw _error;
-        }),
+          })
+          .catch((_error) => {
+            if (
+              _error instanceof Error &&
+              (_error.message === "Upload cancelled" ||
+                _error.message === "Transfer cancelled")
+            ) {
+              this.failedChunks.push(chunkIndex);
+            }
+            throw _error;
+          }),
       );
     }
 

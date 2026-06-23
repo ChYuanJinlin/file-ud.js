@@ -582,8 +582,9 @@ export default abstract class ChunkManager<
           return;
         }
 
-        // 指数退避
-        const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 10000);
+        // 指数退避（基数使用用户配置的 retryDelay，默认 1000ms）
+        const baseDelay = this.retryDelay || 1000;
+        const delay = Math.min(baseDelay * Math.pow(2, retryCount - 1), 10000);
         await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }

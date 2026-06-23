@@ -522,52 +522,65 @@ export default class DownloadChunkManager extends ChunkManager {
    * - 内存模式：将 chunkBlobs Map 中的分片按顺序拼接为单一 Blob
    */
   protected async doMergeChunks(): Promise<Blob | FileSystemFileHandle> {
-    // 🔑 流式模式：等待所有 fire-and-forget 写入完成，再关闭流
-    if (this.writable && this.streamFileHandle) {
-      try {
-        if (this.pendingWrites.length > 0) {
-          await Promise.all(this.pendingWrites);
-          this.pendingWrites = [];
+    const dl = this.downloadFile.transfer as any;
+    let result: Blob | FileSystemFileHandle;
+
+    try {
+      // 🔑 流式模式：等待所有 fire-and-forget 写入完成，再关闭流
+      if (this.writable && this.streamFileHandle) {
+        try {
+          if (this.pendingWrites.length > 0) {
+            await Promise.all(this.pendingWrites);
+            this.pendingWrites = [];
+          }
+          await this.writable.close();
+          logger.info(this.getTag(), "✅ 流式写入完成，文件已落盘", {
+            fileName: this.downloadFile.fileName,
+          });
+        } finally {
+          this.writable = null;
         }
-        await this.writable.close();
-        logger.info(this.getTag(), "✅ 流式写入完成，文件已落盘", {
-          fileName: this.downloadFile.fileName,
-        });
-      } finally {
-        this.writable = null;
+        result = this.streamFileHandle;
+      } else {
+        // 内存模式兜底
+        const allChunks: Blob[] = [];
+
+        for (let i = 0; i < this.totalChunks; i++) {
+          const chunk = this.chunkBlobs.get(i);
+          if (chunk) {
+            allChunks.push(chunk);
+          }
+        }
+
+        if (allChunks.length === 0) {
+          // 🔑 秒下场景：文件已在磁盘完整，直接返回 FileHandle
+          const fh = this.downloadFile.fileHandle || this.streamFileHandle;
+          if (fh && this.isInstantTransfer) {
+            logger.info(this.getTag(), "⚡ 秒下合并：文件已在本地磁盘，跳过合并");
+            result = fh;
+          } else {
+            logger.warn(this.getTag(), "没有可合并的分片");
+            result = new Blob();
+          }
+        } else {
+          result = new Blob(allChunks);
+          logger.info(this.getTag(), "分片合并完成", {
+            fileName: this.downloadFile.fileName,
+            totalChunks: allChunks.length,
+            size: formatFileSize(result.size),
+          });
+        }
       }
-      return this.streamFileHandle;
+
+      dl.emit("merge-success", { file: this.downloadFile.proxy });
+      return result;
+    } catch (error) {
+      dl.emit("merge-error", {
+        file: this.downloadFile.proxy,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
     }
-
-    // 内存模式兜底
-    const allChunks: Blob[] = [];
-
-    for (let i = 0; i < this.totalChunks; i++) {
-      const chunk = this.chunkBlobs.get(i);
-      if (chunk) {
-        allChunks.push(chunk);
-      }
-    }
-
-    if (allChunks.length === 0) {
-      // 🔑 秒下场景：文件已在磁盘完整，直接返回 FileHandle
-      const fh = this.downloadFile.fileHandle || this.streamFileHandle;
-      if (fh && this.isInstantTransfer) {
-        logger.info(this.getTag(), "⚡ 秒下合并：文件已在本地磁盘，跳过合并");
-        return fh;
-      }
-      logger.warn(this.getTag(), "没有可合并的分片");
-      return new Blob();
-    }
-
-    const mergedBlob = new Blob(allChunks);
-    logger.info(this.getTag(), "分片合并完成", {
-      fileName: this.downloadFile.fileName,
-      totalChunks: allChunks.length,
-      size: formatFileSize(mergedBlob.size),
-    });
-
-    return mergedBlob;
   }
 
   // ==================== 覆写钩子 ====================

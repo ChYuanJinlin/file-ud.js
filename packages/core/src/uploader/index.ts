@@ -414,10 +414,10 @@ export default class Uploader<T = any> extends Transfer<UploadFile, T> {
         try {
           const result = await this.selectCallback.call(this, file);
           if (!result) {
-            return [];
+            continue;
           }
         } catch (error) {
-          return [];
+          continue;
         }
       }
 
