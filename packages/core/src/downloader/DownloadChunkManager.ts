@@ -115,30 +115,35 @@ export default class DownloadChunkManager extends ChunkManager {
             logger.info(this.getTag(), "⚡ 秒下（回调标记），文件已在本地", {
               fileName: this.downloadFile.fileName,
             });
-            this.isInstantTransfer = true;
-            this.completedChunks = this.totalChunks;
-            this.totalChunkSize = this.downloadFile.getFileSize();
-            this.countedChunks = new Set(
-              Array.from({ length: this.totalChunks }, (_, i) => i),
-            );
-            this.chunks = new Array(this.totalChunks).fill(true);
-            this.downloadFile.proxy.percent = 100;
-            this.downloadFile.proxy.status = "success";
-            this.downloadFile.proxy.speed = {
-              currentSpeed: 0,
-              averageSpeed: 0,
-              currentSpeedFormatted: "0 B/s",
-              averageSpeedFormatted: "0 B/s",
-            };
-            const dl = this.downloadFile.transfer;
-            dl.updateGlobalStats();
-            dl.triggerUpdate();
+            this.markInstantDownload();
             return initResult;
           }
         }
       } catch (error) {
         // 回调失败不阻塞下载，回退到全新下载
         logger.warn(this.getTag(), "服务端哈希查询失败，将全新下载", error);
+      }
+    }
+
+    // ========== Step 1.5: 内置秒下检查（服务端确认文件存在 + 本地磁盘验证） ==========
+    // 🔑 用户只需在 onInitChunk 中设置 serverFileExists: true，下载器内部自动验证本地磁盘文件。
+    //    省去每个使用者都自己写 getFile() + 大小比较的重复样板代码。
+    if (initResult?.serverFileExists === true && !this.isInstantTransfer) {
+      const fileHandle = this.downloadFile.fileHandle || this.streamFileHandle;
+      if (fileHandle) {
+        try {
+          const diskFile = await fileHandle.getFile();
+          if (diskFile.size === this.downloadFile.getFileSize()) {
+            logger.info(this.getTag(), "⚡ 秒下（内置检查），本地磁盘文件与服务端一致", {
+              fileName: this.downloadFile.fileName,
+              fileSize: diskFile.size,
+            });
+            this.markInstantDownload();
+            return initResult;
+          }
+        } catch {
+          // 磁盘文件不可访问，走正常下载流程
+        }
       }
     }
 
@@ -235,15 +240,7 @@ export default class DownloadChunkManager extends ChunkManager {
             }
 
             if (fileVerified) {
-              this.isInstantTransfer = true;
-              this.downloadFile.proxy.percent = 100;
-              this.downloadFile.proxy.status = "success";
-              this.downloadFile.proxy.speed = {
-                currentSpeed: 0,
-                averageSpeed: 0,
-                currentSpeedFormatted: "0 B/s",
-                averageSpeedFormatted: "0 B/s",
-              };
+              this.markInstantDownload();
               return initResult;
             }
 
@@ -383,29 +380,52 @@ export default class DownloadChunkManager extends ChunkManager {
               fileName: this.downloadFile.fileName,
               fileSize: diskFile.size,
             });
-            this.isInstantTransfer = true;
-            this.completedChunks = this.totalChunks;
-            this.chunks = new Array(this.totalChunks).fill(true);
-            this.countedChunks = new Set(
-              Array.from({ length: this.totalChunks }, (_, i) => i),
-            );
-            this.totalChunkSize = this.downloadFile.getFileSize();
-            this.downloadFile.proxy.percent = 100;
-            this.downloadFile.proxy.status = "success";
-            this.downloadFile.proxy.speed = {
-              currentSpeed: 0,
-              averageSpeed: 0,
-              currentSpeedFormatted: "0 B/s",
-              averageSpeedFormatted: "0 B/s",
-            };
-            const dl = this.downloadFile.transfer;
-            dl.updateGlobalStats();
-            dl.triggerUpdate();
+            this.markInstantDownload();
             return initResult;
           }
         }
       } catch {
         // 文件不存在或无法访问 → 继续正常下载
+      }
+    }
+
+    // 🔑 磁盘断点续传检测：无 IndexedDB 记录（isResuming=false），但磁盘文件有部分数据
+    //    （例如换浏览器后重新选择同一文件，或 IndexedDB 被清理）。
+    //    根据文件大小反算已完成的完整分片数，标记后从断点继续。
+    //    必须在 createWritable 之前检测，否则不含 keepExistingData 会截断已有数据。
+    if (this.streamFileHandle && !isResuming) {
+      try {
+        const diskFile = await this.streamFileHandle.getFile();
+        const fileSize = this.downloadFile.getFileSize();
+        // 完整文件已在上面秒下检查处理（diskFile.size === fileSize），
+        // 这里只处理有部分数据但未完成的文件
+        if (diskFile.size > 0 && diskFile.size < fileSize) {
+          const completedFromDisk = Math.floor(diskFile.size / this.chunkSize);
+          if (completedFromDisk > 0 && completedFromDisk < this.totalChunks) {
+            logger.info(this.getTag(), "🔄 从磁盘文件恢复下载进度（无 IndexedDB 记录）", {
+              fileName: this.downloadFile.fileName,
+              diskSize: diskFile.size,
+              completedChunks: completedFromDisk,
+              totalChunks: this.totalChunks,
+            });
+
+            this.completedChunks = 0;
+            for (let i = 0; i < completedFromDisk; i++) {
+              this.chunks[i] = true;
+              this.completedChunks++;
+              this.countedChunks.add(i);
+              this.totalChunkSize += this.chunkSize;
+            }
+            this.updateProgress();
+            isResuming = true;
+
+            const dl = this.downloadFile.transfer;
+            dl.updateGlobalStats();
+            dl.triggerUpdate();
+          }
+        }
+      } catch {
+        // 磁盘文件不可访问，继续正常下载
       }
     }
 
@@ -452,6 +472,30 @@ export default class DownloadChunkManager extends ChunkManager {
     }
 
     return initResult || { chunks: [] };
+  }
+
+  /**
+   * 标记为秒下（instant download），设置所有状态为已完成
+   */
+  private markInstantDownload(): void {
+    this.isInstantTransfer = true;
+    this.completedChunks = this.totalChunks;
+    this.totalChunkSize = this.downloadFile.getFileSize();
+    this.countedChunks = new Set(
+      Array.from({ length: this.totalChunks }, (_, i) => i),
+    );
+    this.chunks = new Array(this.totalChunks).fill(true);
+    this.downloadFile.proxy.percent = 100;
+    this.downloadFile.proxy.status = "success";
+    this.downloadFile.proxy.speed = {
+      currentSpeed: 0,
+      averageSpeed: 0,
+      currentSpeedFormatted: "0 B/s",
+      averageSpeedFormatted: "0 B/s",
+    };
+    const dl = this.downloadFile.transfer;
+    dl.updateGlobalStats();
+    dl.triggerUpdate();
   }
 
   /**

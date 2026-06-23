@@ -440,6 +440,7 @@ export type onInitChunkCallback<T> = (
       chunks?: number[] | null | undefined;
       isInstantUpload?: boolean; // ✅ 上传秒传标记（文件已存在，无需合并）
       isInstantDownload?: boolean; // ✅ 下载秒下标记（所有分片已存在，无需下载）
+      serverFileExists?: boolean; // 🔑 服务端确认文件已存在 → 下载器内部验证本地磁盘后秒下
       url?: string;
       shouldRemove?: boolean; // ✅ 标记是否需要移除该文件（秒传时自动移除）
     }>
