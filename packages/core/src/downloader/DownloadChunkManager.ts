@@ -79,6 +79,28 @@ export default class DownloadChunkManager extends ChunkManager {
     let isResuming = false;
     const isRetry = !!(this.downloadFile.proxy as any).isRetry;
 
+    // ========== Step 0: 本地磁盘秒下检查（优先于一切网络请求） ==========
+    // 🔑 如果有 fileHandle，直接检查本地磁盘文件是否已完成。
+    //    无需依赖服务端或回调，下载器自己看磁盘就行了。
+    if (!this.isInstantTransfer) {
+      const fileHandle = this.downloadFile.fileHandle || this.streamFileHandle;
+      if (fileHandle) {
+        try {
+          const diskFile = await fileHandle.getFile();
+          if (diskFile.size > 0 && diskFile.size === this.downloadFile.getFileSize()) {
+            logger.info(this.getTag(), "⚡ 秒下：本地磁盘文件已完整", {
+              fileName: this.downloadFile.fileName,
+              fileSize: diskFile.size,
+            });
+            this.markInstantDownload();
+            return null;
+          }
+        } catch {
+          // 磁盘文件不可访问，走正常下载流程
+        }
+      }
+    }
+
     // ========== Step 1: 服务端回调 → 获取真实 MD5（优先，为 IndexedDB 提供正确 key） ==========
     // 🔑 下载端没有本地 File 对象，无法调用 calculateFileMD5()。
     //     必须先调服务端 check-file 获取真实 MD5，再用它做 IndexedDB key，
@@ -122,28 +144,6 @@ export default class DownloadChunkManager extends ChunkManager {
       } catch (error) {
         // 回调失败不阻塞下载，回退到全新下载
         logger.warn(this.getTag(), "服务端哈希查询失败，将全新下载", error);
-      }
-    }
-
-    // ========== Step 1.5: 内置秒下检查（服务端确认文件存在 + 本地磁盘验证） ==========
-    // 🔑 用户只需在 onInitChunk 中设置 serverFileExists: true，下载器内部自动验证本地磁盘文件。
-    //    省去每个使用者都自己写 getFile() + 大小比较的重复样板代码。
-    if (initResult?.serverFileExists === true && !this.isInstantTransfer) {
-      const fileHandle = this.downloadFile.fileHandle || this.streamFileHandle;
-      if (fileHandle) {
-        try {
-          const diskFile = await fileHandle.getFile();
-          if (diskFile.size === this.downloadFile.getFileSize()) {
-            logger.info(this.getTag(), "⚡ 秒下（内置检查），本地磁盘文件与服务端一致", {
-              fileName: this.downloadFile.fileName,
-              fileSize: diskFile.size,
-            });
-            this.markInstantDownload();
-            return initResult;
-          }
-        } catch {
-          // 磁盘文件不可访问，走正常下载流程
-        }
       }
     }
 
@@ -240,6 +240,16 @@ export default class DownloadChunkManager extends ChunkManager {
             }
 
             if (fileVerified) {
+              this.markInstantDownload();
+              return initResult;
+            }
+
+            // 🔑 内存模式秒下兜底：无 fileHandle 时无法验证本地磁盘文件，
+            //    但 IndexedDB 显示全部分片已完成 → 可信秒下
+            if (!fileHandle && !shouldDeleteCache) {
+              logger.info(this.getTag(), "⚡ 秒下（内存模式兜底），IndexedDB 全量完成", {
+                fileName: this.downloadFile.fileName,
+              });
               this.markInstantDownload();
               return initResult;
             }
@@ -553,11 +563,17 @@ export default class DownloadChunkManager extends ChunkManager {
         }
 
         if (allChunks.length === 0) {
-          // 🔑 秒下场景：文件已在磁盘完整，直接返回 FileHandle
+          // 🔑 秒下场景：文件已在本地，无需合并分片
           const fh = this.downloadFile.fileHandle || this.streamFileHandle;
           if (fh && this.isInstantTransfer) {
+            // 流式/FileHandle 模式：直接返回磁盘文件句柄
             logger.info(this.getTag(), "⚡ 秒下合并：文件已在本地磁盘，跳过合并");
             result = fh;
+          } else if (this.isInstantTransfer) {
+            // 内存模式秒下兜底：无 fileHandle，服务端+IndexedDB 双确认文件已完整
+            // 返回空 Blob，doBeforeOnSuccess 会跳过保存（size=0）
+            logger.info(this.getTag(), "⚡ 秒下合并（内存模式）：文件已在本地，跳过合并");
+            result = new Blob();
           } else {
             logger.warn(this.getTag(), "没有可合并的分片");
             result = new Blob();

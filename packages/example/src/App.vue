@@ -165,10 +165,9 @@ const downloader = FileUD.createDownloader(
 );
 
 downloader.onInitChunk = async (downloadFile, totalChunks, fileHash) => {
-  // 🔑 下载场景：向服务端查询文件是否存在 + 获取真实 MD5
-  //    - 服务端 chunks 是上传状态，不代表客户端下载进度
-  //    - 秒下/续传由下载器内部（IndexedDB + 磁盘验证）自行管理
-  //    - 只需设置 serverFileExists: true，下载器会自动验证本地磁盘并秒下
+  // 🔑 下载场景：向服务端查询真实 MD5 + 下载 URL
+  //    - 秒下判断由下载器内部（Step 0 磁盘检查 + IndexedDB）完全管理
+  //    - 回调只需返回 fileHash 和 url
   const res = await checkFile({
     fileHash,
     fileName: downloadFile.fileName,
@@ -180,7 +179,6 @@ downloader.onInitChunk = async (downloadFile, totalChunks, fileHash) => {
 
   return {
     fileHash: realHash,
-    serverFileExists: apiData.exists === true,
     url: apiData.fileInfo?.url || null,
     chunks: [],
   };
