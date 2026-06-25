@@ -54,7 +54,7 @@ export class WatermarkPlugin extends BasePlugin {
 
   async onFileSelect(
     file: UploadFile,
-    context: PluginContext,
+    context: PluginContext<UploadFile>,
   ): Promise<UploadFile | void> {
     // 只处理图片
     if (!file.File.type.startsWith("image/")) {
@@ -76,7 +76,7 @@ export class WatermarkPlugin extends BasePlugin {
           formatSize: formatFileSize(watermarkedFile.size),
           index: file.index,
         },
-        context.uploader,
+        context.transfer,
       );
 
       console.log(`💧 水印已添加: ${file.fileName}`);

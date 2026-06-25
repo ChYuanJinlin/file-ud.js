@@ -8,7 +8,7 @@ import { IUDPlugin, PluginContext } from "@file-ud.js/core/types";
  * 插件基类
  * 提供通用的错误处理和日志功能
  */
-export abstract class BasePlugin implements IUDPlugin {
+export abstract class BasePlugin implements IUDPlugin<UploadFile> {
   /** 插件名称 */
   abstract name: string;
   
@@ -27,7 +27,7 @@ export abstract class BasePlugin implements IUDPlugin {
   /**
    * 安装插件 - 统一日志输出
    */
-  install(uploader: any): void {
+  install(transfer: any): void {
     console.log(`${this.name} ✅ 插件已安装`);
   }
 
@@ -65,7 +65,7 @@ export abstract class BasePlugin implements IUDPlugin {
    */
   abstract onFileSelect(
     file: UploadFile,
-    context: PluginContext,
+    context: PluginContext<UploadFile>,
   ): Promise<UploadFile | void>;
 
   /**

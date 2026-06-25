@@ -35,7 +35,8 @@ export default class Transfer<
   public transferredFormatSize: string = "0 B";
   public lastLoadedMap = new Map();
   public plugins: IUDPlugin<T>[] = [];
-  private pluginSharedData = new Map<string, any>();
+  /** 插件间共享数据（如 MD5 计算结果等），由插件自行存取 */
+  public pluginSharedData = new Map<string, any>();
   /** 全局待传输的总大小（格式化字符串），如 "256.80 MB" */
   public totalFormatSize: string = "0 B";
 

@@ -53,8 +53,8 @@ export class FileValidatorPlugin extends BasePlugin {
   async created(uploader: Uploader) {
     uploader.inputHTML?.setAttribute("accept", this.options.accept.join(","));
   }
-  async onFileSelect(file: UploadFile, context: PluginContext) {
-    const uploader = context.uploader;
+  async onFileSelect(file: UploadFile, context: PluginContext<UploadFile>) {
+    const uploader = context.transfer as Uploader;
     const baseError = this.createBaseError(file, uploader);
 
     // 1. 空文件验证

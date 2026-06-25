@@ -313,7 +313,7 @@ export default class UploadFile<T = any> extends TransferFile<UploadFile, T> {
 
       // 获取插件上下文
       this.context = (this as any).__pluginContext || {
-        uploader: up,
+        transfer: up,
         shared: this.up["pluginSharedData"],
         config: this.up.config,
       };

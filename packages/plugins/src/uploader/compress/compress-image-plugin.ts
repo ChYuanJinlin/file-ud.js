@@ -50,7 +50,7 @@ export class CompressImagePlugin extends BasePlugin {
 
   async onFileSelect(
     uploadFile: UploadFile,
-    context: PluginContext,
+    context: PluginContext<UploadFile>,
   ): Promise<UploadFile | void> {
     // 只处理图片
     if (!uploadFile.File.type.startsWith("image/")) {

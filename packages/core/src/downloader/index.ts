@@ -1,8 +1,8 @@
 import type {
   DownloaderConfig,
   IUDPlugin,
+  PluginContext,
   UDFile,
-  beforeTransferCallBack,
 } from "../types/index";
 import Transfer from "../transfer/Transfer";
 import {
@@ -242,11 +242,55 @@ export default class Downloader<T = any> extends Transfer<DownloadFile, T> {
     this.updateGlobalStats();
     this.triggerUpdate();
 
-    // 再开始下载，进度会通过 TransferFile 的监听实时更新
-    downloadFile.start(downloadFile.downloadChunkManager).then(() => {
+    // 🔑 构建插件上下文，存到文件上供后续 onProgress / onError 钩子使用
+    const pluginContext: PluginContext<DownloadFile> = {
+      transfer: this as unknown as Transfer<DownloadFile>,
+      shared: this.pluginSharedData,
+      config: this.config,
+    };
+    (downloadFile as any).__pluginContext = pluginContext;
+
+    // 🔑 异步执行插件钩子 + 开始下载
+    (async () => {
+      try {
+        // onFileSelect 钩子：插件可修改/拒绝文件
+        const selectResults = await this.runHook(
+          "onFileSelect",
+          downloadFile,
+          pluginContext,
+        );
+        if (selectResults.some((r) => r === false)) {
+          downloadFile.remove();
+          return;
+        }
+
+        // beforeTransfer 钩子：插件可在下载前拦截
+        const beforeResults = await this.runHook(
+          "beforeTransfer",
+          downloadFile,
+          pluginContext,
+        );
+        if (beforeResults.some((r) => r === false)) {
+          downloadFile.remove();
+          return;
+        }
+      } catch (err: any) {
+        // 插件抛出异常 → 拒绝本次下载
+        logger.warn("Downloader", `插件拦截下载: ${downloadFile.fileName}`, err);
+        downloadFile.remove();
+        return;
+      }
+
+      // 通过插件检查后，开始下载
+      try {
+        await downloadFile.start(downloadFile.downloadChunkManager);
+      } catch (_) {
+        // start 内部已通过 onError 处理错误并触发插件钩子
+      }
+
       // 🔑 下载成功后缓存文件句柄（L1 内存 + L2 IndexedDB）
       const fh = downloadFile.fileHandle;
-      if (fh) {
+      if (fh && downloadFile.status === "success") {
         const name = file.fileName || file.url;
         // L1: 内存缓存（最快，但页面刷新后丢失）
         Downloader.fileHandleCache.set(name, fh);
@@ -257,7 +301,7 @@ export default class Downloader<T = any> extends Transfer<DownloadFile, T> {
       // 下载完成后触发一次最终更新
       this.updateGlobalStats();
       this.triggerUpdate();
-    });
+    })();
 
     return downloadFile;
   }
@@ -308,6 +352,19 @@ export default class Downloader<T = any> extends Transfer<DownloadFile, T> {
       }
     });
     await Promise.allSettled(resumes);
+  }
+
+  /**
+   * 移除所有下载任务（取消进行中的下载并清空列表）
+   */
+  public removeAll(): void {
+    this.files.forEach((file) => {
+      file.cancel();
+    });
+    this.files = [];
+    this.activeFiles = [];
+    this.updateGlobalStats();
+    this.triggerUpdate();
   }
 
   /**

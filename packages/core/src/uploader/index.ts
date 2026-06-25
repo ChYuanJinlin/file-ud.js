@@ -10,6 +10,7 @@ import {
   onInitChunkCallback,
   OnMergeChunkCallBack,
   OpenFileCallback,
+  PluginContext,
   SelectCallBack,
   UpdateCallBack,
   successCallback,
@@ -367,8 +368,8 @@ export default class Uploader<T = any> extends Transfer<UploadFile, T> {
       const file = files[i];
 
       // 创建插件上下文
-      const pluginContext = {
-        uploader: this,
+      const pluginContext: PluginContext<UploadFile> = {
+        transfer: this as unknown as Transfer<UploadFile>,
         shared: new Map(),
         config: this.config,
       };

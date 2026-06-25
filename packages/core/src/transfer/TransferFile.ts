@@ -483,6 +483,16 @@ export default class TransferFile<T extends TransferFile<T, any>, D = any> {
     // ✅ 修复：移除不存在的 this.up 和 this.context 引用
     // 错误处理应该由 transfer 实例来处理
     this.status = "error";
+
+    // 触发插件 onError 钩子（upload/download 共享）
+    const context = {
+      transfer: up,
+      file: this,
+      shared: up.pluginSharedData,
+      config: (up as any).config,
+    };
+    up.runHook("onError", err, this, context);
+
     up.emit(
       "error",
       new FileUDError(
@@ -588,6 +598,15 @@ export default class TransferFile<T extends TransferFile<T, any>, D = any> {
 
     // 5. 发射进度事件
     transfer.emit("progress", transfer.totalPercent);
+
+    // 6. 触发插件 onProgress 钩子
+    const context = {
+      transfer,
+      file: this,
+      shared: transfer.pluginSharedData,
+      config: (transfer as any).config,
+    };
+    transfer.runHook("onProgress", this.proxy.percent, this, context);
   }
 
   /**

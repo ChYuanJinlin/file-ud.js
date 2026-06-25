@@ -26,7 +26,7 @@ export class VideoValidatorPlugin extends BasePlugin {
 
   async onFileSelect(
     file: UploadFile,
-    context: PluginContext,
+    context: PluginContext<UploadFile>,
   ): Promise<UploadFile | void> {
     // 只验证视频
     if (!file.File.type.startsWith("video/")) {
@@ -36,7 +36,7 @@ export class VideoValidatorPlugin extends BasePlugin {
     const metadata = await this.getVideoMetadata(file.File);
 
     // 创建基础错误对象
-    const baseError = this.createBaseError(file, context.uploader);
+    const baseError = this.createBaseError(file, context.transfer);
 
     // 时长验证
     if (

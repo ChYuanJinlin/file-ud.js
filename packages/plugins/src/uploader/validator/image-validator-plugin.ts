@@ -34,7 +34,7 @@ export class ImageValidatorPlugin extends BasePlugin {
 
   async onFileSelect(
     file: UploadFile,
-    context: PluginContext,
+    context: PluginContext<UploadFile>,
   ): Promise<UploadFile | void> {
     // 只验证图片
     if (!file.File.type.startsWith("image/")) {
@@ -45,7 +45,7 @@ export class ImageValidatorPlugin extends BasePlugin {
     const dimensions = await this.getImageDimensions(file.File);
 
     // 创建基础错误对象
-    const baseError = this.createBaseError(file, context.uploader);
+    const baseError = this.createBaseError(file, context.transfer);
 
     // 1. 宽度验证
     if (

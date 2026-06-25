@@ -261,18 +261,18 @@ export interface DownloaderConfig extends UDConfig<DownloadFile> {
   action: string | ((transferFile: DownloadFile) => Promise<any>);
   axiosOptions?: AxiosRequestConfig;
 }
-export interface PluginContext {
-  /** 上传器实例 */
-  uploader: Uploader;
+export interface PluginContext<T extends TransferFile = TransferFile> {
+  /** 传输器实例（Uploader 或 Downloader） */
+  transfer: Transfer<T>;
 
   /** 当前文件 */
-  file?: UploadFile;
+  file?: T;
 
-  /** 表单数据 */
+  /** 表单数据（上传专用） */
   formData?: FormData;
 
   /** 配置信息 */
-  config?: uploaderConfigs;
+  config?: any;
 
   /** 插件共享数据 */
   shared: Map<string, any>;
@@ -298,30 +298,30 @@ export interface IUDPlugin<T extends TransferFile = TransferFile> {
   priority?: number;
 
   /** 插件初始化（注册时调用一次） */
-  install?: (uploader: Transfer<T>, options?: any) => void | Promise<void>;
+  install?: (transfer: Transfer<T>, options?: any) => void | Promise<void>;
 
   // 创建时钩子
-  created?: (uploader: Transfer<T>) => void | Promise<void>;
+  created?: (transfer: Transfer<T>) => void | Promise<void>;
   /** 文件选择后触发 */
   onFileSelect?: (
-    file: UploadFile,
-    context: PluginContext,
-  ) => Promise<UploadFile | void | false> | UploadFile | void;
+    file: T,
+    context: PluginContext<T>,
+  ) => Promise<T | void | false> | T | void;
 
-  /** 上传前触发 */
+  /** 传输前触发 */
   beforeTransfer?: (
-    file: UploadFile,
-    context: PluginContext,
+    file: T,
+    context: PluginContext<T>,
   ) => Promise<boolean | void> | boolean | void;
 
-  /** 上传进度触发 */
-  onProgress?: (percent: number, file: T, context: PluginContext) => void;
+  /** 传输进度触发 */
+  onProgress?: (percent: number, file: T, context: PluginContext<T>) => void;
 
-  /** 上传成功触发 */
-  onSuccess?: (response: any, file: T, context: PluginContext) => void;
+  /** 传输成功触发 */
+  onSuccess?: (response: any, file: T, context: PluginContext<T>) => void;
 
-  /** 上传失败触发 */
-  onError?: (error: Error, file: T, context: PluginContext) => void;
+  /** 传输失败触发 */
+  onError?: (error: Error, file: T, context: PluginContext<T>) => void;
 
   /** 插件销毁时调用 */
   destroy?: () => void;

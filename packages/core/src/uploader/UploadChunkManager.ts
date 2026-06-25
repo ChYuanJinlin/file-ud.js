@@ -78,7 +78,7 @@ export default class UploadChunkManager extends ChunkManager {
 
         // 获取插件上下文
         const context = (this.uploadFile as any).__pluginContext || {
-          uploader: up,
+          transfer: up,
           file: this.uploadFile,
           shared: up["pluginSharedData"],
           config: up.config,
