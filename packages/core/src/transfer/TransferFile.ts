@@ -3,6 +3,7 @@ import { IFile, speedInfo, TimeInfo } from "../types/index";
 import Transfer from "./Transfer";
 import {
   computeTransferTime,
+  formatDuration,
   formatFileSize,
   formatSpeed,
   generateFileId,
@@ -13,6 +14,7 @@ import UploadFile from "../uploader/UploadFile";
 import Uploader from "../uploader";
 import DownloadFile from "../downloader/DownloadFile";
 import { XHRInterceptor } from "../xhr-intercepto";
+import FileConcurrencyController from "../concurrency/FileConcurrencyController";
 
 export default class TransferFile<T extends TransferFile<T, any>, D = any> {
   /**
@@ -25,6 +27,8 @@ export default class TransferFile<T extends TransferFile<T, any>, D = any> {
     averageSpeed: 0,
     currentSpeedFormatted: "0 B/s",
     averageSpeedFormatted: "0 B/s",
+    estimatedTimeRemaining: -1,
+    estimatedTimeFormatted: "计算中...",
   };
 
   /**
@@ -166,34 +170,42 @@ export default class TransferFile<T extends TransferFile<T, any>, D = any> {
 
       (async () => {
         try {
-          if (chunkManager) {
-            logger.info(
-              isDownload ? "DownloadFile" : "UploadFile",
-              `开始分片${type}: ${this.fileName}`,
-              {
-                fileId: this.fileId,
-                fileName: this.fileName,
-              },
-            );
-            await (chunkManager as any).start();
-          } else {
-            logger.info(
-              isDownload ? "DownloadFile" : "UploadFile",
-              `开始普通${type}: ${this.fileName}`,
-              {
-                fileId: this.fileId,
-                fileName: this.fileName,
-              },
-            );
-            let data: D;
-            if (this instanceof UploadFile) {
-              data = await this.upload();
+          // 🔑 文件级并发控制：上传/下载各自独立并发池（可分别设置或共享）
+          const controller = FileConcurrencyController.getInstance();
+          const runTask = isDownload
+            ? controller.runAsDownload.bind(controller)
+            : controller.runAsUpload.bind(controller);
+
+          await runTask(async () => {
+            if (chunkManager) {
+              logger.info(
+                isDownload ? "DownloadFile" : "UploadFile",
+                `开始分片${type}: ${this.fileName}`,
+                {
+                  fileId: this.fileId,
+                  fileName: this.fileName,
+                },
+              );
+              await (chunkManager as any).start();
             } else {
-              // 下载
-              data = await (this as unknown as DownloadFile).download();
+              logger.info(
+                isDownload ? "DownloadFile" : "UploadFile",
+                `开始普通${type}: ${this.fileName}`,
+                {
+                  fileId: this.fileId,
+                  fileName: this.fileName,
+                },
+              );
+              let data: D;
+              if (this instanceof UploadFile) {
+                data = await this.upload();
+              } else {
+                // 下载
+                data = await (this as unknown as DownloadFile).download();
+              }
+              resolve(data);
             }
-            resolve(data);
-          }
+          });
         } catch (error) {
           logger.error(
             isDownload ? "DownloadFile" : "UploadFile",
@@ -227,6 +239,8 @@ export default class TransferFile<T extends TransferFile<T, any>, D = any> {
 
     // 🔑 标记取消状态，防止 onError() 中被 abort 触发的异步错误覆盖 proxy.status
     this.isCancel = true;
+    this.proxy.isCancel = true;
+    this.proxy.status = "cancelled";
 
     const next = () => {
       const cm = this.getChunkManager();
@@ -549,8 +563,8 @@ export default class TransferFile<T extends TransferFile<T, any>, D = any> {
               } catch (_) {}
             });
             (file as any).__xhrAbortCallbacks = [];
-            file.proxy.isCancel = true;
-            file.proxy.status = "cancelled";
+            // 注意：不在此设置 isCancel / status，由 TransferFile.cancel() 统一管理
+            //  超时触发的 abort 只需要取消 XHR 请求，不应标记文件为已取消（chunkWithRetry 会重试）
           };
         },
 
@@ -733,11 +747,27 @@ export default class TransferFile<T extends TransferFile<T, any>, D = any> {
 
     // 更新速率信息到 Proxy 对象
     // 通过 Proxy.set 陷阱自动触发 Transfer.triggerUpdate()
+    // 计算预计剩余时间（基于平均速度）
+    const fileSize = this.getFileSize();
+    const remainingBytes = Math.max(0, fileSize - loadedBytes);
+    let estimatedTimeRemaining = -1;
+    let estimatedTimeFormatted = "计算中...";
+
+    if (averageSpeed > 0 && remainingBytes > 0) {
+      estimatedTimeRemaining = Math.ceil(remainingBytes / averageSpeed);
+      estimatedTimeFormatted = formatDuration(estimatedTimeRemaining * 1000);
+    } else if (remainingBytes <= 0) {
+      estimatedTimeRemaining = 0;
+      estimatedTimeFormatted = "即将完成";
+    }
+
     this.proxy.speed = {
       currentSpeed,
       averageSpeed,
       currentSpeedFormatted: formatSpeed(currentSpeed),
       averageSpeedFormatted: formatSpeed(averageSpeed),
+      estimatedTimeRemaining,
+      estimatedTimeFormatted,
     };
 
     // 更新内部状态，为下次计算做准备

@@ -30,6 +30,8 @@ export default abstract class ChunkManager<
 > {
   chunkSize: number = 0;
   maxConcurrent: number = 5;
+  /** 最大速率限制（bytes/秒），0 = 不限制。下载场景由 maxDownloadSpeed 设置 */
+  maxSpeed: number = 0;
   public chunkIndex: number = 0;
   retries: number | null = 0;
   retryDelay: number = 1000;
@@ -75,6 +77,12 @@ export default abstract class ChunkManager<
 
   /** 每次 start() 递增的代数计数器，防止旧 run 的异步回调污染新 run 的状态 */
   private _startGeneration = 0;
+
+  // ==================== 速率限制 ====================
+  /** 速率限制：累计已传输字节数（用于限速计算） */
+  private _throttleBytes: number = 0;
+  /** 速率限制：起始时间戳 */
+  private _throttleStartTime: number = 0;
 
   public chunkStats: {
     averageTime: number;
@@ -183,7 +191,7 @@ export default abstract class ChunkManager<
   constructor(ChunkOptions: ChunkOptions, file: T) {
     this.config = ChunkOptions;
     this.transferFile = file;
-    this.chunkSize = ChunkOptions.chunkSize ?? 1024 * 1024 * 20;
+    this.chunkSize = ChunkOptions.chunkSize ?? 1024 * 1024 * 5;
     this.maxConcurrent = ChunkOptions.maxConcurrent ?? 5;
     this.retries =
       ChunkOptions.retries !== undefined ? ChunkOptions.retries : 5;
@@ -382,6 +390,9 @@ export default abstract class ChunkManager<
     this.lastChunkBytes = 0;
     this.isCancelled = false;
     this.isPaused = false;
+    // 重置限流状态
+    this._throttleBytes = 0;
+    this._throttleStartTime = 0;
     // 🔑 重置秒下/秒传标志，避免上一次 run 的 markInstantDownload() 残留影响
     //    新的 doInit() 会重新判断是否需要走秒下流程
     this.isInstantTransfer = false;
@@ -419,7 +430,13 @@ export default abstract class ChunkManager<
       (file as any).__hasCountedTotalBytes__ = true;
     }
 
-    this.timeout = Math.max(this.timeout, 60000);
+    // 🔑 根据分片大小动态计算超时下限（假设最低网速 50 KB/s）
+    //    20MB 分片 → 约 409 秒，1MB 分片 → 约 20 秒
+    //    timeout 为 0 时跳过，永不超时
+    if (this.timeout > 0) {
+      const minTimeoutBySize = Math.ceil((this.chunkSize / 51200) * 1000);
+      this.timeout = Math.max(this.timeout, 60000, minTimeoutBySize);
+    }
 
     // 🔑 在 doInit() 之前就设置 startTime，确保所有路径（普通 / 已全完成 / 异常）都有合法起始时间
     computeTransferTime(file.proxy.transferTime).start();
@@ -496,25 +513,30 @@ export default abstract class ChunkManager<
     let retryCount = this.retryCountMap.get(chunkIndex) || 0;
 
     const executeOnce = async (): Promise<void> => {
+      // 🔑 速率限流：传输前检查是否需要延迟
+      await this.throttleBeforeChunk(this.chunkSize);
+
       const abortController = new AbortController();
       this.abortControllers.push(abortController);
 
-      const timeoutId = setTimeout(() => {
-        abortController.abort();
-      }, this.timeout);
+      const timeoutId = this.timeout > 0
+        ? setTimeout(() => {
+            abortController.abort();
+          }, this.timeout)
+        : (null as any);
 
       try {
         const result = await this.doChunkTransfer(
           chunkIndex,
           abortController.signal,
         );
-        clearTimeout(timeoutId);
+        if (timeoutId !== null) clearTimeout(timeoutId);
         this.removeAbortController(abortController);
 
         // 处理分片成功
         await this.handleChunkSuccess(chunkIndex, result);
       } catch (error) {
-        clearTimeout(timeoutId);
+        if (timeoutId !== null) clearTimeout(timeoutId);
         this.removeAbortController(abortController);
 
         // 处理分片失败
@@ -787,6 +809,8 @@ export default abstract class ChunkManager<
       averageSpeed,
       currentSpeedFormatted: "0 B/s",
       averageSpeedFormatted: formatSpeed(averageSpeed),
+      estimatedTimeRemaining: 0,
+      estimatedTimeFormatted: "已完成",
     };
 
     try {
@@ -870,6 +894,39 @@ export default abstract class ChunkManager<
     }
   }
 
+  // ==================== 速率限制 ====================
+
+  /**
+   * 下载速率限流：在传输每个分片前检查是否需要延迟
+   *
+   * 采用平均速率算法：累计已传输字节数 / 已用时间 必须 ≤ maxSpeed。
+   * 如果当前速率超过限制，sleep 差值后继续。
+   *
+   * @param chunkSize - 待传输分片的预计大小（字节）
+   */
+  protected async throttleBeforeChunk(chunkSize: number): Promise<void> {
+    if (this.maxSpeed <= 0) return;
+
+    const now = performance.now();
+
+    if (this._throttleStartTime === 0) {
+      this._throttleStartTime = now;
+      this._throttleBytes = 0;
+    }
+
+    // 预累加本分片大小
+    this._throttleBytes += chunkSize;
+
+    // 理想耗时（ms）= 累计字节数 / 目标速率 * 1000
+    const idealElapsed = (this._throttleBytes / this.maxSpeed) * 1000;
+    const actualElapsed = now - this._throttleStartTime;
+
+    if (actualElapsed < idealElapsed) {
+      const delay = idealElapsed - actualElapsed;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+
   /**
    * 从活跃控制器列表中移除指定的 AbortController
    */
@@ -909,6 +966,8 @@ export default abstract class ChunkManager<
         averageSpeed,
         currentSpeedFormatted: "0 B/s",
         averageSpeedFormatted: formatSpeed(averageSpeed),
+        estimatedTimeRemaining: 0,
+        estimatedTimeFormatted: "已完成",
       };
 
       await this.doBeforeOnSuccess(mergeResult);

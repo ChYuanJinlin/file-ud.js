@@ -37,6 +37,12 @@ export default class DownloadChunkManager extends ChunkManager {
   constructor(chunkOptions: ChunkOptions, file: TransferFile<any, any>) {
     super(chunkOptions, file);
     this.downloadFile = file as unknown as DownloadFile;
+
+    // 🔑 读取下载限速配置
+    const dlConfig = (this.downloadFile.dl as any).config as import("../types").DownloaderConfig | null;
+    if (dlConfig?.maxDownloadSpeed && dlConfig.maxDownloadSpeed > 0) {
+      this.maxSpeed = dlConfig.maxDownloadSpeed;
+    }
   }
 
   // ==================== 抽象方法实现 ====================
@@ -502,6 +508,8 @@ export default class DownloadChunkManager extends ChunkManager {
       averageSpeed: 0,
       currentSpeedFormatted: "0 B/s",
       averageSpeedFormatted: "0 B/s",
+      estimatedTimeRemaining: 0,
+      estimatedTimeFormatted: "已完成",
     };
     const dl = this.downloadFile.transfer;
     dl.updateGlobalStats();

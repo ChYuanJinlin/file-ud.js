@@ -25,6 +25,7 @@ import {
   mergeObjects,
   validator,
 } from "../utils";
+import FileConcurrencyController from "../concurrency/FileConcurrencyController";
 
 import UploadFile from "./UploadFile";
 export const defaultConfig: uploaderConfigs = {
@@ -204,6 +205,12 @@ export default class Uploader<T = any> extends Transfer<UploadFile, T> {
     Uploader.baseConfig = Object.assign(defaultConfig, Uploader.baseConfig);
     this.config = { ...Uploader.baseConfig, ...config };
     this.init();
+
+    // 🔑 配置文件级并发
+    if (this.config.maxFileConcurrent !== undefined) {
+      FileConcurrencyController.getInstance().maxUploadConcurrent =
+        this.config.maxFileConcurrent;
+    }
 
     this.createInput().onchange = async (e) => {
       const FileList = (e.target as HTMLInputElement)?.files;

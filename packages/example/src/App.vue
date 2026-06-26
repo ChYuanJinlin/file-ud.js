@@ -81,7 +81,7 @@ const buildUploaderConfig = (): uploaderConfigs => ({
   },
   multiple: true,
   headers: { Authorization: "Bearer your-token" },
-  chunkOptions: isChunkUpload.value ? {} : null,
+  chunkOptions: isChunkUpload.value ? { chunkSize: 5 * 1024 * 1024, timeout: 0 } : null,
   file({ formData, uploadFile, chunkIndex, data }) {
     formData.append("file", data);
     formData.append("fileHash", uploadFile.uploadChunkManager?.fileHash!);
@@ -221,12 +221,14 @@ const uploadStats = ref({
   totalFormatSize: "0 B",
   transferredFormatSize: "0 B",
   speed: "0 B/s",
+  estimatedTimeFormatted: "计算中...",
 });
 const downloadStats = ref({
   totalPercent: 0,
   totalFormatSize: "0 B",
   transferredFormatSize: "0 B",
   speed: "0 B/s",
+  estimatedTimeFormatted: "计算中...",
 });
 
 // ==================== 事件绑定 ====================
@@ -245,6 +247,7 @@ uploader.onUpdate = (files) => {
     totalFormatSize: uploader.totalFormatSize,
     transferredFormatSize: uploader.transferredFormatSize,
     speed: uploader.speed?.averageSpeedFormatted || "0 B/s",
+    estimatedTimeFormatted: uploader.speed?.estimatedTimeFormatted || "计算中...",
   };
 };
 
@@ -256,6 +259,7 @@ const bindDownloaderEvents = (dl: any) => {
       totalFormatSize: dl.totalFormatSize,
       transferredFormatSize: dl.transferredFormatSize,
       speed: dl.speed?.averageSpeedFormatted || "0 B/s",
+      estimatedTimeFormatted: dl.speed?.estimatedTimeFormatted || "计算中...",
     };
   };
   dl.onSuccess = (res: any) => console.log("下载成功:", res);
@@ -531,6 +535,12 @@ const handleDownload = async (row: any) => {
             :stroke-width="16"
           />
           <div class="progress-speed">平均速度: {{ uploadStats.speed }}</div>
+          <div
+            class="progress-speed"
+            v-if="uploadStats.totalPercent > 0 && uploadStats.totalPercent < 100"
+          >
+            预计剩余: {{ uploadStats.estimatedTimeFormatted }}
+          </div>
         </el-card>
       </el-col>
       <el-col :span="12">
@@ -547,6 +557,12 @@ const handleDownload = async (row: any) => {
             :stroke-width="16"
           />
           <div class="progress-speed">平均速度: {{ downloadStats.speed }}</div>
+          <div
+            class="progress-speed"
+            v-if="downloadStats.totalPercent > 0 && downloadStats.totalPercent < 100"
+          >
+            预计剩余: {{ downloadStats.estimatedTimeFormatted }}
+          </div>
         </el-card>
       </el-col>
     </el-row>
@@ -640,6 +656,15 @@ const handleDownload = async (row: any) => {
               :status="row.status === 'error' ? 'exception' : undefined"
               :stroke-width="8"
             />
+          </template>
+        </el-table-column>
+        <el-table-column label="预计剩余" width="90">
+          <template #default="{ row }">
+            {{
+              row.status === "UDLoading" && row.speed?.estimatedTimeFormatted
+                ? row.speed.estimatedTimeFormatted
+                : "-"
+            }}
           </template>
         </el-table-column>
         <el-table-column label="状态" width="90">
@@ -885,6 +910,15 @@ const handleDownload = async (row: any) => {
               :status="row.status === 'error' ? 'exception' : undefined"
               :stroke-width="8"
             />
+          </template>
+        </el-table-column>
+        <el-table-column label="预计剩余" width="90">
+          <template #default="{ row }">
+            {{
+              row.status === "UDLoading" && row.speed?.estimatedTimeFormatted
+                ? row.speed.estimatedTimeFormatted
+                : "-"
+            }}
           </template>
         </el-table-column>
         <el-table-column label="状态" width="90">

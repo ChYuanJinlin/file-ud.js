@@ -270,6 +270,8 @@ export default class UploadChunkManager extends ChunkManager {
               averageSpeed: 0,
               currentSpeedFormatted: "0 B/s",
               averageSpeedFormatted: "0 B/s",
+              estimatedTimeRemaining: 0,
+              estimatedTimeFormatted: "秒传完成",
             };
 
             // ✅ 关键修复：更新全局统计信息（总进度、总大小）
@@ -412,16 +414,18 @@ export default class UploadChunkManager extends ChunkManager {
       // ✅ 保存 AbortController 引用，以便取消时可以中止
       this.abortControllers.push(abortController);
 
-      const timeoutId = setTimeout(() => {
-        abortController.abort();
-      }, this.timeout);
+      const timeoutId = this.timeout > 0
+        ? setTimeout(() => {
+            abortController.abort();
+          }, this.timeout)
+        : (null as any);
 
       try {
         // 传递 signal 给 UploadFile.upload，实现真正的超时取消
         await this.uploadChunk(chunkIndex, abortController.signal);
 
         // 上传成功，清除超时定时器
-        clearTimeout(timeoutId);
+        if (timeoutId !== null) clearTimeout(timeoutId);
 
         // ✅ 从数组中移除已完成的 AbortController
         const index = this.abortControllers.indexOf(abortController);
@@ -430,7 +434,7 @@ export default class UploadChunkManager extends ChunkManager {
         }
       } catch (error) {
         // 确保清除定时器
-        clearTimeout(timeoutId);
+        if (timeoutId !== null) clearTimeout(timeoutId);
 
         // ✅ 从数组中移除已完成的 AbortController
         const index = this.abortControllers.indexOf(abortController);
@@ -850,6 +854,8 @@ export default class UploadChunkManager extends ChunkManager {
       averageSpeed,
       currentSpeedFormatted: "0 B/s",
       averageSpeedFormatted: formatSpeed(averageSpeed),
+      estimatedTimeRemaining: 0,
+      estimatedTimeFormatted: "已完成",
     };
 
     // 使用统一方法计算上传统计信息
@@ -1204,8 +1210,13 @@ export default class UploadChunkManager extends ChunkManager {
       this.uploadFile.__hasCountedTotalBytes__ = true;
     }
 
-    // 增加超时时间到 60 秒（避免大文件分片上传被误取消）
-    this.timeout = Math.max(this.timeout, 60000);
+    // 🔑 根据分片大小动态计算超时下限（假设最低网速 50 KB/s）
+    //    20MB 分片 → 约 409 秒，1MB 分片 → 约 20 秒
+    //    timeout 为 0 时跳过，永不超时
+    if (this.timeout > 0) {
+      const minTimeoutBySize = Math.ceil((this.chunkSize / 51200) * 1000);
+      this.timeout = Math.max(this.timeout, 60000, minTimeoutBySize);
+    }
 
     try {
       const res = await this.initUpload();
@@ -1284,6 +1295,8 @@ export default class UploadChunkManager extends ChunkManager {
               averageSpeed: resumeAvgSpeed,
               currentSpeedFormatted: "0 B/s",
               averageSpeedFormatted: formatSpeed(resumeAvgSpeed),
+              estimatedTimeRemaining: 0,
+              estimatedTimeFormatted: "已完成",
             };
 
             // 使用统一方法计算上传统计信息

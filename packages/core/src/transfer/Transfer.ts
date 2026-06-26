@@ -11,7 +11,7 @@ import {
   TimeInfo,
   UpdateCallBack,
 } from "../types/index";
-import { formatFileSize, formatSpeed, isFileActive } from "../utils";
+import { formatDuration, formatFileSize, formatSpeed, isFileActive } from "../utils";
 import { EventEmitter } from "../utils/event-emitter";
 import TransferFile from "./TransferFile";
 
@@ -46,6 +46,8 @@ export default class Transfer<
     averageSpeed: 0,
     currentSpeedFormatted: "0 B/s",
     averageSpeedFormatted: "0 B/s",
+    estimatedTimeRemaining: -1,
+    estimatedTimeFormatted: "计算中...",
   };
 
   /** 全局传输进度百分比 (0-100) */
@@ -133,6 +135,8 @@ export default class Transfer<
       averageSpeedFormatted: "",
       currentSpeed: 0,
       averageSpeed: 0,
+      estimatedTimeRemaining: -1,
+      estimatedTimeFormatted: "计算中...",
     };
     this.transferTime = {
       startTime: 0,
@@ -142,8 +146,10 @@ export default class Transfer<
     };
     this.totalPercent = 0;
     this.activeFiles = [];
-    this.events = new Map<EventName, Set<Function>>();
+    // 注意：不重置 this.events，保留用户已注册的事件监听器
     this.files = [];
+    // Object.create 场景下可能为 undefined，忽略
+    this.lastLoadedMap?.clear();
     this.plugins = [];
     // ✅ 重置回调为安全的默认值，避免 Object.create 场景下出现 undefined
     this.successCallback = () => null;
@@ -248,21 +254,16 @@ export default class Transfer<
    * @returns 全局速率对象
    * @private
    */
-  private calculateGlobalUploadSpeed(): {
-    currentSpeed: number;
-    averageSpeed: number;
-    currentSpeedFormatted: string;
-    averageSpeedFormatted: string;
-  } {
+  private calculateGlobalUploadSpeed(): speedInfo {
     let totalCurrentSpeed = 0;
     let transferTotaldBytes = 0;
     let totalFileSize = 0;
-    let TransferFileuFileCount = 0;
+    let activeFileCount = 0;
 
     // 遍历所有正在上传的文件，累加速率和字节数
     this.files.forEach((file) => {
       if (isFileActive(file)) {
-        TransferFileuFileCount++;
+        activeFileCount++;
 
         // 累加文件大小（用于计算平均速度）
         totalFileSize += file.File?.size || file.size || 0;
@@ -282,7 +283,7 @@ export default class Transfer<
 
     // 计算全局平均速度：总已上传字节 / 总耗时
     let globalAverageSpeed = 0;
-    if (transferTotaldBytes > 0 && TransferFileuFileCount > 0) {
+    if (transferTotaldBytes > 0 && activeFileCount > 0) {
       // 找到最早开始上传的文件的时间
       let earliestStartTime = Date.now();
       this.files.forEach((file) => {
@@ -303,11 +304,26 @@ export default class Transfer<
     // 更新全局已上传大小（使用 formatFileSize 格式化）
     this.transferredFormatSize = formatFileSize(transferTotaldBytes);
 
+    // 计算全局预计剩余时间
+    const remainingBytes = Math.max(0, totalFileSize - transferTotaldBytes);
+    let estimatedTimeRemaining = -1;
+    let estimatedTimeFormatted = "计算中...";
+
+    if (globalAverageSpeed > 0 && remainingBytes > 0) {
+      estimatedTimeRemaining = Math.ceil(remainingBytes / globalAverageSpeed);
+      estimatedTimeFormatted = formatDuration(estimatedTimeRemaining * 1000);
+    } else if (remainingBytes <= 0 && transferTotaldBytes > 0) {
+      estimatedTimeRemaining = 0;
+      estimatedTimeFormatted = "即将完成";
+    }
+
     return {
       currentSpeed: totalCurrentSpeed,
       averageSpeed: globalAverageSpeed,
       currentSpeedFormatted: formatSpeed(totalCurrentSpeed),
       averageSpeedFormatted: formatSpeed(globalAverageSpeed),
+      estimatedTimeRemaining,
+      estimatedTimeFormatted,
     };
   }
 

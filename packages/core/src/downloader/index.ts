@@ -13,6 +13,7 @@ import {
   saveFileHandle,
   loadFileHandle,
 } from "../utils";
+import FileConcurrencyController from "../concurrency/FileConcurrencyController";
 
 import DownloadFile from "./DownloadFile";
 
@@ -84,6 +85,12 @@ export default class Downloader<T = any> extends Transfer<DownloadFile, T> {
 
     // 加载默认插件
     this.init();
+
+    // 🔑 配置文件级并发
+    if (this.config.maxFileConcurrent !== undefined) {
+      FileConcurrencyController.getInstance().maxDownloadConcurrent =
+        this.config.maxFileConcurrent;
+    }
 
     return this;
   }
@@ -292,7 +299,7 @@ export default class Downloader<T = any> extends Transfer<DownloadFile, T> {
       const fh = downloadFile.fileHandle;
       if (fh && downloadFile.status === "success") {
         const name = file.fileName || file.url;
-        // L1: 内存缓存（最快，但页面刷新后丢失）
+        // L1: 内存缓存（最快，但页面刷新后丢失 ）
         Downloader.fileHandleCache.set(name, fh);
         // L2: IndexedDB 持久化（跨页面刷新）
         saveFileHandle(name, fh).catch(() => {});

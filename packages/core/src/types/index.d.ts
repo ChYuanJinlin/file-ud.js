@@ -226,6 +226,8 @@ export interface UDConfig<T = any> {
   maxSize?: number;
   /* 上传下载请求的头部信息 */
   headers?: Record<string, any>;
+  /** 最大同时传输文件数，0 或不设置表示不限制 */
+  maxFileConcurrent?: number;
 }
 export interface uploaderConfigs extends UDConfig<UploadFile> {
   /* 是否支持多选 */
@@ -260,6 +262,8 @@ export interface DownloaderConfig extends UDConfig<DownloadFile> {
    */
   action: string | ((transferFile: DownloadFile) => Promise<any>);
   axiosOptions?: AxiosRequestConfig;
+  /** 下载最大速率限制（bytes/秒），0 或不设置表示不限制 */
+  maxDownloadSpeed?: number;
 }
 export interface PluginContext<T extends TransferFile = TransferFile> {
   /** 传输器实例（Uploader 或 Downloader） */
@@ -574,6 +578,12 @@ export interface speedInfo {
 
   /** 格式化后的平均速度,如 "12.45 MB/s"、"128 KB/s" */
   averageSpeedFormatted: string;
+
+  /** 预计剩余时间（秒），-1 表示无法计算，0 表示即将完成 */
+  estimatedTimeRemaining: number;
+
+  /** 格式化后的预计剩余时间，如 "3m 20s"、"12s"、"即将完成" */
+  estimatedTimeFormatted: string;
 }
 
 /**
