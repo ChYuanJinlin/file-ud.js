@@ -426,7 +426,20 @@ export default class DownloadFile<T = any> extends TransferFile<
           { once: true },
         );
       }
-      const res = await cfg.action(this);
+      const actionResult = cfg.action(this);
+      const res = await Promise.resolve(actionResult);
+      // 支持函数返回字符串 URL：核心代码自动发起 axios 请求
+      if (typeof res === "string") {
+        return (cfg.axiosInstance || axios)({
+          url: res,
+          method,
+          headers,
+          data: overrides?.data,
+          responseType: cfg.axiosOptions?.responseType || "blob",
+          timeout: cfg.timeout,
+          signal: overrides?.signal,
+        });
+      }
       return { data: res };
     }
     // action 既不是字符串也不是函数 → 配置错误

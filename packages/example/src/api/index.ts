@@ -4,8 +4,8 @@ export const uploadFile = (data) => {
   return Ajax.post("/upload-chunk",data);
 };
 
-export const upload = () => {
-  return Ajax.post("/upload");
+export const upload = (data) => {
+  return Ajax.post("/upload",data);
 };
 
 export const checkFile = (data) => {

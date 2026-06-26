@@ -246,7 +246,7 @@ export interface uploaderConfigs extends UDConfig<UploadFile> {
    */
   action:
     | string
-    | ((formData: FormData, transferFile: UploadFile) => Promise<any>);
+    | ((formData: FormData, transferFile: UploadFile) => string | Promise<any>);
   /* 上传文件标识 */
   file?: string | ((FileConfig: FileConfig) => void);
 }
@@ -260,7 +260,7 @@ export interface DownloaderConfig extends UDConfig<DownloadFile> {
    * 文件传输下载地址，可以是字符串或者promise函数
    * @return {Promise}
    */
-  action: string | ((transferFile: DownloadFile) => Promise<any>);
+  action: string | ((transferFile: DownloadFile) => string | Promise<any>);
   axiosOptions?: AxiosRequestConfig;
   /** 下载最大速率限制（bytes/秒），0 或不设置表示不限制 */
   maxDownloadSpeed?: number;

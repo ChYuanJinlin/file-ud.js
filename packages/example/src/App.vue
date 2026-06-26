@@ -75,14 +75,18 @@ const statusTextMap: Record<string, string> = {
 
 const isChunkUpload = ref(true);
 
-const buildUploaderConfig = (): uploaderConfigs => ({
+const buildUploaderConfig = (): uploaderConfigs => {
+  
+  return {
   action(formData, file) {
-    return isChunkUpload.value ? uploadFile(formData) : upload();
+
+    return isChunkUpload.value ? uploadFile(formData) : upload(formData);
   },
   multiple: true,
   headers: { Authorization: "Bearer your-token" },
   chunkOptions: isChunkUpload.value ? { chunkSize: 5 * 1024 * 1024, timeout: 0 } : null,
   file({ formData, uploadFile, chunkIndex, data }) {
+   
     formData.append("file", data);
     formData.append("fileHash", uploadFile.uploadChunkManager?.fileHash!);
     formData.append("fileName", uploadFile.File.name);
@@ -92,7 +96,8 @@ const buildUploaderConfig = (): uploaderConfigs => ({
       uploadFile.uploadChunkManager?.totalChunks.toString()!,
     );
   },
-});
+};
+};
 
 const uploader = FileUD.createUploader("uploader", buildUploaderConfig());
 

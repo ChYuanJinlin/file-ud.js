@@ -374,7 +374,19 @@ export default class UploadFile<T = any> extends TransferFile<UploadFile, T> {
             { once: true },
           );
         }
-        promise = this.up.config?.action(requestData, this);
+        const actionResult = this.up.config?.action(requestData, this);
+        // 支持函数返回字符串 URL：核心代码自动发起 axios 请求
+        promise = Promise.resolve(actionResult).then((result) => {
+          if (typeof result === "string") {
+            const axiosPromise = (this.up.config.axiosInstance || axios).post<T>(
+              result,
+              requestData,
+              { signal },
+            );
+            return axiosPromise.then((response) => response.data);
+          }
+          return result;
+        });
       }
 
       promise
