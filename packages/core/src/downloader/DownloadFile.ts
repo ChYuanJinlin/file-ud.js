@@ -32,6 +32,11 @@ export default class DownloadFile<T = any> extends TransferFile<
   public dl: Downloader<T>;
 
   /**
+   * 🔑 文件创建时保存 action 快照，防止切换模式后重试时用到错误的 action
+   */
+  private _action: NonNullable<DownloadFile["dl"]["config"]>["action"] | undefined;
+
+  /**
    * 流式保存的 FileHandle（File System Access API）
    * 如果设置了 fileHandle，下载完成后通过流式写入文件，不触发浏览器下载对话框
    */
@@ -67,6 +72,8 @@ export default class DownloadFile<T = any> extends TransferFile<
   constructor(file: IDownloadFile, transfer: Transfer) {
     super(file, transfer);
     this.dl = transfer as unknown as Downloader<T>;
+    // 🔑 文件创建时保存 action 快照，重试/恢复时始终使用创建时的 action
+    this._action = this.dl.config?.action;
     this.proxy = createReactiveDownloadFile(this, transfer);
 
     // 存储流式保存的 fileHandle
@@ -201,6 +208,8 @@ export default class DownloadFile<T = any> extends TransferFile<
     this.proxy.loading = true;
     // 🔑 重试场景：cancel 的 finally 块已将文件移出 currentQueue，
     //    拦截器需要在队列中找到文件才能匹配 XHR 并绑定进度回调
+    //    同时清理 assignedFiles 残留，避免新 XHR 被分配到错误文件
+    DownloadFile.interceptor?.cleanupFile?.(this as any);
     if (!DownloadFile.currentQueue.includes(this as any)) {
       DownloadFile.currentQueue.push(this as any);
     }
@@ -211,7 +220,7 @@ export default class DownloadFile<T = any> extends TransferFile<
 
       (async () => {
         try {
-          if (!this.dl.config?.action) {
+          if (!this._action) {
             logger.warn("DownloadFile", "请设置下载地址");
             reject(new Error("请设置下载地址"));
             return;
@@ -407,9 +416,9 @@ export default class DownloadFile<T = any> extends TransferFile<
     };
 
     // ======== 字符串 action：始终 axios ========
-    if (typeof cfg.action === "string") {
+    if (typeof this._action === "string") {
       return (cfg.axiosInstance || axios)({
-        url: cfg.action,
+        url: this._action,
         method,
         headers,
         data: overrides?.data,
@@ -417,7 +426,7 @@ export default class DownloadFile<T = any> extends TransferFile<
         timeout: cfg.timeout,
         signal: overrides?.signal,
       });
-    } else if (typeof cfg.action === "function") {
+    } else if (typeof this._action === "function") {
       // 🔑 函数 action：通过 XHR 拦截器机制处理取消，不暴露 signal 给用户
       if (overrides?.signal) {
         overrides.signal.addEventListener(
@@ -426,7 +435,7 @@ export default class DownloadFile<T = any> extends TransferFile<
           { once: true },
         );
       }
-      const actionResult = cfg.action(this);
+      const actionResult = this._action(this);
       const res = await Promise.resolve(actionResult);
       // 支持函数返回字符串 URL：核心代码自动发起 axios 请求
       if (typeof res === "string") {

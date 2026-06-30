@@ -79,8 +79,9 @@ const buildUploaderConfig = (): uploaderConfigs => {
   
   return {
   action(formData, file) {
-
-    return isChunkUpload.value ? uploadFile(formData) : upload(formData);
+    // 🔑 不依赖 isChunkUpload.value（模式切换后会变），
+    //    改用 file.uploadChunkManager 判断（文件创建时就固定，不会变）
+    return file.uploadChunkManager ? uploadFile(formData) : upload(formData);
   },
   multiple: true,
   headers: { Authorization: "Bearer your-token" },

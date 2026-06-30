@@ -6,6 +6,7 @@ import {
   calculateFileMD5,
   formatSpeed,
   formatFileSize,
+  formatDuration,
   logger,
   computeTransferTime,
 } from "../utils";
@@ -1169,10 +1170,70 @@ export default class UploadChunkManager extends ChunkManager {
       percent = 99;
     }
 
+    // 🔑 先更新速度，再设置 percent（percent 的 Proxy set 会触发 rAF 渲染，确保 speed 已就绪）
+    this.updateChunkUploadSpeed();
     this.uploadFile.proxy.percent = percent;
+  }
 
-    // 计算并更新全局上传速度
-    this.calculateAndUpdateSpeed(this.totalChunkSize);
+  /**
+   * 计算并更新单个文件的上传速度
+   *
+   * 🔑 内联实现，每次分片完成时直接写入 proxy.speed，不做首次跳过也不做防抖。
+   *    分片上传本身是低频事件（间隔取决于分片大小/网速），不需要防抖反而会导致
+   *    相邻调用间的 speed 值振荡。（calculateSpeed 的 100ms 防抖适用于 XHR progress
+   *    高频回调场景，但对分片上传反而有害。）
+   *
+   * 💡 瞬时速度在首次调用时为 0（无上次采样可比较），从第二次起有真实值。
+   *    平均速度基于 chunkStartTime，首轮即有效（虽然包含了 hash 开销会偏低，
+   *    但这在几次分片后即趋于稳定，比跳变好得多）。
+   */
+  private updateChunkUploadSpeed(): void {
+    const now = performance.now();
+    const loadedBytes = this.totalChunkSize;
+    const file = this.uploadFile;
+    const fileSize = file.getFileSize();
+
+    // 瞬时速度（bytes/s）—— 首次调用 currentSpeed = 0（无历史采样）
+    let currentSpeed = 0;
+    if (this.lastUpdateTime > 0 && this.lastUpdateTime <= now) {
+      const timeDiff = (now - this.lastUpdateTime) / 1000;
+      const bytesDiff = Math.max(0, loadedBytes - this.lastChunkBytes);
+      if (timeDiff > 0) {
+        currentSpeed = bytesDiff / timeDiff;
+      }
+    }
+
+    // 平均速度（bytes/s）
+    const totalElapsed = (now - this.chunkStartTime) / 1000;
+    const averageSpeed =
+      totalElapsed > 0 ? loadedBytes / totalElapsed : 0;
+
+    // 预计剩余时间
+    const remainingBytes = Math.max(0, fileSize - loadedBytes);
+    let estimatedTimeRemaining = -1;
+    let estimatedTimeFormatted = "计算中...";
+
+    if (averageSpeed > 0 && remainingBytes > 0) {
+      estimatedTimeRemaining = Math.ceil(remainingBytes / averageSpeed);
+      estimatedTimeFormatted = formatDuration(estimatedTimeRemaining * 1000);
+    } else if (remainingBytes <= 0) {
+      estimatedTimeRemaining = 0;
+      estimatedTimeFormatted = "即将完成";
+    }
+
+    file.proxy.speed = {
+      currentSpeed,
+      averageSpeed,
+      currentSpeedFormatted: formatSpeed(currentSpeed),
+      averageSpeedFormatted: formatSpeed(averageSpeed),
+      estimatedTimeRemaining,
+      estimatedTimeFormatted,
+    };
+
+    file.transfer.triggerUpdate();
+
+    this.lastUpdateTime = now;
+    this.lastChunkBytes = loadedBytes;
   }
 
   public async startUpload() {
@@ -1191,7 +1252,7 @@ export default class UploadChunkManager extends ChunkManager {
     this.chunkStartTime = performance.now(); // 重置开始时间
     this.countedChunks.clear(); // 重置已计数分片集合
 
-    // 重置速度计算状态（避免第二次上传时速度计算错误）
+    // 重置速度计算状态（避免重新上传时使用旧值）
     this.lastUpdateTime = 0;
     this.lastChunkBytes = 0;
 

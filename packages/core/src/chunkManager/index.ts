@@ -2,6 +2,7 @@ import PQueue from "p-queue";
 import { ChunkOptions } from "../types";
 import TransferFile from "../transfer/TransferFile";
 import {
+  formatDuration,
   formatFileSize,
   formatSpeed,
   computeTransferTime,
@@ -338,7 +339,42 @@ export default abstract class ChunkManager<
     const timeDiff = (now - this.lastUpdateTime) / 1000;
     if (timeDiff < 0.1) return;
 
-    this.getTransferFile().transfer.triggerUpdate();
+    const file = this.getTransferFile();
+    const fileSize = file.getFileSize();
+    const bytesDiff = currentTransferredBytes - this.lastChunkBytes;
+
+    // 瞬时速度（bytes/s）
+    const currentSpeed = (bytesDiff / timeDiff);
+    // 平均速度（bytes/s）：基于 chunkStartTime 计算总耗时
+    const totalElapsed = (now - this.chunkStartTime) / 1000;
+    const averageSpeed = totalElapsed > 0
+      ? currentTransferredBytes / totalElapsed
+      : 0;
+
+    // 预计剩余时间
+    const remainingBytes = Math.max(0, fileSize - currentTransferredBytes);
+    let estimatedTimeRemaining = -1;
+    let estimatedTimeFormatted = "计算中...";
+
+    if (averageSpeed > 0 && remainingBytes > 0) {
+      estimatedTimeRemaining = Math.ceil(remainingBytes / averageSpeed);
+      estimatedTimeFormatted = formatDuration(estimatedTimeRemaining * 1000);
+    } else if (remainingBytes <= 0) {
+      estimatedTimeRemaining = 0;
+      estimatedTimeFormatted = "即将完成";
+    }
+
+    // 🔑 更新单文件的 speed 信息（分片传输期间原来不更新，导致列表行一直显示"计算中..."）
+    file.proxy.speed = {
+      currentSpeed,
+      averageSpeed,
+      currentSpeedFormatted: formatSpeed(currentSpeed),
+      averageSpeedFormatted: formatSpeed(averageSpeed),
+      estimatedTimeRemaining,
+      estimatedTimeFormatted,
+    };
+
+    file.transfer.triggerUpdate();
 
     this.lastUpdateTime = now;
     this.lastChunkBytes = currentTransferredBytes;

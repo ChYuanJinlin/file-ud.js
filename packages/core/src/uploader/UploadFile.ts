@@ -22,6 +22,10 @@ import { XHRInterceptor } from "../xhr-intercepto";
 export default class UploadFile<T = any> extends TransferFile<UploadFile, T> {
   public up: Uploader<T>;
   /**
+   * 🔑 文件创建时保存 action 快照，防止切换模式后重试时用到错误的 action
+   */
+  private _action: NonNullable<UploadFile["up"]["config"]>["action"] | undefined;
+  /**
    * 分片管理器实例
    * 每个文件拥有独立的 uploadChunkManager,实现并发控制、断点续传和失败隔离
    */
@@ -49,6 +53,8 @@ export default class UploadFile<T = any> extends TransferFile<UploadFile, T> {
   constructor(file: IFile, transfer: Transfer) {
     super(file, transfer);
     this.up = transfer as unknown as Uploader<T>;
+    // 🔑 文件创建时保存 action 快照，重试/恢复时始终使用创建时的 action
+    this._action = this.up.config?.action;
     this.proxy = createReactiveUploadFile(this, transfer);
     // 如果是分片上传（检查 chunkOptions 配置）,在构造时就创建 uploadChunkManager
     if (this.up.config?.chunkOptions) {
@@ -289,7 +295,14 @@ export default class UploadFile<T = any> extends TransferFile<UploadFile, T> {
       // 重置已上传字节数（避免重新上传时使用旧值）
       this.__transferBytes__ = 0;
 
-      if (!this.up.config?.action) {
+      // 🔑 重试场景：取消/失败后拦截器的 assignedFiles 残留旧记录，
+      //    新 XHR 匹配时会被跳过 → 回退到队列第一个文件，导致进度事件绑错文件
+      UploadFile.interceptor?.cleanupFile?.(this as any);
+      if (!UploadFile.currentQueue.includes(this as any)) {
+        UploadFile.currentQueue.push(this as any);
+      }
+
+      if (!this._action) {
         console.warn("请设置上传地址");
         return;
       }
@@ -357,10 +370,10 @@ export default class UploadFile<T = any> extends TransferFile<UploadFile, T> {
       // 对于普通上传，使用 this.formData
       const requestData = chunkFormData || this.formData || new FormData();
 
-      if (typeof this.up.config?.action === "string") {
-        // 直接使用用户配置的 action URL
-        const axiosPromise = (this.up.config.axiosInstance || axios).post<T>(
-          this.up.config.action,
+      if (typeof this._action === "string") {
+        // 直接使用文件创建时的 action URL
+        const axiosPromise = (this.up.config?.axiosInstance || axios).post<T>(
+          this._action,
           requestData,
           { signal },
         );
@@ -374,11 +387,11 @@ export default class UploadFile<T = any> extends TransferFile<UploadFile, T> {
             { once: true },
           );
         }
-        const actionResult = this.up.config?.action(requestData, this);
+        const actionResult = this._action!(requestData, this);
         // 支持函数返回字符串 URL：核心代码自动发起 axios 请求
         promise = Promise.resolve(actionResult).then((result) => {
           if (typeof result === "string") {
-            const axiosPromise = (this.up.config.axiosInstance || axios).post<T>(
+            const axiosPromise = (this.up.config?.axiosInstance || axios).post<T>(
               result,
               requestData,
               { signal },

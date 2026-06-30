@@ -350,6 +350,7 @@ export default class TransferFile<T extends TransferFile<T, any>, D = any> {
         this.isCancel = false;
         this.proxy.isCancel = false;
         this.proxy.isRetry = true;
+        this.proxy.percent = 0;
         this.proxy.status = "UDLoading";
 
         console.log(`[TransferFile] ✅ 已重置标志, proxyStatus=${this.proxy.status}`);
@@ -608,7 +609,12 @@ export default class TransferFile<T extends TransferFile<T, any>, D = any> {
     this.calculateGlobalProgress(event);
 
     // 4. 计算速率
-    this.calculateSpeed(this.__transferBytes__);
+    // 🔑 分片传输由 ChunkManager 独立管控进度和速度，XHR 进度事件的 loadedBytes
+    //    只反映单个分片（且 uploadChunkManager 场景下 __transferBytes__ 恒为 0），
+    //    若在此计算会覆盖 ChunkManager 写入的正确速度，导致列表行一直显示"计算中..."
+    if (!this.getChunkManager()) {
+      this.calculateSpeed(this.__transferBytes__);
+    }
 
     // 5. 发射进度事件
     transfer.emit("progress", transfer.totalPercent);
@@ -694,15 +700,18 @@ export default class TransferFile<T extends TransferFile<T, any>, D = any> {
     transfer.totalBytes = totalFilesSize;
     transfer.totalFormatSize = formatFileSize(totalFilesSize);
 
-    if (currentTotalBytes > 0) {
-      // 已知总大小：精确计算加权百分比
+    // 🔑 总进度 = 所有文件按大小加权的平均百分比（不区分活跃/已完成）
+    //    使用与 updateGlobalStats() 一致的加权算法，避免已完成文件被忽略
+    //    导致 totalPercent 只反映活跃文件进度
+    if (totalFilesSize > 0) {
+      const weightedSum = transfer.files.reduce((sum, file) => {
+        const fileSize = file.getFileSize();
+        return sum + (file.percent || 0) * fileSize;
+      }, 0);
       transfer.totalPercent = Math.min(
         100,
-        Math.floor((totalTransferredBytes / currentTotalBytes) * 100),
+        Math.round(weightedSum / totalFilesSize),
       );
-    } else if (this.getChunkManager()) {
-      // 分片传输：保持当前值不变
-      transfer.totalPercent = transfer.totalPercent;
     } else {
       // 未知总大小（如下载无 Content-Length 头）：使用当前文件的 percent
       transfer.totalPercent = this.proxy.percent || 0;
