@@ -5,7 +5,7 @@
   "fixed": [],
   "linked": [["@file-ud.js/core", "@file-ud.js/plugins"]],
   "access": "public",
-  "baseBranch": "main",
+  "baseBranch": "master",
   "updateInternalDependencies": "patch",
   "privatePackages": {
     "tag": false,
