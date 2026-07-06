@@ -21,8 +21,8 @@
     "example:windows": "start cmd /k \"cd packages\\example && pnpm run dev\" && start cmd /k \"cd server && node ./main.js\"",
     "changeset": "changeset",
     "version-packages": "changeset version",
-    "release": "pnpm build && changeset publish --registry=https://registry.npmjs.org/",
-    "release:snapshot": "changeset version --snapshot canary && changeset publish --tag canary --registry=https://registry.npmjs.org/",
+    "release": "pnpm build && changeset publish",
+    "release:snapshot": "changeset version --snapshot canary && changeset publish --tag canary",
     "status": "changeset status"
   },
   "devDependencies": {
