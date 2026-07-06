@@ -65,3 +65,33 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create aggregate GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./packages/core/package.json').version")
+          TAG="v${VERSION}"
+          TITLE="@file-ud.js ${TAG}"
+
+          {
+            echo "## @file-ud.js ${TAG}"
+            echo
+            echo "Browser file upload and download SDK for TypeScript/JavaScript."
+            echo
+            echo "### Packages"
+            echo
+            echo "- @file-ud.js/core@${VERSION}"
+            echo "- @file-ud.js/plugins@${VERSION}"
+            echo
+            echo "### Documentation"
+            echo
+            echo "- https://chyuanjinlin.github.io/file-ud.js/"
+          } > release-notes.md
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "$TITLE" --notes-file release-notes.md --latest
+          else
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "$TITLE" --notes-file release-notes.md --latest
+          fi

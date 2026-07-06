@@ -8,7 +8,7 @@
     <img src="https://img.shields.io/badge/docs-GitHub%20Pages-0969da?style=flat-square&logo=githubpages&logoColor=white" alt="docs" />
   </a>
   <a href="https://github.com/ChYuanJinlin/file-ud.js/releases">
-    <img src="https://img.shields.io/github/v/release/ChYuanJinlin/file-ud.js?style=flat-square&logo=github&label=release" alt="GitHub release" />
+    <img src="https://img.shields.io/github/v/release/ChYuanJinlin/file-ud.js?style=flat-square&logo=github&label=%40file-ud.js" alt="GitHub release" />
   </a>
   <img src="https://img.shields.io/badge/runtime-browser-4285f4?style=flat-square&logo=googlechrome&logoColor=white" alt="browser runtime" />
   <img src="https://img.shields.io/badge/node-%3E%3D18.0.0-339933?style=flat-square&logo=node.js&logoColor=white" alt="node >= 18.0.0" />
