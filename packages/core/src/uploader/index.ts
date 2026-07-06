@@ -4,7 +4,7 @@ import {
   beforeTransferCallBack,
   ErrorCallBack,
   EventName,
-  uploaderConfigs,
+  UploaderConfig,
   IFile,
   IUDPlugin,
   onInitChunkCallback,
@@ -14,7 +14,7 @@ import {
   SelectCallBack,
   UpdateCallBack,
   successCallback,
-} from "../types/index";
+} from "../types";
 import {
   checkNetworkStatus,
   formatFileSize,
@@ -28,7 +28,7 @@ import {
 import FileConcurrencyController from "../concurrency/FileConcurrencyController";
 
 import UploadFile from "./UploadFile";
-export const defaultConfig: uploaderConfigs = {
+export const defaultConfig: UploaderConfig = {
   multiple: false,
   accept: [],
   show: false,
@@ -41,8 +41,8 @@ export const defaultConfig: uploaderConfigs = {
 export default class Uploader<T = any> extends Transfer<UploadFile, T> {
   public inputHTML: HTMLInputElement | null;
   public static objectUrls: any[] = [];
-  public static baseConfig: uploaderConfigs;
-  public config: uploaderConfigs | null = null;
+  public static baseConfig: UploaderConfig;
+  public config: UploaderConfig | null = null;
   public static instances: Uploader | null = null;
   public static uploadFile: UploadFile | null;
 
@@ -94,9 +94,10 @@ export default class Uploader<T = any> extends Transfer<UploadFile, T> {
    *   fileId: fileInfo.id,
    *   fileName: fileInfo.name,
    *   url: fileInfo.url,
+   *   size: fileInfo.size,
    *   percent: 100,
    *   status: 'success',
-   *   formatSize: fileInfo.size
+   *   formatSize: formatFileSize(fileInfo.size)
    * })));
    *
    */
@@ -144,7 +145,7 @@ export default class Uploader<T = any> extends Transfer<UploadFile, T> {
     logger.info("Uploader", `setFiles: 成功回显 ${this.files.length} 个文件`);
   }
 
-  constructor(config?: uploaderConfigs) {
+  constructor(config?: UploaderConfig) {
     super();
     this.inputHTML = null;
     try {
@@ -201,7 +202,7 @@ export default class Uploader<T = any> extends Transfer<UploadFile, T> {
     }
     return input;
   }
-  create(config?: uploaderConfigs) {
+  create(config?: UploaderConfig) {
     Uploader.baseConfig = Object.assign(defaultConfig, Uploader.baseConfig);
     this.config = { ...Uploader.baseConfig, ...config };
     this.init();
@@ -223,7 +224,7 @@ export default class Uploader<T = any> extends Transfer<UploadFile, T> {
 
     return this;
   }
-  public updateConfig(config: Partial<uploaderConfigs>) {
+  public updateConfig(config: Partial<UploaderConfig>) {
     this.config = mergeObjects(this.config!, config);
   }
   set onbeforeTransfer(callback: beforeTransferCallBack<UploadFile>) {

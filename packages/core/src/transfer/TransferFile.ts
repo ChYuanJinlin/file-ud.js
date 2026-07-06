@@ -1,5 +1,5 @@
 import ChunkManager from "../chunkManager";
-import { IFile, speedInfo, TimeInfo } from "../types/index";
+import { IFile, speedInfo, TimeInfo } from "../types";
 import Transfer from "./Transfer";
 import {
   computeTransferTime,
@@ -92,6 +92,8 @@ export default class TransferFile<T extends TransferFile<T, any>, D = any> {
 
   /** 文件在队列中的索引 */
   index?: number;
+  /** 插件可写入的自定义元数据 */
+  metadata?: Record<string, any>;
   sub: T | null;
   /** 取消上传的函数 */
   abort: IFile["abort"];
@@ -126,6 +128,7 @@ export default class TransferFile<T extends TransferFile<T, any>, D = any> {
     this.formatSize = file.formatSize;
     this.abort = file.abort;
     this.index = file.index!;
+    this.metadata = file.metadata;
     this.isRetry = file.isRetry || false;
   }
   // 判断类型的辅助方法

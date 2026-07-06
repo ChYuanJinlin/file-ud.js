@@ -1,5 +1,8 @@
-import { IUDPlugin, PluginContext } from "@file-ud.js/core/types";
-import { UploadFile } from "@file-ud.js/core";
+import {
+  type IUDPlugin,
+  type PluginContext,
+  type TransferFile,
+} from "@file-ud.js/core";
 
 /**
  * 智能重试策略配置
@@ -32,7 +35,7 @@ export interface SmartRetryConfig {
  *
  * @example
  * ```typescript
- * import { SmartRetryPlugin } from '@file-ud.js/plugins';
+ * import { SmartRetryPlugin } from '@file-ud.js/plugins/retry';
  *
  * // 上传重试
  * const uploader = FileUD.createUploader("test", { ... });
@@ -43,7 +46,9 @@ export interface SmartRetryConfig {
  * downloader.use(new SmartRetryPlugin({ maxRetries: 3, strategy: "linear" }));
  * ```
  */
-export class SmartRetryPlugin implements IUDPlugin<UploadFile> {
+type RetryableTransferFile = TransferFile<any, any>;
+
+export class SmartRetryPlugin implements IUDPlugin<RetryableTransferFile> {
   name = "SmartRetryPlugin";
   version = "1.0.0";
   desc = "智能重试策略插件，同时支持上传/下载，支持指数退避、线性增长等多种重试策略";
@@ -74,7 +79,11 @@ export class SmartRetryPlugin implements IUDPlugin<UploadFile> {
   /**
    * 传输失败时触发（上传/下载通用）
    */
-  onError(error: Error, file: UploadFile, context: PluginContext<UploadFile>): void {
+  onError(
+    error: Error,
+    file: RetryableTransferFile,
+    context: PluginContext<RetryableTransferFile>,
+  ): void {
     const fileId = file.fileId;
     const currentRetries = this.retryCountMap.get(fileId) || 0;
 
@@ -127,7 +136,11 @@ export class SmartRetryPlugin implements IUDPlugin<UploadFile> {
   /**
    * 传输成功时清理重试状态
    */
-  onSuccess(response: any, file: UploadFile, context: PluginContext<UploadFile>): void {
+  onSuccess(
+    response: any,
+    file: RetryableTransferFile,
+    context: PluginContext<RetryableTransferFile>,
+  ): void {
     this.cleanup(file.fileId);
   }
 

@@ -1,0 +1,50 @@
+name: Snapshot Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Snapshot tag（如 canary、alpha、beta）"
+        required: false
+        default: "canary"
+
+jobs:
+  snapshot-release:
+    name: Snapshot Release (${{ github.event.inputs.tag }})
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: pnpm
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm build
+
+      - name: Publish snapshot
+        run: |
+          pnpm changeset version --snapshot ${{ github.event.inputs.tag }}
+          pnpm changeset publish --tag ${{ github.event.inputs.tag }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

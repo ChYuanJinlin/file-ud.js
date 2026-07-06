@@ -14,9 +14,14 @@ node_modules
 
 # Testing
 coverage
+*.tsbuildinfo
 uploads
 # Turbo
 .turbo
+
+# VitePress cache
+**/.vitepress/cache/
+**/.vitepress/.temp/
 
 # Vercel
 .vercel

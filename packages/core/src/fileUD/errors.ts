@@ -227,7 +227,7 @@ const ERROR_CODE_DESCRIPTIONS: Readonly<Record<number, string>> = {
  */
 export class FileUDError extends Error {
   /** 错误码 */
-  code: ErrorCode | undefined;
+  code: ErrorCode;
 
   /** 错误级别 */
   level: ErrorLevel;
@@ -371,7 +371,7 @@ export class FileUDError extends Error {
   /**
    * 转换为 JSON
    */
-  toJSON(): object {
+  toJSON(): FileUDErrorJSON {
     return {
       name: this.name,
       code: this.code,
@@ -395,7 +395,7 @@ export const Errors = {
    * @private
    */
   _emitError(uploader: Uploader, error: FileUDError): void {
-    uploader.emit("error", error);
+    uploader.emit("error", error.toJSON());
   },
 
   // 文件相关

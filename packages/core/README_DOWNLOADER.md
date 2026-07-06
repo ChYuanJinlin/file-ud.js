@@ -2,202 +2,187 @@
 
 ## 简介
 
-`Downloader` 是 `file-UD` 库中的文件下载模块，提供与 `Uploader` 对称的 API 设计，支持单文件/批量下载、进度跟踪、速率统计、暂停/恢复等功能。
+`Downloader` 是 `file-UD` 库中的文件下载模块，支持普通下载、分片并发下载、断点续传、秒下（instant download）、速率统计、流式写入磁盘等功能。
 
 ## 快速开始
 
 ### 1. 基础用法
 
 ```typescript
-import { Downloader } from '@file-ud.js/core';
+import { FileUD } from "@file-ud.js/core";
 
 // 创建下载器实例
-const downloader = new Downloader({
-  timeout: 30000,        // 超时时间（毫秒）
-  maxConcurrent: 3,      // 最大并发数
-  autoStart: true,       // 自动开始下载
-  headers: {             // 自定义请求头
-    'Authorization': 'Bearer token'
-  }
+const downloader = FileUD.createDownloader("myDownloader", {
+  action: "https://example.com/file.pdf",
+  headers: { Authorization: "Bearer token" },
+  timeout: 30000,
 });
 
-// 添加单个下载任务
-const file = downloader.add('https://example.com/file.pdf', {
-  fileName: 'document.pdf'  // 可选：自定义文件名
-});
-
-// 监听下载进度
-downloader.onUpdate((files) => {
-  files.forEach(file => {
+// 设置更新回调（所有文件列表变化时触发）
+downloader.onUpdate = (files) => {
+  files.forEach((file) => {
     console.log(`${file.fileName}: ${file.percent}%`);
   });
-});
+};
 
-// 监听下载完成
-downloader.on('success', (file) => {
+// 设置成功回调
+downloader.onSuccess = (response, file) => {
   console.log(`下载完成: ${file.fileName}`);
-});
-```
-
-### 2. 批量下载
-
-```typescript
-// 批量添加下载任务
-const files = downloader.addBatch([
-  'https://example.com/file1.pdf',
-  'https://example.com/file2.jpg',
-  { 
-    url: 'https://example.com/file3.zip',
-    fileName: 'archive.zip'
-  }
-]);
-
-// 等待所有下载完成
-Promise.all(files.map(f => f.start())).then(() => {
-  console.log('所有文件下载完成');
-});
-```
-
-### 3. 手动控制下载
-
-```typescript
-// 禁用自动开始
-const downloader = new Downloader({ autoStart: false });
-
-// 添加下载任务
-const file = downloader.add('https://example.com/large-file.zip');
-
-// 手动开始下载
-file.start();
-
-// 暂停下载
-file.pause();
-
-// 恢复下载
-file.resume();
-
-// 取消下载
-file.cancel();
-
-// 重试下载
-file.retry();
-```
-
-### 4. 全局统计信息
-
-```typescript
-// 获取全局下载进度
-console.log(downloader.totalPercent);        // 总进度百分比
-console.log(downloader.transferredFormatSize); // 已下载大小（格式化）
-console.log(downloader.totalFormatSize);       // 总大小（格式化）
-console.log(downloader.transferSpeed.currentSpeedFormatted); // 当前速度
-
-// 监听更新
-downloader.onUpdate(() => {
-  console.log(`全局进度: ${downloader.totalPercent}%`);
-  console.log(`下载速度: ${downloader.transferSpeed.currentSpeedFormatted}`);
-});
-```
-
-### 5. 插件系统
-
-```typescript
-// 创建自定义插件
-const myPlugin = {
-  name: 'my-plugin',
-  version: '1.0.0',
-  
-  // 下载前钩子
-  beforeDownload: async (file, context) => {
-    console.log(`准备下载: ${file.fileName}`);
-    return true; // 返回 false 可阻止下载
-  },
-  
-  // 进度钩子
-  onProgress: (percent, file, context) => {
-    if (percent % 10 === 0) {
-      console.log(`${file.fileName}: ${percent}%`);
-    }
-  },
-  
-  // 成功钩子
-  onSuccess: (blob, file, context) => {
-    console.log(`下载成功: ${file.fileName}`);
-  }
 };
 
-// 注册插件
-downloader.use(myPlugin);
+// 添加下载任务（立即开始下载）
+downloader.downloadFile({
+  url: "https://example.com/file.pdf",
+  fileName: "document.pdf",
+});
 ```
 
-### 6. Vue 响应式集成
+### 2. 分片下载（断点续传 + 秒下）
 
-```vue
-<script setup>
-import { ref } from 'vue';
-import { Downloader } from '@file-ud.js/core';
-
-const downloader = new Downloader();
-
-// 创建响应式桥接层
-const globalStats = ref({
-  totalPercent: 0,
-  transferredFormatSize: '0 B',
-  transferSpeed: { currentSpeedFormatted: '0 B/s' }
+```typescript
+const downloader = FileUD.createDownloader("chunkDownloader", {
+  action: "https://example.com/file",
+  chunkOptions: {
+    chunkSize: 2 * 1024 * 1024,   // 2MB 分片
+    maxConcurrent: 3,              // 最多 3 个并发
+    retries: 3,                    // 失败重试 3 次
+    timeout: 10000,                // 单分片超时
+    enableFileCache: true,         // 启用 IndexedDB 缓存（支持断点续传）
+  },
 });
 
-const files = ref([]);
-
-// 同步更新
-downloader.onUpdate((fileList) => {
-  files.value = fileList;
-  globalStats.value = {
-    totalPercent: downloader.totalPercent,
-    transferredFormatSize: downloader.transferredFormatSize,
-    transferSpeed: downloader.transferSpeed
+// 分片初始化回调（查询服务端已存在的分片，实现断点续传 / 秒下）
+downloader.onInitChunk = async (downloadFile, totalChunks, fileHash) => {
+  const { data } = await checkFile({ fileHash });
+  return {
+    fileHash: data.fileHash,
+    chunks: data.chunks || [],           // 已存在的分片索引
+    isInstantDownload: data.isInstant,   // 秒下标记
   };
+};
+
+// 分片合并回调
+downloader.onMergeChunk = async (chunkManager) => {
+  // 流式模式自动落盘，内存模式需要手动保存（触发浏览器下载对话框）
+};
+
+// 添加分片下载任务
+downloader.downloadFile({
+  url: "https://example.com/large-file.zip",
+  fileName: "large-file.zip",
+  size: 1024 * 1024 * 500,   // 500MB，用于端侧校验
+});
+```
+
+### 3. File System Access API（流式写入磁盘）
+
+分片下载时，浏览器会自动弹出"另存为"对话框，使用 File System Access API 将每个分片直接写入磁盘，**避免内存中累积完整文件**，适合大文件下载。
+
+```typescript
+// 方式 1：自动弹出保存对话框（分片模式下默认行为）
+downloader.downloadFile({
+  url: "https://example.com/big-file.zip",
+  fileName: "big-file.zip",
 });
 
-// 添加下载任务
-const addDownload = () => {
-  downloader.add('https://example.com/file.pdf');
-};
-</script>
-
-<template>
-  <div>
-    <button @click="addDownload">添加下载</button>
-    
-    <div v-if="files.length">
-      <h3>全局统计</h3>
-      <p>进度: {{ globalStats.totalPercent }}%</p>
-      <p>已下载: {{ globalStats.transferredFormatSize }}</p>
-      <p>速度: {{ globalStats.transferSpeed.currentSpeedFormatted }}</p>
-      
-      <h3>文件列表</h3>
-      <div v-for="file in files" :key="file.fileId">
-        <p>{{ file.fileName }}: {{ file.percent }}%</p>
-        <button @click="file.pause()">暂停</button>
-        <button @click="file.resume()">恢复</button>
-        <button @click="file.cancel()">取消</button>
-      </div>
-    </div>
-  </div>
-</template>
+// 方式 2：预先获取 FileHandle（手动控制保存位置）
+const fileHandle = await Downloader.pickSaveFile("big-file.zip");
+if (fileHandle) {
+  downloader.downloadFile(
+    { url: "https://example.com/big-file.zip", fileName: "big-file.zip" },
+    fileHandle,
+  );
+}
 ```
+
+### 4. 手动控制下载
+
+```typescript
+// 文件级别控制
+const file = downloader.downloadFile({ url: "...", fileName: "..." });
+
+file.pause();     // 暂停下载（仅分片模式）
+file.resume();    // 恢复下载（仅分片模式）
+file.cancel();    // 取消下载
+file.retry();     // 重试下载
+file.remove();    // 从列表移除
+```
+
+### 5. 批量操作
+
+```typescript
+downloader.pauseAll();    // 暂停所有
+downloader.resumeAll();   // 恢复所有
+downloader.cancelAll();   // 取消所有
+downloader.retryAll();    // 重试所有失败/取消的任务
+downloader.removeAll();   // 清空所有任务
+downloader.submit();      // 提交所有 pending 任务
+```
+
+### 6. 全局统计信息
+
+```typescript
+downloader.onUpdate = (files) => {
+  // 全局进度
+  console.log(`总进度: ${downloader.totalPercent}%`);
+  console.log(`已下载: ${downloader.transferredFormatSize}`);
+  console.log(`总大小: ${downloader.totalFormatSize}`);
+  // 全局速度
+  console.log(`瞬时速度: ${downloader.speed.currentSpeedFormatted}`);
+  console.log(`平均速度: ${downloader.speed.averageSpeedFormatted}`);
+  console.log(`预计剩余: ${downloader.speed.estimatedTimeFormatted}`);
+};
+```
+
+---
 
 ## API 参考
 
-### Downloader 配置
+### DownloaderConfig 配置
 
 ```typescript
-interface downloaderConfigs {
-  action?: string;              // 下载基础 URL
-  method?: 'GET' | 'POST';      // 请求方法
-  headers?: Record<string, string>;  // 自定义请求头
-  timeout?: number;             // 超时时间（毫秒）
-  maxConcurrent?: number;       // 最大并发数
-  autoStart?: boolean;          // 是否自动开始下载
+interface DownloaderConfig {
+  /** 下载地址：字符串 URL 或函数 */
+  action: string | ((transferFile: DownloadFile) => string | Promise<any>);
+  /** 自定义请求头 */
+  headers?: Record<string, any>;
+  /** 超时时间（毫秒），默认 30000 */
+  timeout?: number;
+  /** 分片下载配置 */
+  chunkOptions?: ChunkOptions | null;
+  /** 文件数量限制 */
+  limit?: number;
+  /** 单文件大小限制（字节） */
+  maxSize?: number;
+  /** 最大同时传输文件数 */
+  maxFileConcurrent?: number;
+  /** 自定义 axios 实例 */
+  axiosInstance?: AxiosInstance;
+  /** axios 请求配置（method、responseType 等） */
+  axiosOptions?: AxiosRequestConfig;
+  /** 下载最大速率限制（bytes/秒） */
+  maxDownloadSpeed?: number;
+}
+```
+
+### ChunkOptions 分片配置
+
+```typescript
+interface ChunkOptions {
+  /** 分片大小（字节），如 2 * 1024 * 1024 */
+  chunkSize?: number;
+  /** 分片最大并发数 */
+  maxConcurrent?: number;
+  /** 失败重试次数 */
+  retries?: number | null;
+  /** 重试延迟（毫秒） */
+  retryDelay?: number;
+  /** 单分片超时（毫秒） */
+  timeout?: number;
+  /** 是否启用 IndexedDB 文件缓存（断点续传用） */
+  enableFileCache?: boolean;
+  /** 缓存保留天数，默认 7 天 */
+  cacheRetentionDays?: number;
 }
 ```
 
@@ -205,64 +190,145 @@ interface downloaderConfigs {
 
 | 方法 | 说明 | 返回值 |
 |------|------|--------|
-| `add(url, options)` | 添加下载任务 | `DownloadFile` |
-| `addBatch(urls)` | 批量添加下载任务 | `DownloadFile[]` |
+| `downloadFile(file, fileHandle?)` | 添加下载任务并立即开始 | `DownloadFile` |
 | `use(plugin)` | 注册插件 | `this` |
 | `unuse(name)` | 移除插件 | `this` |
-| `clearFiles()` | 清空所有任务 | `void` |
-| `pauseAll()` | 暂停所有任务 | `void` |
-| `resumeAll()` | 恢复所有任务 | `void` |
-| `cancelAll()` | 取消所有任务 | `void` |
-| `retryAll()` | 重试所有失败任务 | `void` |
+| `getPlugin(name?)` | 获取插件 | `IUDPlugin \| IUDPlugin[]` |
+| `updateConfig(config)` | 动态更新配置 | `void` |
+| `pauseAll()` | 暂停所有进行中的下载 | `void` |
+| `resumeAll()` | 恢复所有暂停的下载 | `Promise<void>` |
+| `cancelAll()` | 取消所有下载 | `void` |
+| `retryAll()` | 重试所有失败/取消的任务 | `Promise<void>` |
+| `removeAll()` | 清空所有任务 | `void` |
+| `submit()` | 提交所有 pending 任务 | `void` |
+
+### Downloader 静态方法
+
+| 方法 | 说明 |
+|------|------|
+| `Downloader.setDefaultPlugins(plugins)` | 设置全局默认插件 |
+| `Downloader.pickSaveFile(name?)` | 弹出系统保存对话框，返回 FileHandle |
+| `Downloader.saveBlob(fileName, data)` | 保存 Blob 到本地（触发浏览器下载） |
+| `Downloader.saveFile(fileName, url)` | 通过 URL 下载并保存文件 |
+
+### Downloader 回调设置器
+
+| 设置器 | 回调签名 | 说明 |
+|--------|----------|------|
+| `onSuccess = fn` | `(response, file) => void` | 单文件下载成功 |
+| `onUpdate = fn` | `(files: DownloadFile[]) => void` | 文件列表更新（进度/状态变化） |
+| `onInitChunk = fn` | `(file, totalChunks, fileHash) => Promise` | 分片初始化（查已下载分片） |
+| `onMergeChunk = fn` | `(chunkManager) => Promise` | 分片合并 |
+| `onbeforeTransfer = fn` | `(file) => boolean \| Promise` | 下载前拦截 |
+
+### DownloadFile 属性
+
+| 属性 | 类型 | 说明 |
+|------|------|------|
+| `fileId` | `string` | 文件唯一标识 |
+| `fileName` | `string` | 文件名 |
+| `url` | `string` | 下载地址 |
+| `size` | `number` | 文件大小（字节） |
+| `percent` | `number` | 下载进度 (0-100) |
+| `status` | `string` | 状态：pending / UDLoading / paused / success / fail / error / cancelled |
+| `speed` | `speedInfo` | 速率信息（瞬时/平均速度、预计剩余时间） |
+| `formatSize` | `string` | 格式化文件大小 |
+| `transferFormatSize` | `string` | 已下载大小格式化字符串 |
+| `fileHandle` | `FileSystemFileHandle \| null` | 流式写入的文件句柄 |
 
 ### DownloadFile 方法
 
 | 方法 | 说明 |
 |------|------|
-| `start()` | 开始下载 |
-| `pause()` | 暂停下载 |
-| `resume()` | 恢复下载 |
+| `start(chunkManager)` | 开始下载 |
+| `pause()` | 暂停下载（仅分片模式） |
+| `resume()` | 恢复下载（仅分片模式） |
 | `cancel()` | 取消下载 |
 | `retry()` | 重试下载 |
-| `remove()` | 从列表中移除 |
+| `remove()` | 从列表移除 |
 
 ### 事件
 
+通过 `downloader.on(eventName, callback)` 监听：
+
 | 事件名 | 回调参数 | 说明 |
 |--------|----------|------|
-| `update` | `(files: DownloadFile[])` | 文件列表更新 |
-| `success` | `(file: DownloadFile)` | 单个文件下载成功 |
-| `error` | `(error)` | 下载错误 |
-| `pause` | `(file: DownloadFile)` | 暂停下载 |
-| `resume` | `(file: DownloadFile)` | 恢复下载 |
-| `cancel` | `(file: DownloadFile)` | 取消下载 |
-| `retry` | `(file: DownloadFile)` | 重试下载 |
-| `remove` | `(file: DownloadFile)` | 移除文件 |
-| `files-start` | `(files: DownloadFile[])` | 批量下载开始 |
-| `files-complete` | `(files: DownloadFile[])` | 批量下载完成 |
+| `progress` | `(percent: number)` | 全局进度 |
+| `change` | `(file: DownloadFile)` | 文件新增 |
+| `pause` | `(file: DownloadFile)` | 文件暂停 |
+| `resume` | `(file: DownloadFile)` | 文件恢复 |
+| `cancel` | `(file: DownloadFile)` | 文件取消 |
+| `retry` | `(file: DownloadFile)` | 文件重试 |
+| `remove` | `(file: DownloadFile)` | 文件移除 |
+| `files-start` | `(files: DownloadFile[])` | 批量开始 |
+| `files-complete` | `(files: DownloadFile[])` | 批量完成 |
+| `chunk-success` | `(data: ChunkSuccessData)` | 分片下载成功 |
+| `chunk-error` | `(data: ChunkErrorData)` | 分片下载失败 |
+| `chunk-download-start` | `(data: ChunkStartData)` | 分片下载开始 |
+| `merging` | `(data)` | 分片合并中 |
+| `merge-success` | `(data)` | 分片合并完成 |
+| `merge-error` | `(data)` | 分片合并失败 |
 
-## 与 Uploader 的对比
+---
 
-| 特性 | Uploader | Downloader |
-|------|----------|------------|
-| 初始化 | `create(config)` + 文件选择器 | 直接实例化 |
-| 添加任务 | 用户选择文件 | `add(url)` 手动添加 |
-| 核心类 | `UploadFile` | `DownloadFile` |
-| 分片支持 | ✅ 支持分片上传 | ❌ 暂不支持 |
-| 秒传支持 | ✅ 支持 | ❌ 不适用 |
-| 断点续传 | ✅ 支持 | ⏸️ 计划中 |
+## 插件系统
 
-## 注意事项
+```typescript
+const myPlugin = {
+  name: "my-download-plugin",
+  version: "1.0.0",
 
-1. **跨域问题**：下载外部资源时需注意 CORS 配置
-2. **大文件下载**：建议设置合理的 `timeout` 和启用断点续传（未来版本）
-3. **浏览器限制**：浏览器环境下无法指定保存路径，由浏览器决定
-4. **内存管理**：下载完成后及时清理不再需要的 `DownloadFile` 实例
+  onFileSelect: async (file, context) => {
+    console.log(`准备下载: ${file.fileName}`);
+    return file;   // 返回 false 可拒绝下载
+  },
 
-## 未来规划
+  beforeTransfer: async (file, context) => {
+    return true;   // 返回 false 阻止下载
+  },
 
-- [ ] 支持断点续传
-- [ ] 支持多线程下载
-- [ ] 支持 P2P 下载
-- [ ] 支持下载队列优先级
-- [ ] 支持离线缓存
+  onProgress: (percent, file, context) => {
+    console.log(`${file.fileName}: ${percent}%`);
+  },
+
+  onSuccess: (response, file, context) => {
+    console.log(`✅ ${file.fileName} 下载成功`);
+  },
+
+  onError: (error, file, context) => {
+    console.error(`❌ ${file.fileName} 下载失败:`, error);
+  },
+};
+
+downloader.use(myPlugin);
+```
+
+---
+
+## 下载流程说明
+
+### 普通下载流程
+```
+downloadFile() → onFileSelect 钩子 → beforeTransfer 钩子
+  → axios GET → 进度回调 → 成功 → saveBlob / 流式写入 → onSuccess
+```
+
+### 分片下载流程
+```
+downloadFile()
+  → onInitChunk 回调（查服务端已存在分片）
+  → IndexedDB 恢复（如启用 enableFileCache）
+  → 磁盘断点续传检测（File System Access API）
+  → 秒下检查（全部已完成 → 跳过下载）
+  → 并发下载缺失分片（Range 请求）
+  → 流式写入磁盘 / 内存累积
+  → 分片合并
+  → onSuccess
+```
+
+### 文件状态流转
+```
+pending → UDLoading → success
+                   → paused → UDLoading（恢复）
+                   → cancelled / fail / error → retry → UDLoading
+```

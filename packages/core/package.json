@@ -1,23 +1,90 @@
 {
   "name": "@file-ud.js/core",
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "Browser file upload and download SDK with chunked transfer, resume support, instant transfer, and plugins.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ChYuanJinlin/file-ud.js.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/ChYuanJinlin/file-ud.js#readme",
+  "bugs": {
+    "url": "https://github.com/ChYuanJinlin/file-ud.js/issues"
+  },
+  "keywords": [
+    "upload",
+    "download",
+    "chunk",
+    "resume",
+    "file",
+    "typescript"
+  ],
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "README_UPLOADER.md",
+    "README_DOWNLOADER.md"
+  ],
+  "sideEffects": [
+    "./dist/index.js",
+    "./dist/index.mjs",
+    "./dist/uploader/index.js",
+    "./dist/uploader/index.mjs",
+    "./dist/downloader/index.js",
+    "./dist/downloader/index.mjs"
+  ],
   "scripts": {
-    "build": "tsup",
-    "dev": "tsup --watch"
+    "build": "tsup && node scripts/write-subpath-wrappers.mjs",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "exports": {
-    ".": "./src/index.ts",
-    "./uploader": "./src/uploader/index.ts",
-    "./utils": "./src/utils/index.ts",
-    "./types": "./src/types/index.d.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "default": "./dist/index.mjs"
+    },
+    "./uploader": {
+      "types": "./dist/uploader/index.d.ts",
+      "import": "./dist/uploader/index.mjs",
+      "require": "./dist/uploader/index.js",
+      "default": "./dist/uploader/index.mjs"
+    },
+    "./downloader": {
+      "types": "./dist/downloader/index.d.ts",
+      "import": "./dist/downloader/index.mjs",
+      "require": "./dist/downloader/index.js",
+      "default": "./dist/downloader/index.mjs"
+    },
+    "./utils": {
+      "types": "./dist/utils/index.d.ts",
+      "import": "./dist/utils/index.mjs",
+      "require": "./dist/utils/index.js",
+      "default": "./dist/utils/index.mjs"
+    },
+    "./types": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "default": "./dist/index.mjs"
+    }
   },
   "devDependencies": {
     "@types/spark-md5": "^3.0.5",
+    "@vitest/coverage-v8": "^2.1.0",
     "tsup": "^7.2.0",
-    "typescript": "^5.2.0"
+    "typescript": "^5.2.0",
+    "vitest": "^2.1.0"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
     "axios": "^1.13.6",

@@ -1,6 +1,6 @@
 import {
   EventName,
-  uploaderConfigs,
+  UploaderConfig,
   DownloaderConfig,
   LogConfig,
 } from "../types";
@@ -13,10 +13,6 @@ import { initLogger, LogLevel, mergeObjects } from "../utils";
 export default class FileUD {
   private static uploaders: Map<string, Uploader> = new Map();
   private static downloaders: Map<string, Downloader> = new Map();
-
-  public static uploader: Uploader | null = Uploader.instances;
-  public static downloader: Downloader | null = null;
-
   public static startUDLogger(logConfig?: LogConfig) {
     // 初始化日志配置
 
@@ -30,7 +26,7 @@ export default class FileUD {
 
   public static createUploader<T = any>(
     name: string,
-    config?: uploaderConfigs,
+    config?: UploaderConfig,
   ): Uploader<T> {
     if (!name) {
       throw new Error("Uploader name is required");

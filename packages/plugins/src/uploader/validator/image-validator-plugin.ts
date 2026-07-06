@@ -1,6 +1,9 @@
-import { UploadFile, ErrorCode } from "@file-ud.js/core";
+import {
+  UploadFile,
+  ErrorCode,
+  type PluginContext,
+} from "@file-ud.js/core";
 import { BasePlugin } from "../../base-plugin";
-import { PluginContext } from "@file-ud.js/core/types";
 export interface ImageValidatorOptions {
   // 宽度验证
   exactWidth?: number;

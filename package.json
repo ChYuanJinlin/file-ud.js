@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "packageManager": "pnpm@8.9.0",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "build": "turbo build",
     "dev": "turbo dev",
@@ -10,14 +13,24 @@
     "test": "turbo test",
     "clean": "turbo clean",
     "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
+    "docs:dev": "pnpm --filter @file-ud.js/docs dev",
+    "docs:build": "pnpm --filter @file-ud.js/docs build",
+    "docs:build:all": "pnpm docs:build",
+    "docs:preview": "pnpm --filter @file-ud.js/docs preview",
     "example": "concurrently \"pnpm --filter example dev\" \"cd server && nodemon ./main.js\"",
-    "example:windows": "start cmd /k \"cd packages\\example && pnpm run dev\" && start cmd /k \"cd server && node ./main.js\""
+    "example:windows": "start cmd /k \"cd packages\\example && pnpm run dev\" && start cmd /k \"cd server && node ./main.js\"",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "pnpm build && changeset publish --registry=https://registry.npmjs.org/",
+    "release:snapshot": "changeset version --snapshot canary && changeset publish --tag canary --registry=https://registry.npmjs.org/",
+    "status": "changeset status"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
     "turbo": "latest"
   },
   "dependencies": {
+    "@changesets/changelog-github": "^0.5.0",
     "@changesets/cli": "^2.31.0",
     "@types/node": "^25.1.0",
     "axios": "^1.13.6",

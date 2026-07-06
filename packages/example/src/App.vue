@@ -12,13 +12,8 @@ import {
   Picture,
   VideoCamera,
   Headset,
-  Files,
 } from "@element-plus/icons-vue";
-import {
-  Downloader,
-  FileUD,
-  Uploader,
-} from "@file-ud.js/core";
+import { Downloader, FileUD, Uploader } from "@file-ud.js/core";
 import { disposeMD5Worker } from "@file-ud.js/core/utils";
 import {
   uploadFile,
@@ -31,12 +26,8 @@ import {
   downloadExcelApi,
   deleteServerFile,
 } from "./api";
-import {
-  IFile,
-  UDFile,
-  DownloaderConfig,
-  uploaderConfigs,
-} from "@file-ud.js/core/types";
+import type { DownloaderConfig, UploaderConfig } from "@file-ud.js/core";
+import { WatermarkPlugin } from "@file-ud.js/plugins/uploader";
 
 // ==================== 共享工具函数 ====================
 
@@ -75,33 +66,40 @@ const statusTextMap: Record<string, string> = {
 
 const isChunkUpload = ref(true);
 
-const buildUploaderConfig = (): uploaderConfigs => {
-  
+const buildUploaderConfig = (): UploaderConfig => {
   return {
-  action(formData, file) {
-    // 🔑 不依赖 isChunkUpload.value（模式切换后会变），
-    //    改用 file.uploadChunkManager 判断（文件创建时就固定，不会变）
-    return file.uploadChunkManager ? uploadFile(formData) : upload(formData);
-  },
-  multiple: true,
-  headers: { Authorization: "Bearer your-token" },
-  chunkOptions: isChunkUpload.value ? { chunkSize: 5 * 1024 * 1024, timeout: 0 } : null,
-  file({ formData, uploadFile, chunkIndex, data }) {
-   
-    formData.append("file", data);
-    formData.append("fileHash", uploadFile.uploadChunkManager?.fileHash!);
-    formData.append("fileName", uploadFile.File.name);
-    formData.append("chunkIndex", chunkIndex?.toString()!);
-    formData.append(
-      "totalChunks",
-      uploadFile.uploadChunkManager?.totalChunks.toString()!,
-    );
-  },
-};
+    action(formData, file) {
+      // 🔑 不依赖 isChunkUpload.value（模式切换后会变），
+      //    改用 file.uploadChunkManager 判断（文件创建时就固定，不会变）
+      return file.uploadChunkManager ? uploadFile(formData) : upload(formData);
+    },
+    multiple: true,
+    headers: { Authorization: "Bearer your-token" },
+    chunkOptions: isChunkUpload.value
+      ? { chunkSize: 5 * 1024 * 1024, timeout: 0 }
+      : null,
+    file({ formData, uploadFile, chunkIndex, data }) {
+      formData.append("file", data);
+      formData.append("fileHash", uploadFile.uploadChunkManager?.fileHash!);
+      formData.append("fileName", uploadFile.File.name);
+      formData.append("chunkIndex", chunkIndex?.toString()!);
+      formData.append(
+        "totalChunks",
+        uploadFile.uploadChunkManager?.totalChunks.toString()!,
+      );
+    },
+  };
 };
 
 const uploader = FileUD.createUploader("uploader", buildUploaderConfig());
-
+uploader.use([
+  new WatermarkPlugin({
+    text: "© MyCompany",
+    position: "bottom-right",
+    opacity: 0.6,
+  }),
+]);
+/** 合并已上传完毕的所有分片，调用后端合并接口完成文件最终写入 */
 uploader.onMergeChunk = async (ch) => {
   const { data } = await mergeChunks({
     fileHash: ch.fileHash,
@@ -190,7 +188,7 @@ downloader.onInitChunk = async (downloadFile, totalChunks, fileHash) => {
   };
 };
 
-downloader.beforeTransferCallback = (file) => ({});
+downloader.beforeTransferCallback = () => ({});
 
 // ==================== Excel 下载器（POST，不分片） ====================
 
@@ -246,19 +244,20 @@ uploader.on("files-complete", () => {
 
 uploader.onSuccess = (res: any) => console.log("上传成功:", res);
 
-uploader.onUpdate = (files) => {
+uploader.onUpdate = (files: any[]) => {
   uploadFiles.value = files;
   uploadStats.value = {
     totalPercent: uploader.totalPercent,
     totalFormatSize: uploader.totalFormatSize,
     transferredFormatSize: uploader.transferredFormatSize,
     speed: uploader.speed?.averageSpeedFormatted || "0 B/s",
-    estimatedTimeFormatted: uploader.speed?.estimatedTimeFormatted || "计算中...",
+    estimatedTimeFormatted:
+      uploader.speed?.estimatedTimeFormatted || "计算中...",
   };
 };
 
 const bindDownloaderEvents = (dl: any) => {
-  dl.onUpdate = (files) => {
+  dl.onUpdate = (files: any[]) => {
     downloadFiles.value = files;
     downloadStats.value = {
       totalPercent: dl.totalPercent,
@@ -482,14 +481,19 @@ const batchDelete = () => {
 const handleDownload = async (row: any) => {
   const name = row.fileName || row.name || "";
 
-  console.log(`[handleDownload] 开始下载: "${name}", isStreamSave=${isStreamSave.value}`);
+  console.log(
+    `[handleDownload] 开始下载: "${name}", isStreamSave=${isStreamSave.value}`,
+  );
 
   // 🚀 流式保存：内部处理了兼容性检测 + 用户取消 + 错误回退
   const fileHandle = isStreamSave.value
     ? await Downloader.pickSaveFile(name)
     : undefined;
 
-  console.log(`[handleDownload] pickSaveFile 返回:`, fileHandle ? `FileHandle(${fileHandle.name})` : fileHandle);
+  console.log(
+    `[handleDownload] pickSaveFile 返回:`,
+    fileHandle ? `FileHandle(${fileHandle.name})` : fileHandle,
+  );
 
   // null = 用户取消；undefined = API 不可用，回退到普通模式
   if (fileHandle === null) {
@@ -543,7 +547,9 @@ const handleDownload = async (row: any) => {
           <div class="progress-speed">平均速度: {{ uploadStats.speed }}</div>
           <div
             class="progress-speed"
-            v-if="uploadStats.totalPercent > 0 && uploadStats.totalPercent < 100"
+            v-if="
+              uploadStats.totalPercent > 0 && uploadStats.totalPercent < 100
+            "
           >
             预计剩余: {{ uploadStats.estimatedTimeFormatted }}
           </div>
@@ -565,7 +571,9 @@ const handleDownload = async (row: any) => {
           <div class="progress-speed">平均速度: {{ downloadStats.speed }}</div>
           <div
             class="progress-speed"
-            v-if="downloadStats.totalPercent > 0 && downloadStats.totalPercent < 100"
+            v-if="
+              downloadStats.totalPercent > 0 && downloadStats.totalPercent < 100
+            "
           >
             预计剩余: {{ downloadStats.estimatedTimeFormatted }}
           </div>
@@ -737,7 +745,9 @@ const handleDownload = async (row: any) => {
               >取消</el-button
             >
             <el-button
-              v-if="['success', 'error', 'fail', 'cancelled'].includes(row.status)"
+              v-if="
+                ['success', 'error', 'fail', 'cancelled'].includes(row.status)
+              "
               size="small"
               type="danger"
               :icon="Delete"
@@ -991,7 +1001,9 @@ const handleDownload = async (row: any) => {
               >取消</el-button
             >
             <el-button
-              v-if="['success', 'error', 'fail', 'cancelled'].includes(row.status)"
+              v-if="
+                ['success', 'error', 'fail', 'cancelled'].includes(row.status)
+              "
               size="small"
               type="danger"
               :icon="Delete"

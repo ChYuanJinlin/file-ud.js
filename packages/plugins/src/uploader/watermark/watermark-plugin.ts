@@ -1,8 +1,10 @@
 // plugins/watermark/watermark-plugin.ts
-import { UploadFile } from "@file-ud.js/core";
+import {
+  UploadFile,
+  formatFileSize,
+  type PluginContext,
+} from "@file-ud.js/core";
 import { BasePlugin } from "../../base-plugin";
-import { PluginContext } from "@file-ud.js/core/types";
-import { formatFileSize } from "@file-ud.js/core/utils";
 export interface WatermarkPluginOptions {
   /** 水印文字 */
   text?: string;
@@ -64,23 +66,11 @@ export class WatermarkPlugin extends BasePlugin {
     try {
       const watermarkedFile = await this.addWatermark(file.File);
 
-      const newFile = new UploadFile(
-        {
-          fileId: file.fileId,
-          url: file.url,
-          fileName: file.fileName,
-          File: watermarkedFile,
-          percent: 0,
-          status: "pending",
-          extension: file.extension,
-          formatSize: formatFileSize(watermarkedFile.size),
-          index: file.index,
-        },
-        context.transfer,
-      );
+      file.proxy.File = watermarkedFile;
+      file.proxy.formatSize = formatFileSize(watermarkedFile.size);
 
       console.log(`💧 水印已添加: ${file.fileName}`);
-      return newFile;
+      return file;
     } catch (error) {
       console.error(`水印添加失败: ${file.fileName}`, error);
       return file;

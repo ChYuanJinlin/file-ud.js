@@ -1,15 +1,20 @@
 // http.ts
 import axios from "axios";
+// 🔑 支持环境变量配置后端地址
+// - 本地开发：Vite proxy /api → localhost:3000，baseURL = "/api"
+// - 生产部署：设置 VITE_API_BASE_URL 指向实际后端，如 "https://your-server.com"
+//   后端不需要 /api 前缀时填完整地址，如 "https://your-server.com"
+//   后端需要 /api 前缀时填 "https://your-server.com/api"
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "/api";
 // 设置请求超时和请求头
 const instance = axios.create({
-    baseURL: "/api",
+    baseURL: apiBaseUrl,
     timeout: 1000 * 60 * 60 * 60,
 });
 instance.interceptors.request.use((config) => {
-    config.headers = {
-        Authorization: `Bearer xxxxx`,
-        "Accept-Language": "111",
-    };
+    // ✅ 合并 headers 而不是替换，保留 axios 自动设置的 Content-Type
+    config.headers.Authorization = `Bearer xxxxx`;
+    config.headers["Accept-Language"] = "111";
     return config;
 }, (error) => {
     return Promise.reject(error);

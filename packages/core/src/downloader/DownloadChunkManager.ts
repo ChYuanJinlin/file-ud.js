@@ -1,6 +1,6 @@
 import ChunkManager from "../chunkManager";
 import TransferFile from "../transfer/TransferFile";
-import { ChunkOptions } from "../types/index";
+import { ChunkOptions } from "../types";
 import DownloadFile from "./DownloadFile";
 import { calculateFileMD5, formatFileSize, logger } from "../utils";
 import Downloader from ".";

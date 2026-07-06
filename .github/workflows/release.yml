@@ -1,0 +1,62 @@
+name: Release
+
+on:
+  push:
+    paths:
+      - ".changeset/**"
+      - "packages/**/package.json"
+    branches:
+      - main
+      - "0.*"
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test packages
+        run: pnpm test
+
+      - name: Build packages
+        run: pnpm build
+
+      # 🔑 检查是否有 changeset 文件 → 创建 Version Packages PR
+      - name: Create Release Pull Request or Publish
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          title: "ci: version packages"
+          commit: "ci: version packages"
+          publish: pnpm release
+          version: pnpm version-packages
+          createGithubReleases: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

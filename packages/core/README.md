@@ -82,12 +82,20 @@ uploader.onMergeChunk = async (chunkManager) => {
 
 ---
 
+## 📚 详细文档
+
+- **[Uploader 上传器文档](./README_UPLOADER.md)** — 完整上传 API、配置、事件、分片上传、插件系统
+- **[Downloader 下载器文档](./README_DOWNLOADER.md)** — 完整下载 API、配置、事件、分片下载、File System Access
+- **[高级指南与排障文档](https://github.com/ChYuanJinlin/file-ud.js/tree/main/packages/docs/advanced)** — setFiles/addFile、分片回显、IndexedDB 缓存、取消与重试等内部流程说明
+
+---
+
 ## 📖 API 文档
 
 ### 配置选项
 
 ```typescript
-interface uploaderConfigs {
+interface UploaderConfig {
   /** 是否支持多选 */
   multiple?: boolean;
   
@@ -188,9 +196,9 @@ npm install @file-ud.js/plugins
 import { 
   FileValidatorPlugin,
   CompressImagePlugin,
-  WatermarkPlugin,
-  SmartRetryPlugin
-} from '@file-ud.js/plugins';
+  WatermarkPlugin
+} from '@file-ud.js/plugins/uploader';
+import { SmartRetryPlugin } from '@file-ud.js/plugins/retry';
 
 // 文件验证
 uploader.use(new FileValidatorPlugin({
@@ -363,9 +371,9 @@ pnpm --filter example dev
 
 欢迎提交 Issue 和 Pull Request！
 
-**报告 Bug**：[GitHub Issues](https://github.com/your-repo/file-ud/issues)
+**报告 Bug**：[GitHub Issues](https://github.com/ChYuanJinlin/file-ud.js/issues)
 
-**提出建议**：[Feature Requests](https://github.com/your-repo/file-ud/discussions)
+**提出建议**：[Feature Requests](https://github.com/ChYuanJinlin/file-ud.js/discussions)
 
 ---
 

@@ -2,8 +2,9 @@ import {
   UploadFile,
   FileUDError,
   ErrorCode,
+  type IUDPlugin,
+  type PluginContext,
 } from "@file-ud.js/core";
-import { IUDPlugin, PluginContext } from "@file-ud.js/core/types";
 /**
  * 插件基类
  * 提供通用的错误处理和日志功能

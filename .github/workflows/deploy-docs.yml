@@ -1,0 +1,78 @@
+name: Deploy Docs to GitHub Pages
+
+on:
+  push:
+    branches: [main, master, "0.*"]
+    paths:
+      - "packages/docs/**"
+      - "packages/example/**"
+      - "packages/core/**"
+      - ".github/workflows/deploy-docs.yml"
+  workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: "后端 API 地址（如 https://api.your-domain.com）"
+        required: false
+        default: ""
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Core
+        run: pnpm --filter @file-ud.js/core build
+
+      # 🔑 从 @file-ud.js/core 的 package.json 读取版本号作为部署路径
+      #     main/master → /file-ud.js/  (latest)
+      #     版本分支     → /file-ud.js/v0.0.0/ (取 core package.json 的 version)
+      - name: Determine base path
+        id: base
+        shell: bash
+        run: |
+          BRANCH="${{ github.ref_name }}"
+          if [[ "$BRANCH" == "main" || "$BRANCH" == "master" ]]; then
+            echo "path=/file-ud.js/" >> $GITHUB_OUTPUT
+          else
+            VER=$(node -p "require('./packages/core/package.json').version")
+            echo "path=/file-ud.js/v${VER}/" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build Example + Docs
+        env:
+          VITE_API_BASE_URL: ${{ github.event.inputs.api_base_url || secrets.VITE_API_BASE_URL || '' }}
+          VITE_BASE_PATH: ${{ steps.base.outputs.path }}
+        run: |
+          pnpm --filter @file-ud.js/docs build:example
+          pnpm --filter @file-ud.js/docs build
+
+      # 🔑 部署到 gh-pages 分支，不同版本部署到不同子目录
+      #     keep_files: true 保证多版本共存
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: packages/docs/.vitepress/dist
+          publish_branch: gh-pages
+          keep_files: true
+          commit_message: "docs: deploy ${{ github.ref_name }} to ${{ steps.base.outputs.path }}"

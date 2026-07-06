@@ -1,22 +1,22 @@
 import Ajax from "@/utils/request";
 
-export const uploadFile = (data) => {
+export const uploadFile = (data: any) => {
   return Ajax.post("/upload-chunk",data);
 };
 
-export const upload = (data) => {
+export const upload = (data: any) => {
   return Ajax.post("/upload",data);
 };
 
-export const checkFile = (data) => {
+export const checkFile = (data: any) => {
   return Ajax.post("/check-file",data);
 };
 
-export const createUploadTask = (data) => {
+export const createUploadTask = (data: any) => {
   return Ajax.post("/create-upload-task", data);
 };
 
-export const mergeChunks = (data) => {
+export const mergeChunks = (data: any) => {
   return Ajax.post("/merge-chunks", data);
 };
 

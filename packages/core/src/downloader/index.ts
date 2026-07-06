@@ -3,7 +3,7 @@ import type {
   IUDPlugin,
   PluginContext,
   UDFile,
-} from "../types/index";
+} from "../types";
 import Transfer from "../transfer/Transfer";
 import {
   mergeObjects,

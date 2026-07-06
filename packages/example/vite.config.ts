@@ -16,9 +16,47 @@ export default defineConfig({
       ".css",
       ".html",
     ],
-    alias: {
-      "@": path.resolve(__dirname, "./src"), // 确保指向项目的 src 目录
-    },
+    alias: [
+      {
+        find: "@file-ud.js/core/uploader",
+        replacement: path.resolve(__dirname, "../core/src/uploader/index.ts"),
+      },
+      {
+        find: "@file-ud.js/core/downloader",
+        replacement: path.resolve(__dirname, "../core/src/downloader/index.ts"),
+      },
+      {
+        find: "@file-ud.js/core/utils",
+        replacement: path.resolve(__dirname, "../core/src/utils/index.ts"),
+      },
+      {
+        find: "@file-ud.js/core",
+        replacement: path.resolve(__dirname, "../core/src/index.ts"),
+      },
+      {
+        find: "@file-ud.js/plugins/uploader",
+        replacement: path.resolve(__dirname, "../plugins/src/uploader/index.ts"),
+      },
+      {
+        find: "@file-ud.js/plugins/downloader",
+        replacement: path.resolve(
+          __dirname,
+          "../plugins/src/downloader/index.ts",
+        ),
+      },
+      {
+        find: "@file-ud.js/plugins/retry",
+        replacement: path.resolve(__dirname, "../plugins/src/retry/index.ts"),
+      },
+      {
+        find: "@file-ud.js/plugins",
+        replacement: path.resolve(__dirname, "../plugins/src/index.ts"),
+      },
+      {
+        find: "@",
+        replacement: path.resolve(__dirname, "./src"),
+      },
+    ],
   },
   server: {
     open: false,

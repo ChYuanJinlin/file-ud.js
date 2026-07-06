@@ -1,14 +1,21 @@
-import { UploadFile, FileUDError, ErrorCode, Uploader } from "@file-ud.js/core";
+import {
+  UploadFile,
+  FileUDError,
+  ErrorCode,
+  Uploader,
+  formatFileSize,
+  validator,
+  type UploaderConfig,
+  type PluginContext,
+} from "@file-ud.js/core";
 import { BasePlugin } from "../../base-plugin";
-import { uploaderConfigs, PluginContext } from "@file-ud.js/core/types";
-import { formatFileSize, validator } from "@file-ud.js/core/utils";
 export interface FileValidatorPluginOptions {
   /** 最大文件大小 (字节) */
   maxSize?: number;
   /** 最小文件大小 (字节) */
   minSize?: number;
   /** 允许的文件类型 (MIME类型或扩展名) */
-  accept?: uploaderConfigs["accept"];
+  accept?: UploaderConfig["accept"];
   /** 是否允许空文件 */
   allowEmpty?: boolean;
   /** 自定义验证函数 */

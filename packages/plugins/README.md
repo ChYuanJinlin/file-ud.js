@@ -41,7 +41,7 @@ file-ud.js 提供了强大的插件系统，允许你通过非侵入式的方式
 
 **快速开始**:
 ```typescript
-import { FileValidatorPlugin } from '@file-ud.js/plugins';
+import { FileValidatorPlugin } from '@file-ud.js/plugins/uploader';
 
 uploader.use(new FileValidatorPlugin({
   maxSize: 10 * 1024 * 1024,    // 10MB
@@ -66,7 +66,7 @@ uploader.use(new FileValidatorPlugin({
 
 **快速开始**:
 ```typescript
-import { CompressImagePlugin } from '@file-ud.js/plugins';
+import { CompressImagePlugin } from '@file-ud.js/plugins/uploader';
 
 uploader.use(new CompressImagePlugin({
   quality: 0.8,
@@ -92,7 +92,7 @@ uploader.use(new CompressImagePlugin({
 
 **快速开始**:
 ```typescript
-import { WatermarkPlugin } from '@file-ud.js/plugins';
+import { WatermarkPlugin } from '@file-ud.js/plugins/uploader';
 
 // 文字水印
 uploader.use(new WatermarkPlugin({
@@ -126,7 +126,7 @@ uploader.use(new WatermarkPlugin({
 
 **快速开始**:
 ```typescript
-import { SmartRetryPlugin } from '@file-ud.js/plugins';
+import { SmartRetryPlugin } from '@file-ud.js/plugins/retry';
 
 uploader.use(new SmartRetryPlugin({
   maxRetries: 3,
@@ -148,13 +148,29 @@ npm install @file-ud.js/plugins
 
 ### 2. 导入和使用插件
 
+推荐按能力导入，根入口保留用于兼容旧版本和自定义插件基类：
+
+```typescript
+// 上传相关插件
+import { FileValidatorPlugin, CompressImagePlugin } from '@file-ud.js/plugins/uploader';
+
+// 下载相关插件（当前先提供通用重试能力）
+import { SmartRetryPlugin as DownloaderRetryPlugin } from '@file-ud.js/plugins/downloader';
+
+// 上传/下载通用插件
+import { SmartRetryPlugin } from '@file-ud.js/plugins/retry';
+
+// 自定义插件基类
+import { BasePlugin } from '@file-ud.js/plugins';
+```
+
 ```typescript
 import { 
   FileValidatorPlugin,
   CompressImagePlugin,
-  WatermarkPlugin,
-  SmartRetryPlugin
-} from '@file-ud.js/plugins';
+  WatermarkPlugin
+} from '@file-ud.js/plugins/uploader';
+import { SmartRetryPlugin } from '@file-ud.js/plugins/retry';
 
 const uploader = FileUD.createUploader("myUploader", {
   action: '/api/upload',

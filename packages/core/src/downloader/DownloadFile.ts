@@ -1,5 +1,5 @@
 import axios from "axios";
-import { beforeTransferCallBack, IDownloadFile } from "../types/index";
+import { IDownloadFile } from "../types";
 import TransferFile from "../transfer/TransferFile";
 
 import {
@@ -234,7 +234,11 @@ export default class DownloadFile<T = any> extends TransferFile<
             computeTransferTime(this.transfer.transferTime).start();
           }
 
-          let result: ReturnType<beforeTransferCallBack<T>>;
+          let result:
+            | boolean
+            | undefined
+            | null
+            | { [key: string]: any };
           if (this.dl.beforeTransferCallback) {
             try {
               result = await this.dl.beforeTransferCallback(this);

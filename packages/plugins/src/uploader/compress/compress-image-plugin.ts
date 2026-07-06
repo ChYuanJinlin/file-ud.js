@@ -1,9 +1,11 @@
 // plugins/compress.plugin.ts
 
-import { UploadFile } from "@file-ud.js/core";
-import { formatFileSize } from "@file-ud.js/core/utils";
+import {
+  UploadFile,
+  formatFileSize,
+  type PluginContext,
+} from "@file-ud.js/core";
 import { BasePlugin } from "../../base-plugin";
-import { PluginContext } from "@file-ud.js/core/types";
 export interface ImageCompressPluginOptions {
   /** 压缩质量 (0-1) */
   quality?: number;

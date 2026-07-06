@@ -10,7 +10,7 @@ import {
   successCallback,
   TimeInfo,
   UpdateCallBack,
-} from "../types/index";
+} from "../types";
 import { formatDuration, formatFileSize, formatSpeed, isFileActive } from "../utils";
 import { EventEmitter } from "../utils/event-emitter";
 import TransferFile from "./TransferFile";
@@ -171,6 +171,9 @@ export default class Transfer<
   }
   set onSuccess(callback: successCallback<D>) {
     this.successCallback = callback;
+  }
+  set onbeforeTransfer(callback: beforeTransferCallBack<T>) {
+    this.beforeTransferCallback = callback;
   }
   /**
    * 注册插件

@@ -307,8 +307,12 @@ export default abstract class ChunkManager<
    * 更新传输进度百分比
    */
   public updateProgress(): void {
+    const file = this.getTransferFile();
+
     if (this.totalChunks === 0) {
-      this.getTransferFile().proxy.percent = 100;
+      file.proxy.percent = 100;
+      file.transfer.updateGlobalStats();
+      file.transfer.triggerUpdate();
       return;
     }
 
@@ -320,8 +324,10 @@ export default abstract class ChunkManager<
       percent = 99;
     }
 
-    this.getTransferFile().proxy.percent = percent;
+    file.proxy.percent = percent;
+    file.transfer.updateGlobalStats();
     this.calculateAndUpdateSpeed(this.totalChunkSize);
+    file.transfer.triggerUpdate();
   }
 
   /**

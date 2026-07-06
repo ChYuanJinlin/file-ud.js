@@ -26,7 +26,7 @@ npm install @file-ud.js/plugins
 
 ```typescript
 import { FileUD } from '@file-ud.js/core';
-import { WatermarkPlugin } from '@file-ud.js/plugins';
+import { WatermarkPlugin } from '@file-ud.js/plugins/uploader';
 
 const uploader = FileUD.createUploader("myUploader", {
   action: '/api/upload',
@@ -168,7 +168,7 @@ import {
   WatermarkPlugin, 
   CompressImagePlugin, 
   FileValidatorPlugin 
-} from '@file-ud.js/plugins';
+} from '@file-ud.js/plugins/uploader';
 
 uploader.use([
   // 1. 文件校验

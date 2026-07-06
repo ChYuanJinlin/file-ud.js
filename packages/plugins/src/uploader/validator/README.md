@@ -28,7 +28,7 @@ npm install @file-ud.js/plugins
 
 ```typescript
 import { FileUD } from '@file-ud.js/core';
-import { FileValidatorPlugin } from '@file-ud.js/plugins';
+import { FileValidatorPlugin } from '@file-ud.js/plugins/uploader';
 
 const uploader = FileUD.createUploader("myUploader", {
   action: '/api/upload',
@@ -260,7 +260,7 @@ import {
   FileValidatorPlugin, 
   CompressImagePlugin, 
   WatermarkPlugin 
-} from '@file-ud.js/plugins';
+} from '@file-ud.js/plugins/uploader';
 
 uploader.use([
   // 1. 文件验证（优先级最高，最先执行）

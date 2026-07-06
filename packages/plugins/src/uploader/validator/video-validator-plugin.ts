@@ -1,6 +1,9 @@
-import { UploadFile, ErrorCode } from "@file-ud.js/core";
+import {
+  UploadFile,
+  ErrorCode,
+  type PluginContext,
+} from "@file-ud.js/core";
 import { BasePlugin } from "../../base-plugin";
-import { PluginContext } from "@file-ud.js/core/types";
 export interface VideoValidatorOptions {
   // 时长验证
   minDuration?: number;
