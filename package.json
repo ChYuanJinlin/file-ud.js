@@ -38,5 +38,10 @@
     "p-queue": "^9.1.2",
     "typescript": "^5.2.0",
     "uuid": "^13.0.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "human-id": "4.1.1"
+    }
   }
 }

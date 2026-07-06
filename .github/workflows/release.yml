@@ -4,6 +4,8 @@ on:
   push:
     paths:
       - ".changeset/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
       - "packages/**/package.json"
       - ".github/workflows/release.yml"
     branches:
