@@ -4,6 +4,12 @@
   <a href="https://www.npmjs.com/package/@file-ud.js/core">
     <img src="https://img.shields.io/npm/v/@file-ud.js/core?style=flat-square&logo=npm&label=npm" alt="npm version" />
   </a>
+  <a href="https://chyuanjinlin.github.io/file-ud.js/">
+    <img src="https://img.shields.io/badge/docs-GitHub%20Pages-0969da?style=flat-square&logo=githubpages&logoColor=white" alt="docs" />
+  </a>
+  <a href="https://github.com/ChYuanJinlin/file-ud.js/releases">
+    <img src="https://img.shields.io/github/v/release/ChYuanJinlin/file-ud.js?style=flat-square&logo=github&label=release" alt="GitHub release" />
+  </a>
   <img src="https://img.shields.io/badge/runtime-browser-4285f4?style=flat-square&logo=googlechrome&logoColor=white" alt="browser runtime" />
   <img src="https://img.shields.io/badge/node-%3E%3D18.0.0-339933?style=flat-square&logo=node.js&logoColor=white" alt="node >= 18.0.0" />
   <img src="https://img.shields.io/badge/pnpm-8.9.0-f69220?style=flat-square&logo=pnpm&logoColor=white" alt="pnpm 8.9.0" />
@@ -12,6 +18,8 @@
 </p>
 
 面向浏览器的 TypeScript/JavaScript 文件上传下载 SDK，支持分片传输、断点续传、秒传秒下、插件扩展。
+
+文档站：[https://chyuanjinlin.github.io/file-ud.js/](https://chyuanjinlin.github.io/file-ud.js/)
 
 ## 特性
 

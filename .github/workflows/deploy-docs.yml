@@ -63,7 +63,6 @@ jobs:
           VITE_API_BASE_URL: ${{ github.event.inputs.api_base_url || secrets.VITE_API_BASE_URL || '' }}
           VITE_BASE_PATH: ${{ steps.base.outputs.path }}
         run: |
-          pnpm --filter @file-ud.js/docs build:example
           pnpm --filter @file-ud.js/docs build
 
       # 🔑 部署到 gh-pages 分支，不同版本部署到不同子目录
