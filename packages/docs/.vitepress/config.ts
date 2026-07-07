@@ -8,8 +8,11 @@ export default defineConfig({
   title: "file-ud.js",
   description: "面向浏览器的文件上传下载 SDK，支持分片上传/下载、断点续传、秒传等功能",
   base,
+  head: [["link", { rel: "icon", href: `${base}logo.svg` }]],
 
   themeConfig: {
+    logo: "/logo.svg",
+
     nav: [
       { text: "指南", link: "/guide/getting-started" },
       { text: "API", link: "/api/uploader-config" },

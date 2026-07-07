@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="256" viewBox="0 0 960 256" role="img" aria-labelledby="title desc">
+  <title id="title">file-ud.js wordmark</title>
+  <desc id="desc">The file-ud.js wordmark with a file transfer logo.</desc>
+  <defs>
+    <linearGradient id="bg" x1="24" y1="24" x2="232" y2="232" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2563eb"/>
+      <stop offset="0.52" stop-color="#0891b2"/>
+      <stop offset="1" stop-color="#16a34a"/>
+    </linearGradient>
+    <linearGradient id="doc" x1="78" y1="58" x2="178" y2="202" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.96"/>
+      <stop offset="1" stop-color="#e0f2fe" stop-opacity="0.9"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="24" y="24" width="208" height="208" rx="44" fill="url(#bg)"/>
+  <path d="M80 58h75l31 31v109H80V58z" fill="url(#doc)"/>
+  <path d="M155 58v31h31" fill="#bae6fd"/>
+  <path d="M80 58h75l31 31v109H80V58z" fill="none" stroke="#ffffff" stroke-opacity="0.82" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M69 108H48V72m0 0L32 88m16-16l16 16" fill="none" stroke="#f59e0b" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M187 148h21v36m0 0l16-16m-16 16l-16-16" fill="none" stroke="#22c55e" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="96" y="154" fill="#0f172a" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="54" font-weight="800" letter-spacing="0">UD</text>
+
+  <text x="288" y="118" fill="#0f172a" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="62" font-weight="800" letter-spacing="0">file-ud.js</text>
+  <text x="292" y="164" fill="#475569" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24" font-weight="500" letter-spacing="0">Browser file upload and download toolkit</text>
+  <g transform="translate(292 188)" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="7">
+    <path d="M0 12h66" stroke="#2563eb"/>
+    <path d="M88 12h66" stroke="#0891b2"/>
+    <path d="M176 12h66" stroke="#16a34a"/>
+  </g>
+</svg>

@@ -5,6 +5,9 @@ hero:
   name: "file-ud.js"
   text: "浏览器文件传输 SDK"
   tagline: 面向 TypeScript/JavaScript，支持分片上传/下载、断点续传、秒传、速率统计等功能
+  image:
+    src: "/logo.svg"
+    alt: "file-ud.js logo"
   actions:
     - theme: brand
       text: 快速开始
