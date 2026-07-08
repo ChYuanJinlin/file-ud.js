@@ -45,14 +45,18 @@ const logoUploader = FileUD.createUploader("tagLogoUploader", {
   maxSize: 2 * 1024 * 1024,
 });
 
-logoUploader.onUpdate = (files) => {
-  const current = files[0];
-  console.log("当前文件:", current?.fileName);
-  console.log("上传进度:", current?.percent ?? 0);
+logoUploader.onUpdate = () => {
+  console.log("上传中:", logoUploader.loading);
+  console.log("总进度:", logoUploader.totalPercent);
 };
 
-logoUploader.open();
+logoUploader.open((file) => {
+  console.log("当前文件:", file.fileName);
+  console.log("本地预览地址:", file.url);
+});
 ```
+
+`open(fn)` 中的 `file.url` 是本地预览地址，小文件通常是 base64，大文件可能是 Object URL。它只适合前端预览；上传成功后的正式文件地址应从 `onSuccess(response)` 的服务端响应中读取。
 
 在 React 中建议只创建一次上传器，不要在组件每次 render 时重新 `createUploader`，否则同名 uploader 会被销毁再创建，进度可能会从 `100` 又回到 `0`。
 
@@ -63,7 +67,10 @@ import { FileUD, type Uploader } from "@file-ud.js/core";
 export function LogoUploader() {
   const uploaderRef = useRef<Uploader | null>(null);
   const [percent, setPercent] = useState(0);
-  const [url, setUrl] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [fileName, setFileName] = useState("");
+  const [previewUrl, setPreviewUrl] = useState("");
+  const [serverUrl, setServerUrl] = useState("");
 
   useEffect(() => {
     const uploader = FileUD.createUploader("tagLogoUploader", {
@@ -72,12 +79,13 @@ export function LogoUploader() {
       accept: ["image/*"],
     });
 
-    uploader.onUpdate = (files) => {
-      setPercent(files[0]?.percent ?? 0);
+    uploader.onUpdate = () => {
+      setLoading(Boolean(uploader.loading));
+      setPercent(uploader.totalPercent || 0);
     };
 
-    uploader.onSuccess = (response, file) => {
-      setUrl(response?.url ?? file.url);
+    uploader.onSuccess = (response) => {
+      setServerUrl(response.url);
     };
 
     uploaderRef.current = uploader;
@@ -90,10 +98,20 @@ export function LogoUploader() {
 
   return (
     <>
-      <button type="button" onClick={() => uploaderRef.current?.open()}>
-        上传 Logo：{percent}%
+      <button
+        type="button"
+        onClick={() =>
+          uploaderRef.current?.open((file) => {
+            setFileName(file.fileName);
+            setPreviewUrl(file.url);
+          })
+        }
+      >
+        {loading ? "上传中" : "上传 Logo"}：{percent}%
       </button>
-      {url ? <img src={url} alt="Logo" style={{ width: 80, height: 80 }} /> : null}
+      {fileName ? <span>{fileName}</span> : null}
+      {previewUrl ? <img src={previewUrl} alt="Logo 预览" style={{ width: 80, height: 80 }} /> : null}
+      {serverUrl ? <input type="hidden" name="logoUrl" value={serverUrl} /> : null}
     </>
   );
 }
@@ -108,7 +126,10 @@ import { FileUD, type Uploader } from "@file-ud.js/core";
 
 const uploaderRef = ref<Uploader | null>(null);
 const percent = ref(0);
-const url = ref("");
+const loading = ref(false);
+const fileName = ref("");
+const previewUrl = ref("");
+const serverUrl = ref("");
 
 onMounted(() => {
   const uploader = FileUD.createUploader("vueLogoUploader", {
@@ -117,12 +138,13 @@ onMounted(() => {
     accept: ["image/*"],
   });
 
-  uploader.onUpdate = (files) => {
-    percent.value = files[0]?.percent ?? 0;
+  uploader.onUpdate = () => {
+    loading.value = Boolean(uploader.loading);
+    percent.value = uploader.totalPercent || 0;
   };
 
-  uploader.onSuccess = (response, file) => {
-    url.value = response?.url ?? file.url;
+  uploader.onSuccess = (response) => {
+    serverUrl.value = response.url;
   };
 
   uploaderRef.value = uploader;
@@ -134,13 +156,20 @@ onBeforeUnmount(() => {
 });
 
 const openLogo = () => {
-  uploaderRef.value?.open();
+  uploaderRef.value?.open((file) => {
+    fileName.value = file.fileName;
+    previewUrl.value = file.url;
+  });
 };
 </script>
 
 <template>
-  <button type="button" @click="openLogo">上传 Logo：{{ percent }}%</button>
-  <img v-if="url" :src="url" alt="Logo" style="width: 80px; height: 80px" />
+  <button type="button" @click="openLogo">
+    {{ loading ? "上传中" : "上传 Logo" }}：{{ percent }}%
+  </button>
+  <span v-if="fileName">{{ fileName }}</span>
+  <img v-if="previewUrl" :src="previewUrl" alt="Logo 预览" style="width: 80px; height: 80px" />
+  <input v-if="serverUrl" type="hidden" name="logoUrl" :value="serverUrl" />
 </template>
 ```
 

@@ -8,6 +8,8 @@ file-ud.js 提供了强大的插件系统，允许你通过非侵入式的方式
 
 file-ud.js 的插件架构分为三层：
 
+![file-ud.js 插件分层架构图](/plugin-architecture.svg)
+
 | 层级 | 所在包 | 职责 |
 |------|--------|------|
 | 核心传输层 | `@file-ud.js/core` | 管理 `Uploader` / `Downloader`、文件队列、进度、事件、暂停、恢复、取消等核心能力 |
@@ -122,6 +124,74 @@ uploader.use([
 | 下载插件 | `@file-ud.js/plugins/downloader` |
 | 通用插件 | `@file-ud.js/plugins/retry` |
 | 自定义插件基类 | `@file-ud.js/plugins` |
+
+## 插件管理
+
+### 注册实例插件
+
+`use()` 只影响当前 `uploader` 或 `downloader` 实例。可以传入单个插件，也可以传入插件数组：
+
+```ts
+uploader.use(new FileValidatorPlugin({ maxSize: 10 * 1024 * 1024 }));
+
+uploader.use([
+  new FileValidatorPlugin({ maxSize: 10 * 1024 * 1024 }),
+  new CompressImagePlugin({ quality: 0.8 }),
+  new SmartRetryPlugin({ maxRetries: 3 }),
+]);
+```
+
+同名插件重复注册时会被跳过，插件会按 `priority` 从小到大执行。
+
+### 卸载插件
+
+`unuse(name)` 会从当前实例移除指定插件，并调用插件的 `destroy()` 钩子：
+
+```ts
+uploader.unuse("compress-image-plugin");
+uploader.unuse("SmartRetryPlugin");
+```
+
+卸载只影响当前实例，不会修改全局默认插件配置。
+
+### 查看插件
+
+```ts
+const retryPlugin = uploader.getPlugin("SmartRetryPlugin");
+const plugins = uploader.getPlugin();
+```
+
+传入插件名称时返回单个插件；不传名称时返回当前实例的插件列表。
+
+### 设置全局默认插件
+
+如果项目里每个上传器都需要同一组插件，可以在创建上传器之前设置全局默认插件：
+
+```ts
+import { Uploader, Downloader } from "@file-ud.js/core";
+import { FileValidatorPlugin } from "@file-ud.js/plugins/uploader";
+import { SmartRetryPlugin } from "@file-ud.js/plugins/retry";
+
+Uploader.setDefaultPlugins([
+  new FileValidatorPlugin({ maxSize: 10 * 1024 * 1024 }),
+  new SmartRetryPlugin({ maxRetries: 3 }),
+]);
+
+Downloader.setDefaultPlugins([
+  new SmartRetryPlugin({ maxRetries: 3 }),
+]);
+
+const uploader = FileUD.createUploader("avatarUploader", {
+  action: "/api/upload",
+});
+```
+
+全局默认插件只会影响之后创建的实例；已经创建好的实例不会自动追加这些插件。需要清空默认插件时传入空数组：
+
+```ts
+Uploader.setDefaultPlugins([]);
+Downloader.setDefaultPlugins([]);
+```
 
 ### 执行顺序
 

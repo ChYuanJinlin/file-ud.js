@@ -10,6 +10,8 @@ file-ud.js 提供了强大的插件系统，允许你通过非侵入式的方式
 
 插件系统分为三层：
 
+![file-ud.js 插件分层架构图](https://chyuanjinlin.github.io/file-ud.js/plugin-architecture.svg)
+
 | 层级 | 所在包 | 职责 |
 |------|--------|------|
 | 核心传输层 | `@file-ud.js/core` | 管理上传器、下载器、文件队列、进度、事件、暂停、恢复、取消 |
@@ -220,7 +222,53 @@ uploader.use([
 ]);
 ```
 
-### 3. 插件执行顺序
+### 3. 插件管理
+
+#### 卸载插件
+
+```typescript
+uploader.unuse("compress-image-plugin");
+uploader.unuse("SmartRetryPlugin");
+```
+
+`unuse(name)` 只影响当前实例，并会调用插件的 `destroy()` 钩子。
+
+#### 查看插件
+
+```typescript
+const retryPlugin = uploader.getPlugin("SmartRetryPlugin");
+const plugins = uploader.getPlugin();
+```
+
+传入插件名称时返回单个插件；不传名称时返回当前实例的插件列表。
+
+#### 设置全局默认插件
+
+全局默认插件会被之后创建的上传器或下载器继承：
+
+```typescript
+import { Uploader, Downloader } from "@file-ud.js/core";
+import { FileValidatorPlugin } from "@file-ud.js/plugins/uploader";
+import { SmartRetryPlugin } from "@file-ud.js/plugins/retry";
+
+Uploader.setDefaultPlugins([
+  new FileValidatorPlugin({ maxSize: 10 * 1024 * 1024 }),
+  new SmartRetryPlugin({ maxRetries: 3 }),
+]);
+
+Downloader.setDefaultPlugins([
+  new SmartRetryPlugin({ maxRetries: 3 }),
+]);
+```
+
+全局默认插件只影响之后创建的实例；已经创建好的实例不会自动追加。需要清空时传入空数组：
+
+```typescript
+Uploader.setDefaultPlugins([]);
+Downloader.setDefaultPlugins([]);
+```
+
+### 4. 插件执行顺序
 
 插件按照 `priority` 从小到大依次执行：
 

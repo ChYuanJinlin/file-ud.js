@@ -170,13 +170,13 @@ export default class Uploader<T = any> extends Transfer<UploadFile, T> {
    * @return {*}
    */
   public open(fn?: OpenFileCallback): any {
+    if (fn) {
+      this.openCallBack = fn;
+    }
     if (this.inputHTML) {
       this.inputHTML.click();
     } else {
       logger.warn("Uploader", "The uploader does not exist. Please create one");
-    }
-    if (fn) {
-      this.openCallBack = fn;
     }
   }
 
@@ -192,7 +192,6 @@ export default class Uploader<T = any> extends Transfer<UploadFile, T> {
     input.type = "file";
     input.setAttribute("hidden", Boolean(this.config?.show).toString());
     input.accept = this.config?.accept?.toString() || "*";
-    this.plugins = [];
     console.info("创建文件输入框");
 
     input.multiple = this.config?.multiple || false;

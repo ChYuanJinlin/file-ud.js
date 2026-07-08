@@ -72,7 +72,7 @@ interface ChunkOptions {
 
 | 方法 | 说明 | 返回值 |
 |------|------|--------|
-| `open(fn?)` | 打开文件选择器 | `void` |
+| `open(fn?)` | 打开文件选择器，`fn` 会接收当前选中的 `UploadFile` | `void` |
 | `use(plugin)` | 注册插件 | `this` |
 | `unuse(name)` | 移除插件 | `this` |
 | `getPlugin(name?)` | 获取插件 | `IUDPlugin \| IUDPlugin[]` |
@@ -89,7 +89,7 @@ interface ChunkOptions {
 
 | 方法 | 说明 |
 |------|------|
-| `Uploader.setDefaultPlugins(plugins)` | 设置全局默认插件 |
+| `Uploader.setDefaultPlugins(plugins)` | 设置上传器全局默认插件，只影响之后创建的实例 |
 
 ## Uploader 回调设置器
 

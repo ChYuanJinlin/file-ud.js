@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="660" viewBox="0 0 980 660" role="img" aria-labelledby="title desc">
+  <title id="title">file-ud.js 插件分层架构图</title>
+  <desc id="desc">展示应用层、核心传输层、插件协议层、插件实现层以及浏览器能力之间的关系。</desc>
+  <defs>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2563eb"/>
+      <stop offset="100%" stop-color="#10b981"/>
+    </linearGradient>
+    <linearGradient id="soft" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#eff6ff"/>
+      <stop offset="100%" stop-color="#ecfdf5"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-20%" width="120%" height="150%">
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+    <style>
+      .title { font: 700 30px Inter, "Microsoft YaHei", Arial, sans-serif; fill: #0f172a; }
+      .subtitle { font: 500 15px Inter, "Microsoft YaHei", Arial, sans-serif; fill: #64748b; }
+      .layer-title { font: 700 20px Inter, "Microsoft YaHei", Arial, sans-serif; fill: #0f172a; }
+      .layer-meta { font: 600 13px Inter, "Microsoft YaHei", Arial, sans-serif; fill: #2563eb; }
+      .item { font: 600 14px Inter, "Microsoft YaHei", Arial, sans-serif; fill: #334155; }
+      .small { font: 500 12px Inter, "Microsoft YaHei", Arial, sans-serif; fill: #64748b; }
+      .box { fill: #fff; stroke: #dbe3ef; stroke-width: 1.4; rx: 18; filter: url(#shadow); }
+      .chip { fill: #f8fafc; stroke: #dbe3ef; stroke-width: 1.2; rx: 12; }
+      .connector { stroke: #94a3b8; stroke-width: 2; stroke-dasharray: 7 7; fill: none; }
+      .arrow { stroke: #2563eb; stroke-width: 2.4; fill: none; marker-end: url(#arrow); }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563eb"/>
+    </marker>
+  </defs>
+
+  <rect width="980" height="660" rx="28" fill="url(#soft)"/>
+  <text x="52" y="62" class="title">file-ud.js 插件分层架构</text>
+  <text x="52" y="91" class="subtitle">核心传输能力保持稳定，扩展能力通过插件协议挂载到上传/下载生命周期。</text>
+
+  <rect x="54" y="125" width="872" height="88" class="box"/>
+  <text x="84" y="162" class="layer-title">应用层</text>
+  <text x="84" y="188" class="layer-meta">React / Vue / Vanilla JavaScript</text>
+  <rect x="364" y="146" width="220" height="44" class="chip"/>
+  <text x="393" y="174" class="item">FileUD.createUploader()</text>
+  <rect x="612" y="146" width="234" height="44" class="chip"/>
+  <text x="640" y="174" class="item">FileUD.createDownloader()</text>
+
+  <path d="M490 216 V248" class="arrow"/>
+
+  <rect x="54" y="250" width="872" height="112" class="box"/>
+  <text x="84" y="287" class="layer-title">核心传输层</text>
+  <text x="84" y="313" class="layer-meta">@file-ud.js/core</text>
+  <rect x="288" y="270" width="128" height="38" class="chip"/>
+  <text x="318" y="294" class="item">Uploader</text>
+  <rect x="436" y="270" width="136" height="38" class="chip"/>
+  <text x="462" y="294" class="item">Downloader</text>
+  <rect x="592" y="270" width="136" height="38" class="chip"/>
+  <text x="620" y="294" class="item">Transfer</text>
+  <rect x="288" y="318" width="188" height="30" class="chip"/>
+  <text x="313" y="338" class="small">TransferFile / Progress</text>
+  <rect x="494" y="318" width="206" height="30" class="chip"/>
+  <text x="517" y="338" class="small">ChunkManager / Concurrency</text>
+
+  <path d="M490 364 V396" class="arrow"/>
+
+  <rect x="54" y="398" width="872" height="104" class="box"/>
+  <text x="84" y="434" class="layer-title">插件协议层</text>
+  <text x="84" y="460" class="layer-meta">IUDPlugin / BasePlugin / PluginContext</text>
+  <rect x="352" y="420" width="116" height="36" class="chip"/>
+  <text x="378" y="443" class="item">install</text>
+  <rect x="486" y="420" width="136" height="36" class="chip"/>
+  <text x="509" y="443" class="item">priority</text>
+  <rect x="640" y="420" width="156" height="36" class="chip"/>
+  <text x="669" y="443" class="item">shared Map</text>
+  <rect x="352" y="466" width="444" height="24" class="chip"/>
+  <text x="385" y="483" class="small">onFileSelect → beforeTransfer → onProgress → onSuccess / onError</text>
+
+  <path d="M490 504 V536" class="arrow"/>
+
+  <rect x="54" y="538" width="872" height="76" class="box"/>
+  <text x="84" y="574" class="layer-title">插件实现层</text>
+  <text x="84" y="598" class="layer-meta">@file-ud.js/plugins</text>
+  <rect x="302" y="558" width="144" height="36" class="chip"/>
+  <text x="326" y="581" class="item">uploader</text>
+  <rect x="466" y="558" width="152" height="36" class="chip"/>
+  <text x="488" y="581" class="item">downloader</text>
+  <rect x="638" y="558" width="124" height="36" class="chip"/>
+  <text x="674" y="581" class="item">retry</text>
+
+  <path d="M842 211 C905 258 905 498 842 544" class="connector"/>
+  <text x="824" y="374" class="small" transform="rotate(90 824 374)">生命周期钩子贯穿上传 / 下载流程</text>
+</svg>

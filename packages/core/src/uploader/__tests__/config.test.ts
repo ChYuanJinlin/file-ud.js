@@ -1,11 +1,28 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import Uploader, { defaultConfig } from "../index";
 
 describe("Uploader config", () => {
+  afterEach(() => {
+    Uploader.setDefaultPlugins([]);
+  });
+
   it("uses single-file mode by default", () => {
     expect(defaultConfig.multiple).toBe(false);
     expect("replace" in (defaultConfig as Record<string, unknown>)).toBe(false);
+  });
+
+  it("inherits global default plugins when initialized", () => {
+    const plugin = {
+      name: "default-test-plugin",
+      priority: 10,
+    };
+    const uploader = Object.create(Uploader.prototype) as Uploader;
+
+    Uploader.setDefaultPlugins([plugin as any]);
+    (uploader as any).init();
+
+    expect(uploader.getPlugin("default-test-plugin")).toBe(plugin);
   });
 
   it("ignores limit in single-file mode", () => {

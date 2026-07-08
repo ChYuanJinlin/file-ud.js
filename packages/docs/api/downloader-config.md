@@ -68,7 +68,7 @@ interface ChunkOptions {
 
 | 方法 | 说明 |
 |------|------|
-| `Downloader.setDefaultPlugins(plugins)` | 设置全局默认插件 |
+| `Downloader.setDefaultPlugins(plugins)` | 设置下载器全局默认插件，只影响之后创建的实例 |
 | `Downloader.pickSaveFile(name?)` | 弹出保存对话框 |
 | `Downloader.saveBlob(fileName, data)` | 保存 Blob 到本地 |
 | `Downloader.saveFile(fileName, url)` | 通过 URL 下载文件 |

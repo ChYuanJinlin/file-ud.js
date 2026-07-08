@@ -48,14 +48,18 @@ const logoUploader = FileUD.createUploader("tagLogoUploader", {
   accept: ["image/*"],
 });
 
-logoUploader.onUpdate = (files) => {
-  const current = files[0];
-  console.log("当前文件:", current?.fileName);
-  console.log("上传进度:", current?.percent ?? 0);
+logoUploader.onUpdate = () => {
+  console.log("上传中:", logoUploader.loading);
+  console.log("总进度:", logoUploader.totalPercent);
 };
 
-logoUploader.open();
+logoUploader.open((file) => {
+  console.log("当前文件:", file.fileName);
+  console.log("本地预览地址:", file.url);
+});
 ```
+
+`open(fn)` 中的 `file.url` 是本地预览地址，小文件通常是 base64，大文件可能是 Object URL。它只适合前端预览；上传成功后的正式文件地址应从 `onSuccess(response)` 的服务端响应中读取。
 
 Vue 3 中建议在组件挂载后创建一次上传器，卸载时销毁：
 
@@ -66,7 +70,10 @@ import { FileUD, type Uploader } from "@file-ud.js/core";
 
 const uploaderRef = ref<Uploader | null>(null);
 const percent = ref(0);
-const url = ref("");
+const loading = ref(false);
+const fileName = ref("");
+const previewUrl = ref("");
+const serverUrl = ref("");
 
 onMounted(() => {
   const uploader = FileUD.createUploader("vueLogoUploader", {
@@ -75,12 +82,13 @@ onMounted(() => {
     accept: ["image/*"],
   });
 
-  uploader.onUpdate = (files) => {
-    percent.value = files[0]?.percent ?? 0;
+  uploader.onUpdate = () => {
+    loading.value = Boolean(uploader.loading);
+    percent.value = uploader.totalPercent || 0;
   };
 
-  uploader.onSuccess = (response, file) => {
-    url.value = response?.url ?? file.url;
+  uploader.onSuccess = (response) => {
+    serverUrl.value = response.url;
   };
 
   uploaderRef.value = uploader;
@@ -90,11 +98,22 @@ onBeforeUnmount(() => {
   FileUD.destroyUploaders("vueLogoUploader");
   uploaderRef.value = null;
 });
+
+const openLogo = () => {
+  uploaderRef.value?.open((file) => {
+    fileName.value = file.fileName;
+    previewUrl.value = file.url;
+  });
+};
 </script>
 
 <template>
-  <button type="button" @click="uploaderRef?.open()">上传 Logo：{{ percent }}%</button>
-  <img v-if="url" :src="url" alt="Logo" style="width: 80px; height: 80px" />
+  <button type="button" @click="openLogo">
+    {{ loading ? "上传中" : "上传 Logo" }}：{{ percent }}%
+  </button>
+  <span v-if="fileName">{{ fileName }}</span>
+  <img v-if="previewUrl" :src="previewUrl" alt="Logo 预览" style="width: 80px; height: 80px" />
+  <input v-if="serverUrl" type="hidden" name="logoUrl" :value="serverUrl" />
 </template>
 ```
 
@@ -275,7 +294,7 @@ interface ChunkOptions {
 
 | 方法 | 说明 | 返回值 |
 |------|------|--------|
-| `open(fn?)` | 打开文件选择器 | `void` |
+| `open(fn?)` | 打开文件选择器，`fn` 会接收当前选中的 `UploadFile` | `void` |
 | `use(plugin)` | 注册插件 | `this` |
 | `unuse(name)` | 移除插件 | `this` |
 | `getPlugin(name?)` | 获取插件 | `IUDPlugin \| IUDPlugin[]` |
@@ -397,6 +416,40 @@ const myPlugin = {
 };
 
 uploader.use(myPlugin);
+```
+
+### 插件管理
+
+```typescript
+// 卸载当前实例中的插件，并触发插件 destroy 钩子
+uploader.unuse("file-validator-plugin");
+
+// 获取指定插件，或获取当前实例全部插件
+const validatorPlugin = uploader.getPlugin("file-validator-plugin");
+const plugins = uploader.getPlugin();
+```
+
+如果每个上传器都需要同一组插件，可以在创建上传器之前设置全局默认插件：
+
+```typescript
+import { Uploader } from "@file-ud.js/core";
+import { FileValidatorPlugin } from "@file-ud.js/plugins/uploader";
+import { SmartRetryPlugin } from "@file-ud.js/plugins/retry";
+
+Uploader.setDefaultPlugins([
+  new FileValidatorPlugin({ maxSize: 10 * 1024 * 1024 }),
+  new SmartRetryPlugin({ maxRetries: 3 }),
+]);
+
+const uploader = FileUD.createUploader("myUploader", {
+  action: "/api/upload",
+});
+```
+
+全局默认插件只影响之后创建的实例；已经创建好的实例不会自动追加。需要清空时传入空数组：
+
+```typescript
+Uploader.setDefaultPlugins([]);
 ```
 
 ---
