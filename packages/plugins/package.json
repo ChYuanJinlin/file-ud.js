@@ -1,6 +1,6 @@
 {
   "name": "@file-ud.js/plugins",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Official plugins for file-ud.js upload and download workflows.",
   "license": "MIT",
   "repository": {
