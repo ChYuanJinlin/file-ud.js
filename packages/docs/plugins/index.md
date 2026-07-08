@@ -4,6 +4,60 @@
 
 file-ud.js 提供了强大的插件系统，允许你通过非侵入式的方式扩展上传功能。所有插件都实现 `IUDPlugin` 接口，可以在不修改核心代码的情况下添加新功能。
 
+## 插件架构
+
+file-ud.js 的插件架构分为三层：
+
+| 层级 | 所在包 | 职责 |
+|------|--------|------|
+| 核心传输层 | `@file-ud.js/core` | 管理 `Uploader` / `Downloader`、文件队列、进度、事件、暂停、恢复、取消等核心能力 |
+| 插件协议层 | `IUDPlugin` / `PluginContext` | 定义插件名称、优先级、安装、文件选择、传输前、进度、成功、失败、销毁等生命周期 |
+| 插件实现层 | `@file-ud.js/plugins` | 提供上传插件、下载插件、通用插件，也支持业务方自定义插件 |
+
+整体执行链路：
+
+```text
+FileUD.createUploader() / FileUD.createDownloader()
+  ↓
+transfer.use(plugin)
+  ↓
+plugin.install()
+  ↓
+onFileSelect / beforeTransfer
+  ↓
+文件上传或下载
+  ↓
+onProgress
+  ↓
+onSuccess / onError
+  ↓
+destroy()
+```
+
+### 包入口设计
+
+插件按使用场景拆分子入口，避免上传项目误引下载插件，也方便打包工具做 Tree Shaking。
+
+| 场景 | 导入路径 | 适合放置的插件 |
+|------|----------|----------------|
+| 上传专用 | `@file-ud.js/plugins/uploader` | 文件验证、图片压缩、水印、上传前处理 |
+| 下载专用 | `@file-ud.js/plugins/downloader` | 下载重试、下载限速、保存策略 |
+| 通用能力 | `@file-ud.js/plugins/retry` | 上传和下载都能使用的重试能力 |
+| 基类 / 类型 | `@file-ud.js/plugins` | `BasePlugin`、公共插件基础设施 |
+
+### 插件上下文
+
+插件钩子会接收 `PluginContext`，用于读取当前传输实例和跨插件共享数据：
+
+| 字段 | 说明 |
+|------|------|
+| `transfer` | 当前 `Uploader` 或 `Downloader` 实例 |
+| `file` | 当前正在处理的文件对象 |
+| `config` | 当前传输配置 |
+| `shared` | 插件间共享的 `Map`，适合传递临时处理结果 |
+
+插件应该优先通过上下文和公开 API 工作，避免直接修改内部私有状态。需要改变文件内容时，建议在 `onFileSelect` 中返回新的文件对象；需要拦截上传或下载时，建议在 `beforeTransfer` 中返回 `false`。
+
 ## 设计理念
 
 ### 非侵入式扩展
@@ -25,7 +79,17 @@ file-ud.js 提供了强大的插件系统，允许你通过非侵入式的方式
 ## 安装
 
 ```bash
+# npm
 npm install @file-ud.js/plugins
+
+# pnpm
+pnpm add @file-ud.js/plugins
+
+# yarn
+yarn add @file-ud.js/plugins
+
+# bun
+bun add @file-ud.js/plugins
 ```
 
 ## 快速使用

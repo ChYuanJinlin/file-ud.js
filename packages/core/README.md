@@ -20,7 +20,17 @@
 ### 1. 安装
 
 ```bash
+# npm
 npm install @file-ud.js/core
+
+# pnpm
+pnpm add @file-ud.js/core
+
+# yarn
+yarn add @file-ud.js/core
+
+# bun
+bun add @file-ud.js/core
 ```
 
 ### 2. 基本使用
@@ -42,6 +52,20 @@ uploader.onSuccess = (response, file) => {
 
 // 打开文件选择器
 uploader.open();
+```
+
+### 单文件覆盖上传
+
+头像、Logo、封面等场景保持 `multiple: false` 即可，每次选择新文件都会替换当前文件：
+
+```typescript
+const logoUploader = FileUD.createUploader("tagLogoUploader", {
+  action: '/api/upload-logo',
+  multiple: false,
+  accept: ['image/*']
+});
+
+logoUploader.open();
 ```
 
 ### 3. 分片上传
@@ -96,7 +120,7 @@ uploader.onMergeChunk = async (chunkManager) => {
 
 ```typescript
 interface UploaderConfig {
-  /** 是否支持多选 */
+  /** 是否支持多选。false 为单文件覆盖模式，true 为多文件追加列表 */
   multiple?: boolean;
   
   /** 接受的文件类型 */
@@ -111,7 +135,7 @@ interface UploaderConfig {
   /** 文件大小限制（字节） */
   maxSize?: number;
   
-  /** 文件数量限制 */
+  /** 文件数量限制，仅 multiple: true 时生效 */
   limit?: number;
   
   /** 分片上传配置 */
@@ -187,7 +211,17 @@ file-ud.js 提供强大的插件系统，可以轻松扩展功能：
 ### 安装插件包
 
 ```bash
+# npm
 npm install @file-ud.js/plugins
+
+# pnpm
+pnpm add @file-ud.js/plugins
+
+# yarn
+yarn add @file-ud.js/plugins
+
+# bun
+bun add @file-ud.js/plugins
 ```
 
 ### 使用插件

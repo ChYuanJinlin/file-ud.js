@@ -69,11 +69,16 @@ export default class Uploader<T = any> extends Transfer<UploadFile, T> {
       file.abort?.();
     });
     this.files = [];
+    this.activeFiles = [];
     Uploader.fileIndex = 0;
     Uploader.uploadFile = null;
     Uploader.objectUrls = [];
+    this.loading = false;
     this.totalPercent = 0;
     this.totalBytes = 0;
+    this.transferredBytes = 0;
+    this.totalTransferredBytes = 0;
+    this.transferredFormatSize = "0 B";
     this.totalFormatSize = "0 B";
     this.triggerUpdate();
   }
@@ -354,8 +359,9 @@ export default class Uploader<T = any> extends Transfer<UploadFile, T> {
       };
     }
 
-    // 数量限制检查
+    // 数量限制只对多文件追加模式生效；单文件模式由 multiple=false 控制覆盖行为
     if (
+      this.config?.multiple === true &&
       this.config?.limit &&
       !validator.limit(this.config?.limit, this.files.length)
     ) {
@@ -372,6 +378,8 @@ export default class Uploader<T = any> extends Transfer<UploadFile, T> {
    * 处理文件选择（内部方法）
    */
   private async processSelectedFiles(files: File[]) {
+    const replacesCurrent = this.config?.multiple !== true;
+
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
 
@@ -416,8 +424,6 @@ export default class Uploader<T = any> extends Transfer<UploadFile, T> {
         console.error("处理选中文件时发生错误:", error);
         continue;
       }
-      Uploader.uploadFile = uploadFileInstance;
-
       // 调用选择回调
       if (this.selectCallback) {
         try {
@@ -462,6 +468,12 @@ export default class Uploader<T = any> extends Transfer<UploadFile, T> {
       );
       const shouldContinue = beforeResults.every((r) => r !== false);
       if (!shouldContinue) continue;
+
+      if (replacesCurrent) {
+        this.clearFiles();
+        uploadFileInstance.index = Uploader.fileIndex++;
+      }
+      Uploader.uploadFile = uploadFileInstance;
 
       // 添加到文件列表
       this.files.push(uploadFileInstance);

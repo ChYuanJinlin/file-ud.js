@@ -6,7 +6,7 @@
 interface UploaderConfig {
   /** 上传地址：字符串 URL 或自定义函数 */
   action: string | ((formData: FormData, uploadFile: UploadFile) => any);
-  /** 是否支持多选，默认 false */
+  /** 是否支持多选，默认 false。false 为单文件覆盖模式，true 为多文件追加列表 */
   multiple?: boolean;
   /** 接受的文件类型 */
   accept?: AcceptFileType[] | string[];
@@ -20,7 +20,7 @@ interface UploaderConfig {
   file?: string | ((fileConfig: FileConfig) => void);
   /** 分片上传配置 */
   chunkOptions?: ChunkOptions | null;
-  /** 文件数量限制 */
+  /** 文件数量限制，仅 multiple: true 时生效 */
   limit?: number;
   /** 单文件大小限制（字节） */
   maxSize?: number;
@@ -32,6 +32,20 @@ interface UploaderConfig {
   axiosInstance?: AxiosInstance;
 }
 ```
+
+### 常用配置说明
+
+| 配置 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `action` | `string \| function` | `""` | 上传接口地址，或自定义上传函数 |
+| `multiple` | `boolean` | `false` | 是否允许多文件；`false` 为单文件覆盖模式，`true` 为多文件追加列表 |
+| `autoUpload` | `boolean` | `true` | 选择文件后是否立即上传 |
+| `accept` | `AcceptFileType[] \| string[]` | `[]` | 限制可选择的文件类型，例如 `["image/*", ".pdf"]` |
+| `limit` | `number` | - | 文件数量限制，仅 `multiple: true` 时生效 |
+| `maxSize` | `number` | - | 单文件大小限制，单位为字节 |
+| `maxFileConcurrent` | `number` | - | 多文件同时上传数量 |
+
+`multiple: false` 是头像、Logo、封面等单文件上传场景的默认模式。重新选择文件时，上传器会在新文件通过校验和传输前拦截后替换当前文件；如果新文件校验失败，旧文件会继续保留。
 
 ## ChunkOptions
 

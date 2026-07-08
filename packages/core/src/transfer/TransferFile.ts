@@ -10,9 +10,8 @@ import {
   logger,
 } from "../utils";
 import { FileUDError, ErrorCode } from "../fileUD/errors";
-import UploadFile from "../uploader/UploadFile";
-import Uploader from "../uploader";
-import DownloadFile from "../downloader/DownloadFile";
+import type UploadFile from "../uploader/UploadFile";
+import type DownloadFile from "../downloader/DownloadFile";
 import { XHRInterceptor } from "../xhr-intercepto";
 import FileConcurrencyController from "../concurrency/FileConcurrencyController";
 
@@ -199,13 +198,9 @@ export default class TransferFile<T extends TransferFile<T, any>, D = any> {
                   fileName: this.fileName,
                 },
               );
-              let data: D;
-              if (this instanceof UploadFile) {
-                data = await this.upload();
-              } else {
-                // 下载
-                data = await (this as unknown as DownloadFile).download();
-              }
+              const data: D = isDownload
+                ? await (this as unknown as DownloadFile<D>).download()
+                : await (this as unknown as UploadFile<D>).upload();
               resolve(data);
             }
           });
@@ -435,7 +430,7 @@ export default class TransferFile<T extends TransferFile<T, any>, D = any> {
       this.transfer.activeFiles.splice(afIdx, 1);
     }
     if (!isDownload) {
-      (this.transfer as unknown as Uploader<T>)?.remObjectUrls?.(this.url);
+      (this.transfer as any)?.remObjectUrls?.(this.url);
     }
 
     // 添加 fileId 到日志参数中，供监控模块提取

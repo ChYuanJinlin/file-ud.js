@@ -3,7 +3,33 @@
 ## 安装
 
 ```bash
+# npm
 npm install @file-ud.js/core
+
+# pnpm
+pnpm add @file-ud.js/core
+
+# yarn
+yarn add @file-ud.js/core
+
+# bun
+bun add @file-ud.js/core
+```
+
+官方插件包按需安装：
+
+```bash
+# npm
+npm install @file-ud.js/plugins
+
+# pnpm
+pnpm add @file-ud.js/plugins
+
+# yarn
+yarn add @file-ud.js/plugins
+
+# bun
+bun add @file-ud.js/plugins
 ```
 
 ## 基本使用

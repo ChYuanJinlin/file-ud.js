@@ -6,6 +6,27 @@ file-ud.js 提供了强大的插件系统，允许你通过非侵入式的方式
 
 ---
 
+## 🧱 插件架构
+
+插件系统分为三层：
+
+| 层级 | 所在包 | 职责 |
+|------|--------|------|
+| 核心传输层 | `@file-ud.js/core` | 管理上传器、下载器、文件队列、进度、事件、暂停、恢复、取消 |
+| 插件协议层 | `IUDPlugin` / `PluginContext` | 定义插件生命周期、优先级、上下文和共享数据 |
+| 插件实现层 | `@file-ud.js/plugins` | 提供上传插件、下载插件、通用插件和自定义插件基类 |
+
+推荐按场景导入：
+
+| 场景 | 导入路径 |
+|------|----------|
+| 上传插件 | `@file-ud.js/plugins/uploader` |
+| 下载插件 | `@file-ud.js/plugins/downloader` |
+| 通用重试插件 | `@file-ud.js/plugins/retry` |
+| 自定义插件基类 | `@file-ud.js/plugins` |
+
+---
+
 ## 🎯 设计理念
 
 ### 1. 非侵入式扩展
@@ -143,7 +164,17 @@ uploader.use(new SmartRetryPlugin({
 ### 1. 安装插件包
 
 ```bash
+# npm
 npm install @file-ud.js/plugins
+
+# pnpm
+pnpm add @file-ud.js/plugins
+
+# yarn
+yarn add @file-ud.js/plugins
+
+# bun
+bun add @file-ud.js/plugins
 ```
 
 ### 2. 导入和使用插件

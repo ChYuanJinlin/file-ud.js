@@ -35,11 +35,33 @@
 ## 安装
 
 ```bash
-# 核心库（必须）
+# npm
 npm install @file-ud.js/core
 
-# 可选：官方插件包
+# pnpm
+pnpm add @file-ud.js/core
+
+# yarn
+yarn add @file-ud.js/core
+
+# bun
+bun add @file-ud.js/core
+```
+
+官方插件包按需安装：
+
+```bash
+# npm
 npm install @file-ud.js/plugins
+
+# pnpm
+pnpm add @file-ud.js/plugins
+
+# yarn
+yarn add @file-ud.js/plugins
+
+# bun
+bun add @file-ud.js/plugins
 ```
 
 ## 快速上手
@@ -85,6 +107,22 @@ uploader.open();
 
 // 或手动提交（autoUpload: false 时）
 // uploader.submit();
+```
+
+### 单文件覆盖上传
+
+头像、Logo、封面这类场景只需要保留一个文件时，保持 `multiple: false` 即可。重新选择文件后，上传器会用新文件替换当前文件；只有 `multiple: true` 时才会追加为文件列表。
+
+```ts
+import { FileUD } from "@file-ud.js/core";
+
+const logoUploader = FileUD.createUploader("tagLogoUploader", {
+  action: "/api/upload-logo",
+  multiple: false,
+  accept: ["image/*"],
+});
+
+logoUploader.open();
 ```
 
 ### 初始化分片回调（配合后端）
@@ -172,11 +210,11 @@ uploader.use(new WatermarkPlugin({ text: "公司水印", opacity: 0.3 }));
 |------|------|--------|------|
 | `action` | `string \| function` | — | **必填**，上传地址 |
 | `chunkOptions` | `ChunkOptions \| null` | `null` | 分片配置，null 为普通上传 |
-| `multiple` | `boolean` | `false` | 是否多选文件 |
+| `multiple` | `boolean` | `false` | 是否多选文件；`false` 为单文件覆盖模式，`true` 为多文件追加列表 |
 | `accept` | `string[]` | `[]` | 允许的文件类型（MIME/扩展名） |
 | `autoUpload` | `boolean` | `true` | 选完文件自动上传 |
 | `maxSize` | `number` | — | 单文件最大字节数 |
-| `limit` | `number` | — | 最大文件数量 |
+| `limit` | `number` | — | 最大文件数量，仅 `multiple: true` 时生效 |
 | `maxFileConcurrent` | `number` | — | 最大同时传输文件数 |
 | `headers` | `Record<string, any>` | — | 请求头 |
 | `elementId` | `string` | — | 挂载 input 的元素 ID |

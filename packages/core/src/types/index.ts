@@ -230,7 +230,7 @@ export interface UDConfig<T = any> {
   maxFileConcurrent?: number;
 }
 export interface UploaderConfig extends UDConfig<UploadFile> {
-  /* 是否支持多选 */
+  /* 是否支持多选。false 为单文件覆盖模式，true 为多文件追加列表 */
   multiple?: boolean;
   /* 接受的文件类型（支持 MIME 类型或文件后缀名） */
   accept?: AcceptFileType[] | string[];

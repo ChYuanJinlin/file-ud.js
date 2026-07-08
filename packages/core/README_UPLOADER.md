@@ -37,6 +37,67 @@ uploader.onUpdate = (files) => {
 uploader.open();
 ```
 
+### 单文件覆盖上传（头像 / Logo / 封面）
+
+`multiple: false` 是单文件覆盖模式。头像、标签 Logo、封面图这类场景重新选择文件后，会自动用新文件替换当前文件；只有 `multiple: true` 时才会追加为文件列表。
+
+```typescript
+const logoUploader = FileUD.createUploader("tagLogoUploader", {
+  action: "/api/upload-logo",
+  multiple: false,
+  accept: ["image/*"],
+});
+
+logoUploader.onUpdate = (files) => {
+  const current = files[0];
+  console.log("当前文件:", current?.fileName);
+  console.log("上传进度:", current?.percent ?? 0);
+};
+
+logoUploader.open();
+```
+
+Vue 3 中建议在组件挂载后创建一次上传器，卸载时销毁：
+
+```vue
+<script setup lang="ts">
+import { onBeforeUnmount, onMounted, ref } from "vue";
+import { FileUD, type Uploader } from "@file-ud.js/core";
+
+const uploaderRef = ref<Uploader | null>(null);
+const percent = ref(0);
+const url = ref("");
+
+onMounted(() => {
+  const uploader = FileUD.createUploader("vueLogoUploader", {
+    action: "/api/upload-logo",
+    multiple: false,
+    accept: ["image/*"],
+  });
+
+  uploader.onUpdate = (files) => {
+    percent.value = files[0]?.percent ?? 0;
+  };
+
+  uploader.onSuccess = (response, file) => {
+    url.value = response?.url ?? file.url;
+  };
+
+  uploaderRef.value = uploader;
+});
+
+onBeforeUnmount(() => {
+  FileUD.destroyUploaders("vueLogoUploader");
+  uploaderRef.value = null;
+});
+</script>
+
+<template>
+  <button type="button" @click="uploaderRef?.open()">上传 Logo：{{ percent }}%</button>
+  <img v-if="url" :src="url" alt="Logo" style="width: 80px; height: 80px" />
+</template>
+```
+
 ### 2. 分片上传（断点续传 + 秒传）
 
 ```typescript
@@ -144,6 +205,7 @@ uploader.setFiles([
     fileId: "file-001",
     fileName: "document.pdf",
     url: "https://cdn.example.com/document.pdf",
+    size: 5484052,
     percent: 100,
     status: "success",
     formatSize: "5.23 MB",
@@ -161,7 +223,7 @@ uploader.setFiles([
 interface UploaderConfig {
   /** 上传地址：字符串 URL 或函数 */
   action: string | ((formData: FormData, uploadFile: UploadFile) => any);
-  /** 是否支持多选，默认 false */
+  /** 是否支持多选，默认 false。false 为单文件覆盖模式，true 为多文件追加列表 */
   multiple?: boolean;
   /** 接受的文件类型 */
   accept?: AcceptFileType[] | string[];
@@ -175,7 +237,7 @@ interface UploaderConfig {
   file?: string | ((fileConfig: FileConfig) => void);
   /** 分片上传配置 */
   chunkOptions?: ChunkOptions | null;
-  /** 文件数量限制 */
+  /** 文件数量限制，仅 multiple: true 时生效 */
   limit?: number;
   /** 单文件大小限制（字节） */
   maxSize?: number;

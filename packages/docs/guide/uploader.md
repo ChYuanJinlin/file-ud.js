@@ -31,6 +31,119 @@ uploader.onUpdate = (files) => {
 uploader.open();
 ```
 
+## 单文件覆盖上传（头像 / Logo / 封面）
+
+头像、标签 Logo、封面图这类场景通常只需要保留一个文件。`multiple: false` 是单文件覆盖模式，重新选择文件后会自动替换当前文件；`multiple: true` 才会追加为文件列表。
+
+```typescript
+import { FileUD } from "@file-ud.js/core";
+
+const logoUploader = FileUD.createUploader("tagLogoUploader", {
+  action: "/api/upload-logo",
+  multiple: false,
+  accept: ["image/*"],
+  maxSize: 2 * 1024 * 1024,
+});
+
+logoUploader.onUpdate = (files) => {
+  const current = files[0];
+  console.log("当前文件:", current?.fileName);
+  console.log("上传进度:", current?.percent ?? 0);
+};
+
+logoUploader.open();
+```
+
+在 React 中建议只创建一次上传器，不要在组件每次 render 时重新 `createUploader`，否则同名 uploader 会被销毁再创建，进度可能会从 `100` 又回到 `0`。
+
+```tsx
+import { useEffect, useRef, useState } from "react";
+import { FileUD, type Uploader } from "@file-ud.js/core";
+
+export function LogoUploader() {
+  const uploaderRef = useRef<Uploader | null>(null);
+  const [percent, setPercent] = useState(0);
+  const [url, setUrl] = useState("");
+
+  useEffect(() => {
+    const uploader = FileUD.createUploader("tagLogoUploader", {
+      action: "/api/upload-logo",
+      multiple: false,
+      accept: ["image/*"],
+    });
+
+    uploader.onUpdate = (files) => {
+      setPercent(files[0]?.percent ?? 0);
+    };
+
+    uploader.onSuccess = (response, file) => {
+      setUrl(response?.url ?? file.url);
+    };
+
+    uploaderRef.current = uploader;
+
+    return () => {
+      FileUD.destroyUploaders("tagLogoUploader");
+      uploaderRef.current = null;
+    };
+  }, []);
+
+  return (
+    <>
+      <button type="button" onClick={() => uploaderRef.current?.open()}>
+        上传 Logo：{percent}%
+      </button>
+      {url ? <img src={url} alt="Logo" style={{ width: 80, height: 80 }} /> : null}
+    </>
+  );
+}
+```
+
+Vue 3 中同样建议在组件挂载后创建一次上传器，并在组件卸载时销毁：
+
+```vue
+<script setup lang="ts">
+import { onBeforeUnmount, onMounted, ref } from "vue";
+import { FileUD, type Uploader } from "@file-ud.js/core";
+
+const uploaderRef = ref<Uploader | null>(null);
+const percent = ref(0);
+const url = ref("");
+
+onMounted(() => {
+  const uploader = FileUD.createUploader("vueLogoUploader", {
+    action: "/api/upload-logo",
+    multiple: false,
+    accept: ["image/*"],
+  });
+
+  uploader.onUpdate = (files) => {
+    percent.value = files[0]?.percent ?? 0;
+  };
+
+  uploader.onSuccess = (response, file) => {
+    url.value = response?.url ?? file.url;
+  };
+
+  uploaderRef.value = uploader;
+});
+
+onBeforeUnmount(() => {
+  FileUD.destroyUploaders("vueLogoUploader");
+  uploaderRef.value = null;
+});
+
+const openLogo = () => {
+  uploaderRef.value?.open();
+};
+</script>
+
+<template>
+  <button type="button" @click="openLogo">上传 Logo：{{ percent }}%</button>
+  <img v-if="url" :src="url" alt="Logo" style="width: 80px; height: 80px" />
+</template>
+```
+
 ## 分片上传（断点续传 + 秒传）
 
 ```typescript

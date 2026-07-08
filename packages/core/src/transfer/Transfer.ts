@@ -145,6 +145,7 @@ export default class Transfer<
       durationFormatted: "0s",
     };
     this.totalPercent = 0;
+    this.loading = false;
     this.activeFiles = [];
     // 注意：不重置 this.events，保留用户已注册的事件监听器
     this.files = [];
