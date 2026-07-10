@@ -657,6 +657,6 @@ onFileSelect(file, context) {
 - ✅ 不修改核心代码
 - ✅ 良好的错误处理
 
-**报告 Bug**：[GitHub Issues](https://github.com/your-repo/file-ud/issues)
+**报告 Bug**：[GitHub Issues](https://github.com/ChYuanJinlin/file-ud.js/issues)
 
-**提出建议**：[Feature Requests](https://github.com/your-repo/file-ud/discussions)
+**提出建议**：[Feature Requests](https://github.com/ChYuanJinlin/file-ud.js/discussions)

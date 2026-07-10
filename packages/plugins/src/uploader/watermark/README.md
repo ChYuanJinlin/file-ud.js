@@ -479,13 +479,12 @@ new WatermarkPlugin({
 
 ## 📝 更新日志
 
-### v1.0.0 (2024-01-XX)
-- ✨ 首次发布
-- ✅ 支持文字水印
-- ✅ 支持图片水印
-- ✅ 5种位置选择
-- ✅ 透明度控制
-- ✅ 自定义样式
+### v0.1.1
+- 补充插件架构、默认插件、卸载插件与按场景引入插件的文档说明。
+
+### v0.1.0
+- 首次发布水印插件。
+- 支持文字水印、图片水印、5 种位置选择、透明度控制与自定义样式。
 
 ---
 
@@ -493,6 +492,6 @@ new WatermarkPlugin({
 
 欢迎提交 Issue 和 Pull Request！
 
-**报告 Bug**：[GitHub Issues](https://github.com/your-repo/file-ud/issues)
+**报告 Bug**：[GitHub Issues](https://github.com/ChYuanJinlin/file-ud.js/issues)
 
-**提出建议**：[Feature Requests](https://github.com/your-repo/file-ud/discussions)
+**提出建议**：[Feature Requests](https://github.com/ChYuanJinlin/file-ud.js/discussions)

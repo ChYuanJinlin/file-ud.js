@@ -370,12 +370,12 @@ uploader.updateConfig({
 
 ## 📝 更新日志
 
-### v1.0.0 (2024-01-XX)
-- ✨ 首次发布
-- ✅ 支持 JPEG、PNG、WebP 格式
-- ✅ 智能尺寸调整
-- ✅ 可配置压缩质量
-- ✅ 实时压缩信息显示
+### v0.1.1
+- 补充插件架构、默认插件、卸载插件与按场景引入插件的文档说明。
+
+### v0.1.0
+- 首次发布图片压缩插件。
+- 支持 JPEG、PNG、WebP 格式、智能尺寸调整、可配置压缩质量与实时压缩信息显示。
 
 ---
 
@@ -383,6 +383,6 @@ uploader.updateConfig({
 
 欢迎提交 Issue 和 Pull Request！
 
-**报告 Bug**：[GitHub Issues](https://github.com/your-repo/file-ud/issues)
+**报告 Bug**：[GitHub Issues](https://github.com/ChYuanJinlin/file-ud.js/issues)
 
-**提出建议**：[Feature Requests](https://github.com/your-repo/file-ud/discussions)
+**提出建议**：[Feature Requests](https://github.com/ChYuanJinlin/file-ud.js/discussions)
