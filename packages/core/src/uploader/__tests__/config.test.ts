@@ -63,6 +63,89 @@ describe("Uploader config", () => {
     expect(validation.valid).toBe(false);
   });
 
+  it("keeps only the latest selected file in single-file mode", () => {
+    const oldFile = { fileId: "old", abort: vi.fn() };
+    const nextFile = { fileId: "next", index: 99 };
+    const uploader = Object.create(Uploader.prototype) as Uploader;
+
+    Object.assign(uploader, {
+      files: [oldFile],
+      activeFiles: [oldFile],
+      loading: true,
+      totalPercent: 90,
+      totalBytes: 1024,
+      transferredBytes: 512,
+      totalTransferredBytes: 512,
+      transferredFormatSize: "512 B",
+      totalFormatSize: "1 KB",
+      triggerUpdate: vi.fn(),
+    });
+
+    Uploader.fileIndex = 5;
+    Uploader.uploadFile = oldFile as any;
+
+    (uploader as any).commitSelectedFile(nextFile, true);
+
+    expect(oldFile.abort).toHaveBeenCalledTimes(1);
+    expect(uploader.files).toEqual([nextFile]);
+    expect(uploader.activeFiles).toEqual([nextFile]);
+    expect(nextFile.index).toBe(0);
+    expect(Uploader.uploadFile).toBe(nextFile);
+  });
+
+  it("appends selected files in multi-file mode", () => {
+    const oldFile = { fileId: "old" };
+    const nextFile = { fileId: "next", index: 5 };
+    const uploader = Object.create(Uploader.prototype) as Uploader;
+
+    Object.assign(uploader, {
+      files: [oldFile],
+      activeFiles: [oldFile],
+    });
+
+    (uploader as any).commitSelectedFile(nextFile, false);
+
+    expect(uploader.files).toEqual([oldFile, nextFile]);
+    expect(uploader.activeFiles).toEqual([oldFile, nextFile]);
+    expect(Uploader.uploadFile).toBe(nextFile);
+  });
+
+  it("uses the last selected file when single-file mode receives multiple files", () => {
+    const files = [
+      { name: "first.png" },
+      { name: "latest.png" },
+    ];
+    const uploader = Object.create(Uploader.prototype) as Uploader;
+
+    const selectedFiles = (uploader as any).getFilesForCurrentMode(files, true);
+
+    expect(selectedFiles).toEqual([{ name: "latest.png" }]);
+  });
+
+  it("syncs input attributes when config is updated", () => {
+    const input = {
+      multiple: true,
+      accept: ".png",
+    };
+    const uploader = Object.create(Uploader.prototype) as Uploader;
+
+    Object.assign(uploader, {
+      config: {
+        multiple: true,
+        accept: [".png"],
+      },
+      inputHTML: input as HTMLInputElement,
+    });
+
+    uploader.updateConfig({
+      multiple: false,
+      accept: [".jpg"],
+    });
+
+    expect(input.multiple).toBe(false);
+    expect(input.accept).toBe(".jpg");
+  });
+
   it("clearFiles resets file lists and aggregate transfer state", () => {
     const abort = vi.fn();
     const uploader = Object.create(Uploader.prototype) as Uploader;

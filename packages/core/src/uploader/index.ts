@@ -230,6 +230,10 @@ export default class Uploader<T = any> extends Transfer<UploadFile, T> {
   }
   public updateConfig(config: Partial<UploaderConfig>) {
     this.config = mergeObjects(this.config!, config);
+    if (this.inputHTML) {
+      this.inputHTML.multiple = this.config?.multiple || false;
+      this.inputHTML.accept = this.config?.accept?.toString() || "*";
+    }
   }
   set onbeforeTransfer(callback: beforeTransferCallBack<UploadFile>) {
     this.beforeTransferCallback = callback;
@@ -373,14 +377,34 @@ export default class Uploader<T = any> extends Transfer<UploadFile, T> {
     return { valid: true };
   }
 
+  private commitSelectedFile(uploadFileInstance: UploadFile, replacesCurrent: boolean) {
+    if (replacesCurrent) {
+      this.clearFiles();
+      uploadFileInstance.index = Uploader.fileIndex++;
+      Uploader.uploadFile = uploadFileInstance;
+      this.files = [uploadFileInstance];
+      this.activeFiles = [uploadFileInstance];
+      return;
+    }
+
+    Uploader.uploadFile = uploadFileInstance;
+    this.files.push(uploadFileInstance);
+    this.activeFiles.push(uploadFileInstance);
+  }
+
+  private getFilesForCurrentMode(files: File[], replacesCurrent: boolean): File[] {
+    return replacesCurrent ? files.slice(-1) : files;
+  }
+
   /**
    * 处理文件选择（内部方法）
    */
   private async processSelectedFiles(files: File[]) {
     const replacesCurrent = this.config?.multiple !== true;
+    const selectedFiles = this.getFilesForCurrentMode(files, replacesCurrent);
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
+    for (let i = 0; i < selectedFiles.length; i++) {
+      const file = selectedFiles[i];
 
       // 创建插件上下文
       const pluginContext: PluginContext<UploadFile> = {
@@ -468,15 +492,7 @@ export default class Uploader<T = any> extends Transfer<UploadFile, T> {
       const shouldContinue = beforeResults.every((r) => r !== false);
       if (!shouldContinue) continue;
 
-      if (replacesCurrent) {
-        this.clearFiles();
-        uploadFileInstance.index = Uploader.fileIndex++;
-      }
-      Uploader.uploadFile = uploadFileInstance;
-
-      // 添加到文件列表
-      this.files.push(uploadFileInstance);
-      this.activeFiles.push(uploadFileInstance);
+      this.commitSelectedFile(uploadFileInstance, replacesCurrent);
       if (this.config?.autoUpload) {
         uploadFileInstance.start(uploadFileInstance.uploadChunkManager);
       }

@@ -65,6 +65,7 @@ const statusTextMap: Record<string, string> = {
 // ==================== 上传器 ====================
 
 const isChunkUpload = ref(true);
+const isMultipleUpload = ref(true);
 
 const buildUploaderConfig = (): UploaderConfig => {
   return {
@@ -73,7 +74,7 @@ const buildUploaderConfig = (): UploaderConfig => {
       //    改用 file.uploadChunkManager 判断（文件创建时就固定，不会变）
       return file.uploadChunkManager ? uploadFile(formData) : upload(formData);
     },
-    multiple: true,
+    multiple: isMultipleUpload.value,
     headers: { Authorization: "Bearer your-token" },
     chunkOptions: isChunkUpload.value
       ? { chunkSize: 5 * 1024 * 1024, timeout: 0 }
@@ -305,6 +306,16 @@ const toggleUploadMode = () => {
   uploader.updateConfig(buildUploaderConfig());
   ElMessage.info(
     isChunkUpload.value ? "已切换到分片上传模式" : "已切换到普通上传模式",
+  );
+};
+
+const toggleMultipleMode = () => {
+  isMultipleUpload.value = !isMultipleUpload.value;
+  uploader.updateConfig(buildUploaderConfig());
+  ElMessage.info(
+    isMultipleUpload.value
+      ? "已切换到多文件追加模式"
+      : "已切换到单文件覆盖模式",
   );
 };
 
@@ -619,6 +630,13 @@ const handleDownload = async (row: any) => {
             @click="toggleUploadMode"
           >
             {{ isChunkUpload ? "分片上传" : "普通上传" }}
+          </el-button>
+          <el-button
+            :type="isMultipleUpload ? 'primary' : 'info'"
+            plain
+            @click="toggleMultipleMode"
+          >
+            {{ isMultipleUpload ? "多文件" : "单文件" }}
           </el-button>
           <el-button
             :icon="VideoPause"

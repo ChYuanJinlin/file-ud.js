@@ -1,5 +1,11 @@
 # @file-ud.js/core
 
+## 0.1.2
+
+### Patch Changes
+
+- 修复 `multiple: false` 单文件模式下文件列表仍可能追加的问题，确保重新选择文件时只保留最新文件；同时让 `updateConfig` 自动同步内部 input 属性，并修复源码开发环境 banner 版本回退为 `0.0.0` 的问题。
+
 ## 0.1.1
 
 ### Patch Changes

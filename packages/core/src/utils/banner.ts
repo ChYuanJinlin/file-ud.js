@@ -1,3 +1,5 @@
+import packageJson from "../../package.json";
+
 declare const __FILE_UD_PACKAGE_NAME__: string;
 declare const __FILE_UD_VERSION__: string;
 declare const __FILE_UD_HOMEPAGE__: string;
@@ -7,11 +9,15 @@ const GLOBAL_BANNER_FLAG = "__FILE_UD_BANNER_PRINTED__";
 const packageName =
   typeof __FILE_UD_PACKAGE_NAME__ === "string"
     ? __FILE_UD_PACKAGE_NAME__
-    : "@file-ud.js/core";
+    : packageJson.name || "@file-ud.js/core";
 const version =
-  typeof __FILE_UD_VERSION__ === "string" ? __FILE_UD_VERSION__ : "0.0.0";
+  typeof __FILE_UD_VERSION__ === "string"
+    ? __FILE_UD_VERSION__
+    : packageJson.version || "0.0.0";
 const homepage =
-  typeof __FILE_UD_HOMEPAGE__ === "string" ? __FILE_UD_HOMEPAGE__ : "";
+  typeof __FILE_UD_HOMEPAGE__ === "string"
+    ? __FILE_UD_HOMEPAGE__
+    : packageJson.homepage || "";
 
 function getPackageDisplayName(name: string): string {
   if (!name) return "SDK";
