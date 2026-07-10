@@ -71,8 +71,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          VERSION=$(node -p "require('./packages/core/package.json').version")
-          TAG="v${VERSION}"
+          CORE_VERSION=$(node -p "require('./packages/core/package.json').version")
+          PLUGINS_VERSION=$(node -p "require('./packages/plugins/package.json').version")
+          TAG="v${CORE_VERSION}"
           TITLE="@file-ud.js ${TAG}"
 
           {
@@ -82,8 +83,8 @@ jobs:
             echo
             echo "### Packages"
             echo
-            echo "- @file-ud.js/core@${VERSION}"
-            echo "- @file-ud.js/plugins@${VERSION}"
+            echo "- @file-ud.js/core@${CORE_VERSION}"
+            echo "- @file-ud.js/plugins@${PLUGINS_VERSION}"
             echo
             echo "### Documentation"
             echo
