@@ -64,6 +64,33 @@ yarn add @file-ud.js/plugins
 bun add @file-ud.js/plugins
 ```
 
+## 实例模式说明
+
+file-ud.js 同时提供两种创建方式，使用场景不同：
+
+- `new Uploader(config)` / `new Downloader(config)` 是**单例模式**。第一次创建后，后续再次 `new` 会复用同一个全局实例，后续传入的配置不会创建新的隔离实例。适合整个页面只需要一个上传器或下载器的简单场景。
+- `FileUD.createUploader(name, config)` / `FileUD.createDownloader(name, config)` 是**命名多实例模式**。每个 `name` 对应一个独立实例；如果重复使用同一个 `name`，旧实例会被销毁并重新创建。多个业务区域、多个上传入口、头像/附件/视频等需要隔离时，推荐使用这种方式。
+
+```ts
+import { FileUD, Uploader, Downloader } from "@file-ud.js/core";
+
+// 单例：全局只会保留一个 Uploader 实例
+const singletonUploader = new Uploader({ action: "/api/upload" });
+
+// 单例：全局只会保留一个 Downloader 实例
+const singletonDownloader = new Downloader({ action: "/api/download" });
+
+// 多实例：按 name 隔离，推荐用于真实业务页面
+const avatarUploader = FileUD.createUploader("avatar", {
+  action: "/api/upload-avatar",
+  multiple: false,
+});
+const attachmentUploader = FileUD.createUploader("attachments", {
+  action: "/api/upload-attachment",
+  multiple: true,
+});
+```
+
 ## 快速上手
 
 ### 上传
@@ -71,6 +98,7 @@ bun add @file-ud.js/plugins
 ```ts
 import { Uploader } from "@file-ud.js/core";
 
+// 注意：new Uploader 是单例模式；多个上传入口请使用 FileUD.createUploader(name, config)
 const uploader = new Uploader({
   // 上传地址（必填）
   action: "/api/upload",
@@ -160,6 +188,7 @@ uploader.onMergeChunk = async (chunkManager) => {
 ```ts
 import { Downloader } from "@file-ud.js/core";
 
+// 注意：new Downloader 是单例模式；多个下载入口请使用 FileUD.createDownloader(name, config)
 const downloader = new Downloader({
   action: "/api/download",
   chunkOptions: {
@@ -192,6 +221,7 @@ downloader.onSuccess = (response, file) => {
 import { Uploader } from "@file-ud.js/core";
 import { CompressImagePlugin, WatermarkPlugin } from "@file-ud.js/plugins/uploader";
 
+// 注意：new Uploader 是单例模式；多个上传入口请使用 FileUD.createUploader(name, config)
 const uploader = new Uploader({
   action: "/api/upload",
   autoUpload: true,

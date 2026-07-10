@@ -32,6 +32,12 @@ yarn add @file-ud.js/plugins
 bun add @file-ud.js/plugins
 ```
 
+## 实例模式选择
+
+`new Uploader(config)` / `new Downloader(config)` 是单例模式，适合页面里只有一个全局上传器或下载器的简单场景。
+
+实际业务中更推荐使用 `FileUD.createUploader(name, config)` / `FileUD.createDownloader(name, config)`。它们是命名多实例模式，可以按 `name` 隔离不同业务入口；同名重复创建时，会销毁旧实例再创建新实例。
+
 ## 基本使用
 
 ### Uploader 上传

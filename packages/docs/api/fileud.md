@@ -21,6 +21,34 @@ private static downloaders: Map<string, Downloader> = new Map();
 - 通过 `getUploaders()` / `getDownloaders()` 对外暴露访问
 - 同名实例重复创建会自动销毁旧实例再创建新的
 
+## 实例模式
+
+file-ud.js 有两个实例入口，需要区分使用：
+
+| 创建方式 | 模式 | 适用场景 |
+| --- | --- | --- |
+| `new Uploader(config)` / `new Downloader(config)` | 单例模式 | 页面里只需要一个全局上传器或下载器 |
+| `FileUD.createUploader(name, config)` / `FileUD.createDownloader(name, config)` | 命名多实例模式 | 多个业务区域需要隔离状态，比如头像、附件、视频、批量下载 |
+
+直接 `new Uploader()` 或 `new Downloader()` 时，类内部会复用第一次创建出来的实例，后续再次 `new` 不会得到新的隔离实例。需要多个实例时必须使用 `FileUD.createUploader(name, config)` 或 `FileUD.createDownloader(name, config)`。
+
+```ts
+import { FileUD, Uploader } from "@file-ud.js/core";
+
+// 单例模式：重复 new 仍然复用同一个 Uploader 实例
+const globalUploader = new Uploader({ action: "/api/upload" });
+
+// 多实例模式：每个 name 独立管理
+const avatarUploader = FileUD.createUploader("avatar", {
+  action: "/api/avatar",
+  multiple: false,
+});
+const attachmentUploader = FileUD.createUploader("attachments", {
+  action: "/api/attachments",
+  multiple: true,
+});
+```
+
 ---
 
 ## 静态方法

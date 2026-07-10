@@ -33,6 +33,15 @@ yarn add @file-ud.js/core
 bun add @file-ud.js/core
 ```
 
+### 实例模式说明
+
+`@file-ud.js/core` 有两种创建方式：
+
+- `new Uploader(config)` / `new Downloader(config)` 是**单例模式**。第一次创建后，后续再次 `new` 会复用同一个实例，不会创建新的隔离上传器/下载器。
+- `FileUD.createUploader(name, config)` / `FileUD.createDownloader(name, config)` 是**命名多实例模式**。每个 `name` 对应一个独立实例；同名重复创建时，会先销毁旧实例再创建新实例。
+
+业务里如果有多个上传入口，比如头像、Logo、附件、视频，推荐使用 `FileUD.createUploader(name, config)` 来隔离状态；只有全局单一上传/下载入口时，才建议直接 `new Uploader()` / `new Downloader()`。
+
 ### 2. 基本使用
 
 ```typescript
