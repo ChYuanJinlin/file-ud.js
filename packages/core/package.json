@@ -1,6 +1,6 @@
 {
   "name": "@file-ud.js/core",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Browser file upload and download SDK with chunked transfer, resume support, instant transfer, and plugins.",
   "license": "MIT",
   "repository": {

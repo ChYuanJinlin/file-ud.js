@@ -1,14 +1,11 @@
 import {
-  EventName,
   UploaderConfig,
   DownloaderConfig,
   LogConfig,
 } from "../types";
-import Uploader, { defaultConfig } from "../uploader/index";
-import Downloader, {
-  defaultConfig as defaultDownloaderConfig,
-} from "../downloader/index";
-import { initLogger, LogLevel, mergeObjects } from "../utils";
+import Uploader from "../uploader/index";
+import Downloader from "../downloader/index";
+import { initLogger, LogLevel } from "../utils";
 
 export default class FileUD {
   private static uploaders: Map<string, Uploader> = new Map();
@@ -26,7 +23,7 @@ export default class FileUD {
 
   public static createUploader<T = any>(
     name: string,
-    config?: UploaderConfig,
+    config?: Partial<UploaderConfig>,
   ): Uploader<T> {
     if (!name) {
       throw new Error("Uploader name is required");
@@ -47,8 +44,7 @@ export default class FileUD {
 
     // 创建新的 uploader 实例
     const newUploader: Uploader<T> = Object.create(Uploader.prototype);
-    newUploader.config = mergeObjects(defaultConfig, config || {});
-    newUploader.create(newUploader.config);
+    newUploader.create(config);
     newUploader.inputHTML?.setAttribute("data-uploader-name", name);
     FileUD.uploaders.set(name, newUploader);
 
@@ -63,7 +59,7 @@ export default class FileUD {
    */
   public static createDownloader<T = any>(
     name: string,
-    config?: DownloaderConfig,
+    config?: Partial<DownloaderConfig>,
   ): Downloader<T> {
     if (!name) {
       throw new Error("Downloader name is required");

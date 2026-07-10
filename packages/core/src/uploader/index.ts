@@ -41,7 +41,7 @@ export const defaultConfig: UploaderConfig = {
 export default class Uploader<T = any> extends Transfer<UploadFile, T> {
   public inputHTML: HTMLInputElement | null;
   public static objectUrls: any[] = [];
-  public static baseConfig: UploaderConfig;
+  public static baseConfig: Partial<UploaderConfig> = {};
   public config: UploaderConfig | null = null;
   public static instances: Uploader | null = null;
   public static uploadFile: UploadFile | null;
@@ -150,12 +150,12 @@ export default class Uploader<T = any> extends Transfer<UploadFile, T> {
     logger.info("Uploader", `setFiles: 成功回显 ${this.files.length} 个文件`);
   }
 
-  constructor(config?: UploaderConfig) {
+  constructor(config?: Partial<UploaderConfig>) {
     super();
     this.inputHTML = null;
     try {
       if (!Uploader.instances) {
-        this.config = mergeObjects(Uploader.baseConfig, config);
+        this.config = Uploader.mergeConfig(config);
 
         Uploader.instances = this.create(this.config);
       }
@@ -206,9 +206,16 @@ export default class Uploader<T = any> extends Transfer<UploadFile, T> {
     }
     return input;
   }
-  create(config?: UploaderConfig) {
-    Uploader.baseConfig = Object.assign(defaultConfig, Uploader.baseConfig);
-    this.config = { ...Uploader.baseConfig, ...config };
+  static mergeConfig(config?: Partial<UploaderConfig>): UploaderConfig {
+    return {
+      ...defaultConfig,
+      ...Uploader.baseConfig,
+      ...(config || {}),
+    };
+  }
+
+  create(config?: Partial<UploaderConfig>) {
+    this.config = Uploader.mergeConfig(config);
     this.init();
 
     // 🔑 配置文件级并发

@@ -149,8 +149,17 @@ export default class Transfer<
     this.activeFiles = [];
     // 注意：不重置 this.events，保留用户已注册的事件监听器
     this.files = [];
-    // Object.create 场景下可能为 undefined，忽略
-    this.lastLoadedMap?.clear();
+    // Object.create 场景下不会执行字段初始化器，这里补齐插件和统计依赖的 Map。
+    if (!this.lastLoadedMap) {
+      this.lastLoadedMap = new Map();
+    } else {
+      this.lastLoadedMap.clear();
+    }
+    if (!this.pluginSharedData) {
+      this.pluginSharedData = new Map<string, any>();
+    } else {
+      this.pluginSharedData.clear();
+    }
     this.plugins = [];
     // ✅ 重置回调为安全的默认值，避免 Object.create 场景下出现 undefined
     this.successCallback = () => null;

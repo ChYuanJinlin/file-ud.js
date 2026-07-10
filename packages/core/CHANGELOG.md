@@ -1,5 +1,13 @@
 # @file-ud.js/core
 
+## 0.1.3
+
+### Patch Changes
+
+- 修复 `Uploader.baseConfig` 和 `Downloader.baseConfig` 被默认配置覆盖的问题，确保全局基础配置会在默认配置之后、实例配置之前生效。
+
+  同时补齐 `FileUD.createUploader/createDownloader` 使用 `Object.create` 创建实例时的共享状态初始化，避免插件共享数据在部分场景下为 `undefined`。
+
 ## 0.1.2
 
 ### Patch Changes

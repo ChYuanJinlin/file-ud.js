@@ -36,7 +36,7 @@ export const defaultConfig: DownloaderConfig = {
  */
 export default class Downloader<T = any> extends Transfer<DownloadFile, T> {
   /** 全局基础配置 */
-  public static baseConfig: DownloaderConfig;
+  public static baseConfig: Partial<DownloaderConfig> = {};
 
   /** 当前实例的配置信息 */
   public config: DownloaderConfig | null = null;
@@ -48,11 +48,11 @@ export default class Downloader<T = any> extends Transfer<DownloadFile, T> {
 
   // ==================== 回调设置器（仅基类未提供的） ====================
 
-  constructor(config?: DownloaderConfig) {
+  constructor(config?: Partial<DownloaderConfig>) {
     super();
     try {
       if (!Downloader.instances) {
-        this.config = mergeObjects(Downloader.baseConfig, config);
+        this.config = Downloader.mergeConfig(config);
 
         Downloader.instances = this.create(this.config);
       }
@@ -75,10 +75,17 @@ export default class Downloader<T = any> extends Transfer<DownloadFile, T> {
    * @param config 下载器配置
    * @returns Downloader 实例
    */
-  public create(config?: DownloaderConfig) {
+  static mergeConfig(config?: Partial<DownloaderConfig>): DownloaderConfig {
+    return {
+      ...defaultConfig,
+      ...Downloader.baseConfig,
+      ...(config || {}),
+    };
+  }
+
+  public create(config?: Partial<DownloaderConfig>) {
     // 合并配置
-    Downloader.baseConfig = Object.assign(defaultConfig, Downloader.baseConfig);
-    this.config = { ...Downloader.baseConfig, ...config };
+    this.config = Downloader.mergeConfig(config);
 
     // 初始化状态
     this.resetState();

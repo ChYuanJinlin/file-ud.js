@@ -61,7 +61,7 @@ FileUD.startUDLogger({
 ```ts
 public static createUploader<T = any>(
   name: string,
-  config?: UploaderConfig,
+  config?: Partial<UploaderConfig>,
 ): Uploader<T>
 ```
 
@@ -70,9 +70,11 @@ public static createUploader<T = any>(
 | 参数     | 类型               | 必填 | 说明                       |
 | -------- | ------------------ | ---- | -------------------------- |
 | `name`   | `string`           | 是   | 上传器唯一名称             |
-| `config` | `UploaderConfig`  | 否   | 上传器配置                 |
+| `config` | `Partial<UploaderConfig>`  | 否   | 上传器局部配置，会覆盖 `Uploader.baseConfig` 中的同名字段 |
 
 **返回值**：`Uploader<T>` 实例。
+
+配置合并顺序为：内部默认配置 < `Uploader.baseConfig` < 当前 `config`。如果全局 `baseConfig` 已配置 `action`，当前实例可以只传 `multiple`、`accept` 等需要覆盖的字段。
 
 **示例**
 
@@ -120,7 +122,7 @@ const customUploader = FileUD.createUploader("customUploader", {
 ```ts
 public static createDownloader<T = any>(
   name: string,
-  config?: DownloaderConfig,
+  config?: Partial<DownloaderConfig>,
 ): Downloader<T>
 ```
 
@@ -129,9 +131,11 @@ public static createDownloader<T = any>(
 | 参数     | 类型               | 必填 | 说明                       |
 | -------- | ------------------ | ---- | -------------------------- |
 | `name`   | `string`           | 是   | 下载器唯一名称             |
-| `config` | `DownloaderConfig` | 否   | 下载器配置                 |
+| `config` | `Partial<DownloaderConfig>` | 否   | 下载器局部配置，会覆盖 `Downloader.baseConfig` 中的同名字段 |
 
 **返回值**：`Downloader<T>` 实例。
+
+配置合并顺序为：内部默认配置 < `Downloader.baseConfig` < 当前 `config`。
 
 **示例**
 

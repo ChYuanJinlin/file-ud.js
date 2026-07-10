@@ -1,15 +1,84 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import Uploader, { defaultConfig } from "../index";
+import Downloader, {
+  defaultConfig as downloaderDefaultConfig,
+} from "../../downloader";
 
 describe("Uploader config", () => {
   afterEach(() => {
     Uploader.setDefaultPlugins([]);
+    Uploader.baseConfig = {};
+    Downloader.baseConfig = {};
   });
 
   it("uses single-file mode by default", () => {
     expect(defaultConfig.multiple).toBe(false);
     expect("replace" in (defaultConfig as Record<string, unknown>)).toBe(false);
+  });
+
+  it("merges uploader baseConfig after default config", () => {
+    const baseAction = vi.fn();
+
+    Uploader.baseConfig = {
+      action: baseAction,
+      multiple: true,
+      accept: [".png"],
+    };
+
+    const merged = Uploader.mergeConfig({
+      multiple: false,
+    });
+
+    expect(merged.action).toBe(baseAction);
+    expect(merged.multiple).toBe(false);
+    expect(merged.accept).toEqual([".png"]);
+    expect(defaultConfig.action).toBe("");
+  });
+
+  it("lets uploader instance config override baseConfig", () => {
+    const baseAction = vi.fn();
+    const instanceAction = vi.fn();
+
+    Uploader.baseConfig = {
+      action: baseAction,
+      multiple: true,
+    };
+
+    const merged = Uploader.mergeConfig({
+      action: instanceAction,
+    });
+
+    expect(merged.action).toBe(instanceAction);
+    expect(merged.multiple).toBe(true);
+  });
+
+  it("merges downloader baseConfig after default config", () => {
+    const baseAction = vi.fn();
+
+    Downloader.baseConfig = {
+      action: baseAction,
+      timeout: 12000,
+    };
+
+    const merged = Downloader.mergeConfig();
+
+    expect(merged.action).toBe(baseAction);
+    expect(merged.timeout).toBe(12000);
+    expect(downloaderDefaultConfig.action).toBe("");
+  });
+
+  it("initializes shared maps when resetState runs on Object.create instances", () => {
+    const uploader = Object.create(Uploader.prototype) as Uploader;
+    const downloader = Object.create(Downloader.prototype) as Downloader;
+
+    uploader.resetState();
+    downloader.resetState();
+
+    expect(uploader.lastLoadedMap).toBeInstanceOf(Map);
+    expect(uploader.pluginSharedData).toBeInstanceOf(Map);
+    expect(downloader.lastLoadedMap).toBeInstanceOf(Map);
+    expect(downloader.pluginSharedData).toBeInstanceOf(Map);
   });
 
   it("inherits global default plugins when initialized", () => {
