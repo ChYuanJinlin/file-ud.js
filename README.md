@@ -153,6 +153,19 @@ const logoUploader = FileUD.createUploader("tagLogoUploader", {
 logoUploader.open();
 ```
 
+### 接入第三方上传组件
+
+如果文件选择已经由 Element Plus、Ant Design Upload、拖拽区或自定义 input 完成，不需要再调用 `open()`，直接把原生 `File` 交给上传器即可：
+
+```ts
+await logoUploader.addFile(file);
+
+// 多文件 / FileList
+await attachmentUploader.addFiles(files);
+```
+
+完整示例见文档站：[第三方上传组件接入](https://chyuanjinlin.github.io/file-ud.js/guide/ui-upload.html)。
+
 ### 初始化分片回调（配合后端）
 
 ```ts

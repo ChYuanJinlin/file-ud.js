@@ -180,6 +180,41 @@ export default class Uploader<T = any> extends Transfer<UploadFile, T> {
     }
   }
 
+  /**
+   * 添加单个原生 File 对象，并复用与 open() 相同的上传流程。
+   *
+   * 适用于 Element Plus、Ant Design Upload、拖拽、粘贴、自定义 input 等外部文件来源。
+   */
+  public async addFile(file: File, options?: { clear?: boolean }): Promise<void> {
+    await this.addFiles([file], options);
+  }
+
+  /**
+   * 添加多个原生 File 对象，并复用与 open() 相同的上传流程。
+   *
+   * `multiple: false` 时仍然保持单文件覆盖语义，只会保留本次传入的最后一个文件。
+   */
+  public async addFiles(
+    files: File[] | FileList,
+    options?: { clear?: boolean },
+  ): Promise<void> {
+    const filesList = Array.from(files || []);
+    if (!filesList.length) return;
+
+    if (options?.clear) {
+      this.clearFiles();
+    }
+
+    await this.processSelectedFiles(filesList);
+  }
+
+  /**
+   * 语义化别名：用于拖拽、粘贴、多选等“追加文件”场景。
+   */
+  public async appendFiles(files: File[] | FileList): Promise<void> {
+    await this.addFiles(files);
+  }
+
   private init() {
     // 使用统一的重置方法
     this.resetState();
@@ -228,7 +263,7 @@ export default class Uploader<T = any> extends Transfer<UploadFile, T> {
       const FileList = (e.target as HTMLInputElement)?.files;
       const filesList = Array.from(FileList!);
 
-      await this.processSelectedFiles(filesList);
+      await this.addFiles(filesList);
 
       this.inputHTML!.value = "";
     };

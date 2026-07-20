@@ -191,6 +191,49 @@ describe("Uploader config", () => {
     expect(selectedFiles).toEqual([{ name: "latest.png" }]);
   });
 
+  it("adds a native File through the public addFile API", async () => {
+    const file = { name: "logo.png", size: 1024 } as File;
+    const uploader = Object.create(Uploader.prototype) as Uploader;
+    const processSelectedFiles = vi
+      .spyOn(uploader as any, "processSelectedFiles")
+      .mockResolvedValue(undefined);
+
+    await uploader.addFile(file);
+
+    expect(processSelectedFiles).toHaveBeenCalledWith([file]);
+  });
+
+  it("adds multiple native files and optionally clears existing files", async () => {
+    const files = [
+      { name: "first.png", size: 1024 },
+      { name: "second.png", size: 2048 },
+    ] as File[];
+    const uploader = Object.create(Uploader.prototype) as Uploader;
+    const clearFiles = vi
+      .spyOn(uploader, "clearFiles")
+      .mockImplementation(() => undefined);
+    const processSelectedFiles = vi
+      .spyOn(uploader as any, "processSelectedFiles")
+      .mockResolvedValue(undefined);
+
+    await uploader.addFiles(files, { clear: true });
+
+    expect(clearFiles).toHaveBeenCalledTimes(1);
+    expect(processSelectedFiles).toHaveBeenCalledWith(files);
+  });
+
+  it("uses addFiles as the appendFiles implementation", async () => {
+    const files = [{ name: "drop.png", size: 1024 }] as File[];
+    const uploader = Object.create(Uploader.prototype) as Uploader;
+    const addFiles = vi
+      .spyOn(uploader, "addFiles")
+      .mockResolvedValue(undefined);
+
+    await uploader.appendFiles(files);
+
+    expect(addFiles).toHaveBeenCalledWith(files);
+  });
+
   it("syncs input attributes when config is updated", () => {
     const input = {
       multiple: true,

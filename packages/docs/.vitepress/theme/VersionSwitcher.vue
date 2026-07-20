@@ -8,37 +8,154 @@ const route = useRoute();
 const open = ref(false);
 
 const currentVersion = computed(() => {
-  const b = site.value.base;
-  const match = b.match(/(\/v[\d.]+\/)?$/);
-  return match?.[0] || "/";
-});
-
-const repoPrefix = computed(() => {
-  const b = site.value.base;
-  return b.replace(/(\/v[\d.]+\/)?$/, "");
+  return getCurrentVersionPath();
 });
 
 const currentLabel = computed(() => {
   return (
-    versions.find((v) => v.path === currentVersion.value)?.label ||
+    versions.find((v) => normalizeVersionBase(v.path) === currentVersion.value)
+      ?.label ||
     versions[0]?.label ||
     ""
   );
 });
 
 const hasMultipleVersions = computed(() => versions.length > 1);
+const latestDocPath = computed(() => {
+  return normalizeVersionBase(versions[0]?.path || "/");
+});
 
 function isActive(v: (typeof versions)[number]) {
-  return currentVersion.value === v.path;
+  return currentVersion.value === normalizeVersionBase(v.path);
 }
 
-function switchVersion(targetVerPath: string) {
+async function switchVersion(targetVersion: (typeof versions)[number]) {
   if (!hasMultipleVersions.value) return;
 
-  const page = route.path;
-  const url = repoPrefix.value + targetVerPath + page.replace(/^\//, "");
-  window.location.href = url || "/";
   open.value = false;
+  const page = getCurrentPagePath();
+  const suffix =
+    typeof window !== "undefined"
+      ? `${window.location.search}${window.location.hash}`
+      : "";
+  const url = await resolveVersionUrl(targetVersion, page, suffix);
+  if (url) {
+    window.location.href = url;
+  }
+}
+
+function getCurrentVersionPath(): string {
+  const latestBase = latestDocPath.value;
+  const pathname =
+    typeof window !== "undefined" ? window.location.pathname : route.path;
+  const normalizedPathname = normalizePathname(pathname);
+
+  if (!isExternalUrl(latestBase) && normalizedPathname.startsWith(latestBase)) {
+    const relativePath = normalizedPathname.slice(latestBase.length);
+    const version = getVersionPrefix(relativePath);
+    if (version) {
+      return normalizeVersionBase(`${latestBase}${version}`);
+    }
+  }
+
+  return normalizeVersionBase(site.value.base);
+}
+
+function getCurrentPagePath(): string {
+  const base = normalizeVersionBase(site.value.base);
+  const pathname =
+    typeof window !== "undefined" ? window.location.pathname : route.path;
+  const normalizedPathname = normalizePathname(pathname);
+
+  if (normalizedPathname.startsWith(base)) {
+    return stripVersionPrefix(normalizedPathname.slice(base.length));
+  }
+
+  const normalizedRoutePath = normalizePathname(route.path);
+  if (normalizedRoutePath.startsWith(base)) {
+    return stripVersionPrefix(normalizedRoutePath.slice(base.length));
+  }
+
+  return stripVersionPrefix(normalizedRoutePath.replace(/^\//, ""));
+}
+
+async function resolveVersionUrl(
+  targetVersion: (typeof versions)[number],
+  page: string,
+  suffix: string,
+): Promise<string> {
+  const targetBase = normalizeVersionBase(targetVersion.path);
+  const homeUrl = `${targetBase}${suffix}`;
+
+  if (!page) {
+    return homeUrl;
+  }
+
+  const pageUrl = `${targetBase}${page}`;
+  if (isExternalUrl(targetBase)) {
+    return `${pageUrl}${suffix}`;
+  }
+
+  if (await urlExists(pageUrl)) {
+    return `${pageUrl}${suffix}`;
+  }
+
+  if (await urlExists(targetBase)) {
+    return homeUrl;
+  }
+
+  return homeUrl;
+}
+
+async function urlExists(url: string): Promise<boolean> {
+  if (typeof window === "undefined") {
+    return true;
+  }
+
+  try {
+    const res = await fetch(url, {
+      method: "HEAD",
+      cache: "no-store",
+    });
+    return res.ok;
+  } catch {
+    return true;
+  }
+}
+
+function stripVersionPrefix(path: string): string {
+  let result = path.replace(/^\/+/, "");
+
+  while (true) {
+    const versionPrefix = getVersionPrefix(result);
+    if (!versionPrefix) break;
+    result = result.slice(versionPrefix.length).replace(/^\/+/, "");
+  }
+
+  return result;
+}
+
+function getVersionPrefix(path: string): string {
+  return path.match(/^v\d+(?:\.\d+)*(?:[-\w.]+)?(?=\/|$)/)?.[0] || "";
+}
+
+function normalizeVersionBase(path: string): string {
+  if (isExternalUrl(path)) {
+    return path.endsWith("/") ? path : `${path}/`;
+  }
+
+  if (!path.startsWith("/")) {
+    path = `/${path}`;
+  }
+  return path.endsWith("/") ? path : `${path}/`;
+}
+
+function isExternalUrl(path: string): boolean {
+  return /^https?:\/\//.test(path);
+}
+
+function normalizePathname(path: string): string {
+  return path.startsWith("/") ? path : `/${path}`;
 }
 
 function toggle(e: MouseEvent) {
@@ -98,7 +215,7 @@ onUnmounted(() => {
         :key="v.path"
         class="version-option"
         :class="{ active: isActive(v) }"
-        @click="switchVersion(v.path)"
+        @click="switchVersion(v)"
       >
         <span class="version-label">{{ v.label }}</span>
         <span v-if="isActive(v)" class="check">✓</span>

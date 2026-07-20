@@ -73,6 +73,9 @@ interface ChunkOptions {
 | 方法 | 说明 | 返回值 |
 |------|------|--------|
 | `open(fn?)` | 打开文件选择器，`fn` 会接收当前选中的 `UploadFile` | `void` |
+| `addFile(file, options?)` | 接入单个外部原生 `File`，适合 Element Plus、Ant Design Upload、自定义按钮等场景 | `Promise<void>` |
+| `addFiles(files, options?)` | 接入多个外部原生 `File` 或 `FileList`；`multiple: false` 时只保留最后一个文件 | `Promise<void>` |
+| `appendFiles(files)` | `addFiles(files)` 的语义化别名，适合拖拽、多选等追加场景 | `Promise<void>` |
 | `use(plugin)` | 注册插件 | `this` |
 | `unuse(name)` | 移除插件 | `this` |
 | `getPlugin(name?)` | 获取插件 | `IUDPlugin \| IUDPlugin[]` |
