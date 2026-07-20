@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="256" viewBox="0 0 960 256" role="img" aria-labelledby="title desc">
+  <title id="title">file-ud.js wordmark</title>
+  <desc id="desc">file-ud.js wordmark with a file-shaped upload and download icon.</desc>
+  <defs>
+    <linearGradient id="up" x1="80" y1="58" x2="176" y2="126" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#38bdf8"/>
+      <stop offset="1" stop-color="#2563eb"/>
+    </linearGradient>
+    <linearGradient id="down" x1="80" y1="128" x2="176" y2="196" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#14b8a6"/>
+      <stop offset="1" stop-color="#22c55e"/>
+    </linearGradient>
+  </defs>
+
+  <path d="M128 54 176 102h-26v36h-44v-36H80L128 54z" fill="url(#up)"/>
+  <path d="M128 202 80 154h26v-36h44v36h26L128 202z" fill="url(#down)"/>
+
+  <text x="128" y="108" text-anchor="middle" fill="#ffffff" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, Arial, sans-serif" font-size="34" font-weight="900" letter-spacing="0">U</text>
+  <text x="128" y="174" text-anchor="middle" fill="#ffffff" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, Arial, sans-serif" font-size="34" font-weight="900" letter-spacing="0">D</text>
+
+  <text x="288" y="108" fill="#0f172a" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, Arial, sans-serif" font-size="62" font-weight="850" letter-spacing="0">file-ud.js</text>
+  <text x="292" y="154" fill="#475569" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, Arial, sans-serif" font-size="24" font-weight="500" letter-spacing="0">Browser file upload and download SDK</text>
+  <g transform="translate(292 182)" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="7">
+    <path d="M0 12h78" stroke="#38bdf8"/>
+    <path d="M104 12h78" stroke="#2563eb"/>
+    <path d="M208 12h78" stroke="#22c55e"/>
+  </g>
+</svg>
