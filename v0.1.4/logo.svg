@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">file-ud.js logo</title>
+  <desc id="desc">A file-shaped upload and download logo with U and D arrows.</desc>
+  <defs>
+    <linearGradient id="up" x1="164" y1="116" x2="348" y2="252" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#38bdf8"/>
+      <stop offset="1" stop-color="#2563eb"/>
+    </linearGradient>
+    <linearGradient id="down" x1="164" y1="260" x2="348" y2="396" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#14b8a6"/>
+      <stop offset="1" stop-color="#22c55e"/>
+    </linearGradient>
+  </defs>
+
+  <path d="M256 112 350 206h-52v70h-84v-70h-52L256 112z" fill="url(#up)"/>
+  <path d="M256 400 162 306h52v-70h84v70h52L256 400z" fill="url(#down)"/>
+
+  <text x="256" y="218" text-anchor="middle" fill="#ffffff" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, Arial, sans-serif" font-size="66" font-weight="900" letter-spacing="0">U</text>
+  <text x="256" y="342" text-anchor="middle" fill="#ffffff" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, Arial, sans-serif" font-size="66" font-weight="900" letter-spacing="0">D</text>
+</svg>
