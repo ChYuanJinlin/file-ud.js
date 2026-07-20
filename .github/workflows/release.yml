@@ -89,6 +89,7 @@ jobs:
             echo "### Documentation"
             echo
             echo "- https://chyuanjinlin.github.io/file-ud.js/"
+            echo "- https://chyuanjinlin.github.io/file-ud.js/v${CORE_VERSION}/"
           } > release-notes.md
 
           if gh release view "$TAG" >/dev/null 2>&1; then

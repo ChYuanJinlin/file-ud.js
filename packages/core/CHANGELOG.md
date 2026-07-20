@@ -1,5 +1,11 @@
 # @file-ud.js/core
 
+## 0.1.4
+
+### Patch Changes
+
+- 新增 `Uploader.addFile`、`Uploader.addFiles` 和 `Uploader.appendFiles`，允许 Element Plus、Ant Design Upload、拖拽、粘贴、自定义 input 等外部文件来源接入同一套上传流程。
+
 ## 0.1.3
 
 ### Patch Changes

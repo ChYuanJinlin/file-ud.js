@@ -1,476 +1,175 @@
-# addFile 方法 - 添加单个文件
+# addFile / addFiles 添加文件
 
-## 📖 功能说明
+`Uploader.addFile` 和 `Uploader.addFiles` 用于把外部拿到的原生 `File` 对象交给 file-ud.js。
 
-`addFile` 方法用于**添加单个文件**到上传器。与 [addFiles](https://github.com/ChYuanJinlin/file-ud.js/blob/main/packages/core/src/uploader/index.ts)（数组）不同，这个方法接受**单个文件对象**作为参数，使用更便捷。
+它们适合这些场景：
 
-### 核心特性
+- 第三方 UI 上传组件：Element Plus、Ant Design Upload 等。
+- 自定义 `<input type="file">`。
+- 拖拽上传。
+- 剪贴板粘贴图片。
+- 业务中已有 `File` 对象，不想再调用 `uploader.open()`。
 
-- ✅ **单文件操作**：直接传入单个文件对象，无需包装成数组
-- ✅ **灵活模式**：支持追加模式（默认）和清空模式
-- ✅ **类型安全**：完整的 TypeScript 类型定义
-- ✅ **自动去重**：检测重复的 fileId，避免重复添加
-- ✅ **响应式更新**：UI 自动刷新显示
+## 和 open 的区别
 
----
+| 方法 | 谁负责选文件 | 适合场景 |
+|------|--------------|----------|
+| `uploader.open(fn?)` | file-ud.js 内部创建的 input | 快速接入，直接弹出文件选择框 |
+| `uploader.addFile(file)` | 外部组件或业务代码 | 接入现有 UI 上传组件 |
+| `uploader.addFiles(files)` | 外部组件或业务代码 | 拖拽、多选、批量添加 |
 
-## 🚀 基本用法
+`addFile` / `addFiles` 会复用和 `open()` 相同的上传流程，包括插件、校验、预览地址、上传前拦截、自动上传、分片上传和进度统计。
 
-### 1. 追加单个文件（默认）
+## 方法签名
 
-```typescript
-import { FileUD } from '@file-ud.js/core';
+```ts
+addFile(file: File, options?: { clear?: boolean }): Promise<void>
 
-const uploader = FileUD.createUploader("myUploader", {
-  action: '/api/upload'
-});
+addFiles(files: File[] | FileList, options?: { clear?: boolean }): Promise<void>
 
-// 添加单个文件（追加到现有列表）
-uploader.addFile({
-  fileId: "file_001",
-  fileName: "photo.jpg",
-  File: new File([], "photo.jpg"),
-  url: "",
-  size: 0,
-  percent: 0,
-  status: "pending"
-});
+appendFiles(files: File[] | FileList): Promise<void>
 ```
 
-### 2. 清空后添加单个文件
+| 参数 | 说明 |
+|------|------|
+| `file` | 单个原生 `File` 对象 |
+| `files` | 原生 `File[]` 或 `FileList` |
+| `options.clear` | 传 `true` 时会先清空当前文件列表，再处理新文件 |
 
-```typescript
-// 清空现有文件，然后添加新文件
-uploader.addFile(
-  {
-    fileId: "file_002",
-    fileName: "document.pdf",
-    File: new File([], "document.pdf"),
-    url: "",
-    size: 5484052,
-    percent: 100,
-    status: "success",
-    formatSize: "5.23 MB"
-  },
-  { clear: true }
-);
-```
+一般情况下不需要手动传 `clear: true`。如果是单文件场景，直接设置 `multiple: false` 即可，SDK 会自动替换当前文件。
 
-### 3. 从原生 File 对象快速添加
+## 基础用法
 
-```typescript
-// HTML 文件输入框
-<input type="file" @change="handleFileSelect" />
+```ts
+import { FileUD } from "@file-ud.js/core";
 
-<script setup>
-const handleFileSelect = (event) => {
-  const nativeFile = event.target.files[0];
-  
-  if (nativeFile) {
-    uploader.addFile({
-      fileId: generateUniqueId(),
-      fileName: nativeFile.name,
-      File: nativeFile, // 直接使用原生 File 对象
-      url: "",
-      size: nativeFile.size,
-      percent: 0,
-      status: "pending",
-      formatSize: formatFileSize(nativeFile.size)
-    });
-  }
+const uploader = FileUD.createUploader("logoUploader", {
+  action: "/api/upload-logo",
+  multiple: false,
+  accept: ["image/*"],
+});
+
+uploader.onUpdate = () => {
+  console.log("上传中:", uploader.loading);
+  console.log("总进度:", uploader.totalPercent);
 };
-</script>
+
+uploader.onSuccess = (response, file) => {
+  console.log("服务端响应:", response);
+  console.log("上传成功文件:", file.fileName);
+};
+
+input.addEventListener("change", async () => {
+  const file = input.files?.[0];
+  if (!file) return;
+
+  await uploader.addFile(file);
+  input.value = "";
+});
 ```
 
----
+## 单文件覆盖
 
-## ⚙️ 参数说明
+头像、Logo、封面这类场景建议使用 `multiple: false`：
 
-### 方法签名
-
-```typescript
-public addFile(
-  file: Partial<UploadFile>,
-  options?: { clear?: boolean }
-): void
-```
-
-### 参数
-
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
-|------|------|------|--------|------|
-| `file` | `Partial<UploadFile>` | ✅ | - | 要添加的单个文件对象 |
-| `options.clear` | `boolean` | ❌ | `false` | 是否清空现有文件 |
-
-### 文件对象字段
-
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `fileId` | `string` | ✅ | 文件唯一标识 |
-| `fileName` | `string` | ✅ | 文件名 |
-| `File` | `File` | ✅ | File 对象 |
-| `url` | `string` | ❌ | 文件访问 URL |
-| `size` | `number` | ❌ | 文件原始大小（字节），可从 `File.size` 或服务端返回值设置 |
-| `percent` | `number` | ❌ | 上传进度（0-100），默认 0 |
-| `status` | `"pending" \| "UDLoading" \| "paused" \| "success" \| "fail" \| "error" \| "cancelled" \| "merging" \| "hashing"` | ❌ | 文件状态，默认 "pending" |
-| `formatSize` | `string` | ❌ | 格式化后的文件大小 |
-| `extension` | `string` | ❌ | 文件扩展名 |
-| `index` | `number` | ❌ | 文件索引，通常由内部自动生成 |
-| `metadata` | `Record<string, any>` | ❌ | 插件或业务侧自定义元数据 |
-
----
-
-## 💡 使用示例
-
-### 示例 1：拖拽上传单个文件
-
-```vue
-<template>
-  <div 
-    class="drop-zone"
-    @dragover.prevent
-    @drop="handleDrop"
-  >
-    拖拽文件到此处
-  </div>
-</template>
-
-<script setup lang="ts">
-import { FileUD } from '@file-ud.js/core';
-
-const uploader = FileUD.createUploader("dropzone", {
-  action: '/api/upload'
+```ts
+const uploader = FileUD.createUploader("avatarUploader", {
+  action: "/api/avatar",
+  multiple: false,
 });
 
-const handleDrop = (event: DragEvent) => {
+await uploader.addFile(file);
+```
+
+当重新选择文件时，SDK 会用新文件替换当前文件，新文件进度从 `0` 开始重新计算。
+
+如果外部组件误传了多个文件，`multiple: false` 下只会保留最后一个：
+
+```ts
+await uploader.addFiles(fileList);
+```
+
+## 多文件追加
+
+附件列表、多图上传等场景使用 `multiple: true`：
+
+```ts
+const uploader = FileUD.createUploader("attachmentsUploader", {
+  action: "/api/attachments",
+  multiple: true,
+  limit: 9,
+});
+
+await uploader.addFiles(files);
+```
+
+`appendFiles(files)` 是 `addFiles(files)` 的语义化别名：
+
+```ts
+await uploader.appendFiles(files);
+```
+
+## 拖拽上传
+
+```ts
+dropArea.addEventListener("dragover", (event) => {
   event.preventDefault();
-  
+});
+
+dropArea.addEventListener("drop", async (event) => {
+  event.preventDefault();
+
   const files = event.dataTransfer?.files;
-  if (!files || files.length === 0) return;
-  
-  // 只处理第一个文件
-  const file = files[0];
-  
-  uploader.addFile({
-    fileId: generateId(),
-    fileName: file.name,
-    File: file,
-    url: "",
-    size: file.size,
-    percent: 0,
-    status: "pending",
-    formatSize: formatFileSize(file.size)
-  });
-};
-</script>
-```
+  if (!files?.length) return;
 
----
-
-### 示例 2：粘贴上传图片
-
-```vue
-<template>
-  <div 
-    tabindex="0"
-    @paste="handlePaste"
-    class="paste-area"
-  >
-    在此处粘贴图片
-  </div>
-</template>
-
-<script setup lang="ts">
-const handlePaste = (event: ClipboardEvent) => {
-  const items = event.clipboardData?.items;
-  if (!items) return;
-  
-  for (let i = 0; i < items.length; i++) {
-    if (items[i].type.startsWith('image/')) {
-      const file = items[i].getAsFile();
-      
-      if (file) {
-        uploader.addFile({
-          fileId: `pasted_${Date.now()}`,
-          fileName: `pasted-image-${Date.now()}.png`,
-          File: file,
-          url: "",
-          size: file.size,
-          percent: 0,
-          status: "pending",
-          formatSize: formatFileSize(file.size)
-        });
-        
-        break; // 只处理第一张图片
-      }
-    }
-  }
-};
-</script>
-```
-
----
-
-### 示例 3：条件性添加文件
-
-```typescript
-// 根据文件大小决定是否添加
-const handleFileSelect = (nativeFile: File) => {
-  const maxSize = 10 * 1024 * 1024; // 10MB
-  
-  if (nativeFile.size > maxSize) {
-    alert(`文件太大，最大支持 ${formatFileSize(maxSize)}`);
-    return;
-  }
-  
-  uploader.addFile({
-    fileId: generateId(),
-    fileName: nativeFile.name,
-    File: nativeFile,
-    url: "",
-    size: nativeFile.size,
-    percent: 0,
-    status: "pending",
-    formatSize: formatFileSize(nativeFile.size)
-  });
-};
-```
-
----
-
-### 示例 4：批量选择但逐个添加
-
-```typescript
-// 用户选择多个文件，但逐个添加并验证
-const handleMultipleSelect = async (nativeFiles: File[]) => {
-  for (const file of nativeFiles) {
-    // 对每个文件进行单独验证
-    const isValid = await validateFile(file);
-    
-    if (isValid) {
-      uploader.addFile({
-        fileId: generateId(),
-        fileName: file.name,
-        File: file,
-        url: "",
-        size: file.size,
-        percent: 0,
-        status: "pending",
-        formatSize: formatFileSize(file.size)
-      });
-    } else {
-      console.warn(`跳过无效文件: ${file.name}`);
-    }
-  }
-};
-```
-
----
-
-## 🔍 与相关方法对比
-
-| 方法 | 参数类型 | 是否清空 | 适用场景 |
-|------|---------|---------|---------|
-| **[addFile](https://github.com/ChYuanJinlin/file-ud.js/blob/main/packages/core/src/uploader/index.ts)** | 单个对象 | 可选 | 添加单个文件 |
-| **[addFiles](https://github.com/ChYuanJinlin/file-ud.js/blob/main/packages/core/src/uploader/index.ts)** | 数组 | 可选 | 批量添加文件 |
-| **[appendFiles](https://github.com/ChYuanJinlin/file-ud.js/blob/main/packages/core/src/uploader/index.ts)** | 数组 | 否 | 追加多个文件 |
-| **[setFiles](https://github.com/ChYuanJinlin/file-ud.js/blob/main/packages/core/src/uploader/index.ts)** | 数组 | 是 | 回显文件列表 |
-
-### 等价关系
-
-```typescript
-// 以下两种写法等价
-uploader.addFile(file);
-uploader.appendFiles([file]);
-
-// 以下两种写法等价
-uploader.addFile(file, { clear: true });
-uploader.setFiles([file]);
-```
-
----
-
-## 🐛 常见问题
-
-### Q1: 如何生成唯一的 fileId？
-
-**方案1**：使用时间戳
-```typescript
-fileId: `file_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-```
-
-**方案2**：使用 UUID 库
-```typescript
-import { v4 as uuidv4 } from 'uuid';
-
-fileId: uuidv4()
-```
-
-**方案3**：基于文件内容 Hash
-```typescript
-import SparkMD5 from 'spark-md5';
-
-async function getFileId(file: File): Promise<string> {
-  const buffer = await file.arrayBuffer();
-  const hash = SparkMD5.ArrayBuffer.hash(buffer);
-  return `file_${hash}`;
-}
-```
-
----
-
-### Q2: 添加的文件会立即开始上传吗？
-
-**取决于配置**：
-
-```typescript
-// 情况1：autoUpload: true（默认）
-const uploader = FileUD.createUploader("test", {
-  action: '/api/upload',
-  autoUpload: true  // ✅ 添加后立即开始上传
-});
-
-uploader.addFile(fileData); // 立即上传
-
-// 情况2：autoUpload: false
-const uploader = FileUD.createUploader("test", {
-  action: '/api/upload',
-  autoUpload: false  // ❌ 需要手动触发
-});
-
-uploader.addFile(fileData); // 仅添加到列表
-uploader.upload();           // 手动开始上传
-```
-
----
-
-### Q3: 如何防止重复添加相同文件？
-
-**方法1**：检查 fileId
-```typescript
-const isDuplicate = uploader.files.some(f => f.fileId === newFileId);
-
-if (!isDuplicate) {
-  uploader.addFile(fileData);
-}
-```
-
-**方法2**：检查文件名和大小
-```typescript
-const isDuplicate = uploader.files.some(f => 
-  f.fileName === newFile.name && f.File.size === newFile.size
-);
-
-if (!isDuplicate) {
-  uploader.addFile({
-    fileId: generateId(),
-    fileName: newFile.name,
-    File: newFile,
-    size: newFile.size,
-    formatSize: formatFileSize(newFile.size),
-    // ...
-  });
-}
-```
-
----
-
-### Q4: 添加失败的文件如何处理？
-
-```typescript
-try {
-  uploader.addFile(fileData);
-} catch (error) {
-  console.error('添加文件失败:', error);
-  
-  // 显示错误提示
-  showToast('文件添加失败，请重试');
-}
-```
-
----
-
-## 📝 最佳实践
-
-### 1. 始终验证必要字段
-
-```typescript
-function safeAddFile(fileData: Partial<UploadFile>) {
-  if (!fileData.fileId || !fileData.fileName || !fileData.File) {
-    console.error('缺少必要字段');
-    return;
-  }
-  
-  uploader.addFile(fileData);
-}
-```
-
-### 2. 处理异步操作
-
-```typescript
-async function addFileWithPreview(nativeFile: File) {
-  // 生成预览 URL
-  const previewUrl = URL.createObjectURL(nativeFile);
-  
-  uploader.addFile({
-    fileId: generateId(),
-    fileName: nativeFile.name,
-    File: nativeFile,
-    url: previewUrl, // 设置预览 URL
-    size: nativeFile.size,
-    percent: 0,
-    status: "pending",
-    formatSize: formatFileSize(nativeFile.size)
-  });
-}
-```
-
-### 3. 结合插件使用
-
-```typescript
-import { FileValidatorPlugin } from '@file-ud.js/plugins/uploader';
-
-// 先添加验证插件
-uploader.use(new FileValidatorPlugin({
-  maxSize: 10 * 1024 * 1024,
-  accept: ['image/*']
-}));
-
-// 然后添加文件（会自动验证）
-uploader.addFile({
-  fileId: generateId(),
-  fileName: "photo.jpg",
-  File: photoFile,
-  size: photoFile.size,
-  formatSize: formatFileSize(photoFile.size)
+  await uploader.addFiles(files);
 });
 ```
 
----
+## 粘贴上传
 
-## 🎯 应用场景总结
+```ts
+document.addEventListener("paste", async (event) => {
+  const files = Array.from(event.clipboardData?.files || []);
+  if (!files.length) return;
 
-| 场景 | 说明 | 示例 |
-|------|------|------|
-| **拖拽上传** | 用户拖拽单个文件 | 拖拽区域组件 |
-| **粘贴上传** | 从剪贴板粘贴图片 | 富文本编辑器 |
-| **扫码上传** | 扫描二维码获取文件信息 | 移动端应用 |
-| **API 同步** | 从服务端获取单个文件 | 文件分享链接 |
-| **快速添加** | 简化单文件操作流程 | 头像上传 |
+  await uploader.addFiles(files);
+});
+```
 
----
+## 接入第三方上传组件
 
-## 📚 相关 API
+第三方上传组件通常提供自定义上传入口，例如：
 
-- [addFiles()](https://github.com/ChYuanJinlin/file-ud.js/blob/main/packages/core/src/uploader/index.ts) - 批量添加文件
-- [appendFiles()](https://github.com/ChYuanJinlin/file-ud.js/blob/main/packages/core/src/uploader/index.ts) - 追加文件列表
-- [setFiles()](https://github.com/ChYuanJinlin/file-ud.js/blob/main/packages/core/src/uploader/index.ts) - 设置文件列表（清空后）
-- [files](https://github.com/ChYuanJinlin/file-ud.js/blob/main/packages/core/src/uploader/index.ts) - 当前文件列表
+- Element Plus：`http-request`
+- Ant Design Upload：`customRequest`
 
----
+在这些入口中拿到 `File` 后调用：
 
-## 🤝 贡献指南
+```ts
+await uploader.addFile(file);
+```
 
-如有问题或建议，欢迎提交 Issue！
+完整示例见 [第三方上传组件接入](/guide/ui-upload)。
 
-**GitHub Issues**: [https://github.com/ChYuanJinlin/file-ud.js/issues](https://github.com/ChYuanJinlin/file-ud.js/issues)
+## 注意事项
+
+`addFile()` / `addFiles()` 的 `Promise` 表示文件已经交给 SDK 处理，并不表示服务端已经上传完成。
+
+服务端上传成功请监听：
+
+```ts
+uploader.onSuccess = (response, file) => {
+  console.log(response, file);
+};
+```
+
+本地预览地址请监听：
+
+```ts
+uploader.on("change", (file) => {
+  console.log(file.url);
+});
+```
+
+错误处理可以监听全局错误事件或插件错误钩子，具体取决于你的接入方式。

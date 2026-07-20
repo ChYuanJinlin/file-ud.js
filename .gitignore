@@ -22,6 +22,12 @@ uploads
 # VitePress cache
 **/.vitepress/cache/
 **/.vitepress/.temp/
+**/.vitepress/dev-server.*.log
+
+# Local GitHub Pages restore worktree
+.tmp-gh-pages-restore/
+.tmp-gh-pages-extract/
+**/.vitepress/dev-server.*.log
 
 # Vercel
 .vercel

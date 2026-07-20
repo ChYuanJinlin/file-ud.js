@@ -363,11 +363,11 @@ const uploader = FileUD.createUploader("test", {
   chunkOptions: { chunkSize: 5 * 1024 * 1024 }
 });
 
-uploader.addFile({
+uploader.setFiles([{
   isChunkUpload: true, // ❌ 冗余配置
   totalChunks: 20,
   // ...
-});
+}]);
 ```
 
 **改进后**：
@@ -377,11 +377,11 @@ const uploader = FileUD.createUploader("test", {
   chunkOptions: { chunkSize: 5 * 1024 * 1024 }
 });
 
-uploader.addFile({
+uploader.setFiles([{
   // ❌ 不需要 isChunkUpload
   totalChunks: 20, // ✅ 系统自动识别为分片上传
   // ...
-});
+}]);
 ```
 
 ---

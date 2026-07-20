@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       api_base_url:
-        description: "后端 API 地址（如 https://api.your-domain.com）"
+        description: "Backend API URL, for example https://api.your-domain.com"
         required: false
         default: ""
 
@@ -25,6 +25,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v2
@@ -43,35 +45,74 @@ jobs:
       - name: Build Core
         run: pnpm --filter @file-ud.js/core build
 
-      # 🔑 从 @file-ud.js/core 的 package.json 读取版本号作为部署路径
-      #     main/master → /file-ud.js/  (latest)
-      #     版本分支     → /file-ud.js/v0.0.0/ (取 core package.json 的 version)
-      - name: Determine base path
-        id: base
+      - name: Prepare docs version metadata
+        id: docs
         shell: bash
         run: |
-          BRANCH="${{ github.ref_name }}"
-          if [[ "$BRANCH" == "main" || "$BRANCH" == "master" ]]; then
-            echo "path=/file-ud.js/" >> $GITHUB_OUTPUT
-          else
-            VER=$(node -p "require('./packages/core/package.json').version")
-            echo "path=/file-ud.js/v${VER}/" >> $GITHUB_OUTPUT
-          fi
+          VERSION="v$(node -p "require('./packages/core/package.json').version")"
 
-      - name: Build Example + Docs
+          git fetch origin gh-pages:refs/remotes/origin/gh-pages --depth=1 || true
+          EXISTING_VERSIONS=$(
+            git ls-tree -d --name-only origin/gh-pages 2>/dev/null \
+              | grep -E '^v[0-9]+' \
+              || true
+          )
+          if printf "%s\n" "$EXISTING_VERSIONS" | grep -qx "$VERSION"; then
+            VERSION_EXISTS="true"
+          else
+            VERSION_EXISTS="false"
+          fi
+          VERSIONS=$(
+            printf "%s\n%s\n" "$VERSION" "$EXISTING_VERSIONS" \
+              | sed '/^$/d' \
+              | sort -Vr \
+              | awk '!seen[$0]++' \
+              | paste -sd, -
+          )
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "version_exists=$VERSION_EXISTS" >> "$GITHUB_OUTPUT"
+          echo "versions=$VERSIONS" >> "$GITHUB_OUTPUT"
+          echo "latest_path=/file-ud.js/" >> "$GITHUB_OUTPUT"
+          echo "version_path=/file-ud.js/${VERSION}/" >> "$GITHUB_OUTPUT"
+
+      - name: Build versioned docs
+        if: steps.docs.outputs.version_exists != 'true'
         env:
           VITE_API_BASE_URL: ${{ github.event.inputs.api_base_url || secrets.VITE_API_BASE_URL || '' }}
-          VITE_BASE_PATH: ${{ steps.base.outputs.path }}
-        run: |
-          pnpm --filter @file-ud.js/docs build
+          VITE_BASE_PATH: ${{ steps.docs.outputs.version_path }}
+          VITE_DOC_LATEST_PATH: ${{ steps.docs.outputs.latest_path }}
+          VITE_DOC_VERSION: ${{ steps.docs.outputs.version }}
+          VITE_DOC_VERSIONS: ${{ steps.docs.outputs.versions }}
+        run: pnpm --filter @file-ud.js/docs build
 
-      # 🔑 部署到 gh-pages 分支，不同版本部署到不同子目录
-      #     keep_files: true 保证多版本共存
-      - name: Deploy to GitHub Pages
+      - name: Deploy versioned docs
+        if: steps.docs.outputs.version_exists != 'true'
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: packages/docs/.vitepress/dist
+          publish_branch: gh-pages
+          destination_dir: ${{ steps.docs.outputs.version }}
+          keep_files: true
+          commit_message: "docs: deploy ${{ steps.docs.outputs.version }} docs"
+
+      - name: Build latest docs
+        if: github.ref_name == 'main' || github.ref_name == 'master'
+        env:
+          VITE_API_BASE_URL: ${{ github.event.inputs.api_base_url || secrets.VITE_API_BASE_URL || '' }}
+          VITE_BASE_PATH: ${{ steps.docs.outputs.latest_path }}
+          VITE_DOC_LATEST_PATH: ${{ steps.docs.outputs.latest_path }}
+          VITE_DOC_VERSION: ${{ steps.docs.outputs.version }}
+          VITE_DOC_VERSIONS: ${{ steps.docs.outputs.versions }}
+        run: pnpm --filter @file-ud.js/docs build
+
+      - name: Deploy latest docs
+        if: github.ref_name == 'main' || github.ref_name == 'master'
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: packages/docs/.vitepress/dist
           publish_branch: gh-pages
           keep_files: true
-          commit_message: "docs: deploy ${{ github.ref_name }} to ${{ steps.base.outputs.path }}"
+          commit_message: "docs: deploy latest docs"
