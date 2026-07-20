@@ -17,14 +17,17 @@
     }
   }
 
+  function normalizePath(path) {
+    return path.charAt(path.length - 1) === "/" ? path : path + "/";
+  }
+
   function getCurrentBase() {
     var pathname = window.location.pathname;
     var match = pathname.match(
       /^\/file-ud\.js\/(v\d+(?:\.\d+)*(?:[-\w.]+)?)(?:\/|$)/,
     );
 
-    if (!match) return rootBase;
-    if (match[1] === latestVersion) return rootBase;
+    if (!match || match[1] === latestVersion) return rootBase;
     return rootBase + match[1] + "/";
   }
 
@@ -35,10 +38,6 @@
     return pathname
       .slice(rootBase.length)
       .replace(/^v\d+(?:\.\d+)*(?:[-\w.]+)?\/?/, "");
-  }
-
-  function normalizePath(path) {
-    return path.charAt(path.length - 1) === "/" ? path : path + "/";
   }
 
   function getCurrentLabel() {
@@ -102,7 +101,13 @@
 
   function mount() {
     var host = document.querySelector(".version-switcher");
-    if (!host || host.getAttribute("data-fud-compat-mounted") === "1") return;
+    if (!host) return;
+    if (
+      host.getAttribute("data-fud-compat-mounted") === "1" &&
+      host.querySelector(".fud-version-trigger")
+    ) {
+      return;
+    }
 
     ensureStyle();
     host.setAttribute("data-fud-compat-mounted", "1");
@@ -122,7 +127,7 @@
 
     var arrow = document.createElement("span");
     arrow.className = "fud-version-arrow";
-    arrow.textContent = "⌄";
+    arrow.textContent = "\u2304";
     trigger.appendChild(arrow);
 
     var dropdown = document.createElement("div");
@@ -142,7 +147,7 @@
       if (isActive(version)) {
         var check = document.createElement("span");
         check.className = "fud-version-check";
-        check.textContent = "✓";
+        check.textContent = "\u2713";
         option.appendChild(check);
       }
 
