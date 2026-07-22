@@ -228,6 +228,8 @@ downloader.onSuccess = (response, file) => {
 };
 ```
 
+> `Downloader.saveFile(fileName, url)` 是小文件便捷保存方法，内部会使用 `response.blob()` 一次性读取完整文件到内存。大文件、鉴权、进度、暂停恢复、断点续传等场景请使用 `downloader.downloadFile()`，并按需开启 `chunkOptions`。
+
 ### 使用插件
 
 ```ts

@@ -126,6 +126,12 @@ uploader.onMergeChunk = async (chunkManager) => {
 };
 ```
 
+### 下载 API 性能提示
+
+`Downloader.saveFile(fileName, url)` 是小文件便捷保存方法，内部会先 `fetch(url)`，再通过 `response.blob()` 把完整响应读入内存后触发保存。它不适合大文件，也不会使用 `Downloader` 实例上的 `headers`、插件、限速、暂停恢复、分片和进度统计。
+
+大文件、鉴权下载、断点续传、暂停恢复、秒下或需要实时进度时，请使用 `downloader.downloadFile()`，并按需配置 `chunkOptions`。公开直链且不需要 SDK 生命周期时，可以直接使用原生 `<a download>`。
+
 ---
 
 ## 📚 详细文档

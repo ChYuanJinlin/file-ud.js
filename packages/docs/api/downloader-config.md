@@ -73,6 +73,31 @@ interface ChunkOptions {
 | `Downloader.saveBlob(fileName, data)` | 保存 Blob 到本地 |
 | `Downloader.saveFile(fileName, url)` | 通过 URL 下载文件 |
 
+### 静态保存方法的性能边界
+
+`Downloader.saveBlob(fileName, data)` 和 `Downloader.saveFile(fileName, url)` 是浏览器便捷保存方法，适合小文件、图片预览结果、导出文件等场景。
+
+`Downloader.saveFile(fileName, url)` 内部会先 `fetch(url)`，再通过 `response.blob()` 把完整响应读入内存，最后创建 `Object URL` 触发浏览器保存。因此它不适合大文件下载，也不走 `Downloader` 实例的 `headers`、`timeout`、插件、限速、暂停、恢复、分片和进度统计。
+
+| 场景 | 推荐方式 | 原因 |
+|------|----------|------|
+| 公开 URL、小文件、无需进度 | 原生 `<a download>` 或 `Downloader.saveFile()` | 实现简单 |
+| 需要请求头、鉴权、进度、事件、插件 | `downloader.downloadFile(file)` | 会走实例配置和生命周期 |
+| 大文件、断点续传、暂停恢复、秒下 | `downloadFile()` + `chunkOptions` | 分片传输，不需要一次性把完整文件放进内存 |
+| 支持 File System Access API 的大文件保存 | `downloadFile(file, fileHandle)` 或分片模式自动弹出保存对话框 | 分片直接写入磁盘，降低内存占用 |
+
+如果只是公开直链下载，并且不需要鉴权、进度和 SDK 生命周期，浏览器原生下载的内存占用最低：
+
+```typescript
+function downloadByLink(fileName: string, url: string) {
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  a.rel = "noopener";
+  a.click();
+}
+```
+
 ## Downloader 回调设置器
 
 | 设置器 | 回调签名 | 说明 |

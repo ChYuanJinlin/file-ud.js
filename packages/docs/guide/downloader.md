@@ -32,6 +32,46 @@ downloader.downloadFile({
 });
 ```
 
+## 下载方式选择
+
+file-UD 提供了下载任务、分片下载和静态保存方法，不同入口的定位不同：
+
+| 入口 | 适用场景 | 注意事项 |
+|------|----------|----------|
+| `downloader.downloadFile(file)` | 需要进度、事件、插件、鉴权请求头、限速、统一队列管理 | 推荐作为业务下载的默认入口 |
+| `downloadFile()` + `chunkOptions` | 大文件、断点续传、暂停恢复、秒下、分片并发 | 更适合文件传输 SDK 的核心场景 |
+| `Downloader.saveFile(fileName, url)` | 小文件、公开 URL、无需进度和生命周期 | 内部使用 `response.blob()`，会把完整文件读入内存，不适合大文件 |
+| `Downloader.saveBlob(fileName, data)` | 已经拿到 Blob，需要触发浏览器保存 | Blob 本身已经在内存里，大文件要谨慎 |
+| 原生 `<a download>` | 公开直链、无需请求头、无需进度 | 浏览器直接处理下载，内存占用最低 |
+
+`Downloader.saveFile()` 是便捷方法，不会使用当前 `Downloader` 实例的 `headers`、`timeout`、插件、暂停恢复、分片和进度统计。大文件或需要 SDK 能力时，应使用 `downloadFile()`。
+
+```typescript
+// 公开小文件：可以直接交给浏览器
+function downloadByLink(fileName: string, url: string) {
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  a.click();
+}
+
+// 需要鉴权、进度、断点续传：使用 Downloader 实例
+const downloader = FileUD.createDownloader("assetDownloader", {
+  headers: { Authorization: "Bearer token" },
+  chunkOptions: {
+    chunkSize: 20 * 1024 * 1024,
+    maxConcurrent: 3,
+    enableFileCache: true,
+  },
+});
+
+downloader.downloadFile({
+  url: "/api/files/big.zip",
+  fileName: "big.zip",
+  size: 1024 * 1024 * 500,
+});
+```
+
 ## 分片下载（断点续传 + 秒下）
 
 ```typescript
