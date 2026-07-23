@@ -79,7 +79,16 @@ export default defineConfig({
   title: "file-ud.js",
   description: "面向浏览器的文件上传下载 SDK，支持分片上传/下载、断点续传、秒传等功能",
   base,
-  head: [["link", { rel: "icon", href: `${base}logo.svg` }]],
+  head: [
+    ["link", { rel: "icon", href: `${base}logo.svg` }],
+    [
+      "script",
+      {
+        src: `${base}version-switcher-compat.js?v=20260723-compat4`,
+        defer: "",
+      },
+    ],
+  ],
 
   themeConfig: {
     logo: "/logo.svg",
