@@ -90,6 +90,7 @@
       ".fud-version-switcher-compat .fud-version-trigger{display:flex;align-items:center;gap:4px;height:36px;padding:0 12px;border:0;background:transparent;cursor:pointer;color:var(--vp-c-text-1);font:inherit}" +
       ".fud-version-switcher-compat .fud-version-badge{font-size:13px;font-weight:600;border:1px solid var(--vp-c-brand-1);color:var(--vp-c-brand-1);padding:2px 10px;border-radius:12px;line-height:1}" +
       ".fud-version-switcher-compat .fud-version-arrow{color:var(--vp-c-text-2);transition:transform .2s;flex-shrink:0}" +
+      ".fud-version-switcher-compat .fud-version-arrow svg{display:block}" +
       ".fud-version-switcher-compat.open .fud-version-arrow{transform:rotate(180deg)}" +
       ".fud-version-switcher-compat .fud-version-dropdown{position:absolute;top:calc(100% + 8px);right:0;min-width:140px;background:var(--vp-c-bg);border:1px solid var(--vp-c-divider);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.15);padding:4px;z-index:999}" +
       ".fud-version-switcher-compat .fud-version-option{display:flex;align-items:center;justify-content:space-between;padding:6px 12px;cursor:pointer;font-size:13px;white-space:nowrap;color:var(--vp-c-text-1);border-radius:6px;line-height:1.5}" +
@@ -127,7 +128,9 @@
 
     var arrow = document.createElement("span");
     arrow.className = "fud-version-arrow";
-    arrow.textContent = "\u2304";
+    arrow.setAttribute("aria-hidden", "true");
+    arrow.innerHTML =
+      '<svg viewBox="0 0 24 24" fill="none" width="14" height="14"><path d="M7 10l5 5 5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
     trigger.appendChild(arrow);
 
     var dropdown = document.createElement("div");
