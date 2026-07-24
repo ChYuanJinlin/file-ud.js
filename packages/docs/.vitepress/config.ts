@@ -84,7 +84,7 @@ export default defineConfig({
     [
       "script",
       {
-        src: `${base}version-switcher-compat.js?v=20260724-compat5`,
+        src: `${base}version-switcher-compat.js?v=20260724-compat6`,
         defer: "",
       },
     ],
