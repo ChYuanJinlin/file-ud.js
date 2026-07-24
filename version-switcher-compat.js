@@ -100,13 +100,20 @@
     document.head.appendChild(style);
   }
 
+  function isMountedComplete(host) {
+    return (
+      host.getAttribute("data-fud-compat-mounted") === "1" &&
+      !!host.querySelector(".fud-version-trigger") &&
+      !!host.querySelector(".fud-version-arrow svg") &&
+      !!host.querySelector(".fud-version-dropdown") &&
+      host.querySelectorAll(".fud-version-option").length === versions.length
+    );
+  }
+
   function mount() {
     var host = document.querySelector(".version-switcher");
     if (!host) return;
-    if (
-      host.getAttribute("data-fud-compat-mounted") === "1" &&
-      host.querySelector(".fud-version-trigger")
-    ) {
+    if (isMountedComplete(host)) {
       return;
     }
 
@@ -179,11 +186,37 @@
     host.appendChild(dropdown);
   }
 
-  onReady(function () {
+  function scheduleMount() {
     mount();
+    setTimeout(mount, 0);
+    setTimeout(mount, 100);
+    setTimeout(mount, 500);
+    setTimeout(mount, 1200);
+  }
+
+  function patchHistoryMethod(method) {
+    var original = window.history && window.history[method];
+    if (!original || original.__fudVersionPatched) return;
+
+    var patched = function () {
+      var result = original.apply(this, arguments);
+      scheduleMount();
+      return result;
+    };
+    patched.__fudVersionPatched = true;
+    window.history[method] = patched;
+  }
+
+  onReady(function () {
+    scheduleMount();
+
+    window.addEventListener("load", scheduleMount);
+    window.addEventListener("popstate", scheduleMount);
+    patchHistoryMethod("pushState");
+    patchHistoryMethod("replaceState");
 
     var observer = new MutationObserver(function () {
-      mount();
+      scheduleMount();
     });
     observer.observe(document.documentElement, {
       childList: true,
